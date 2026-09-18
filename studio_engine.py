@@ -1699,7 +1699,8 @@ def run_board(org: dict, brief: str, once: bool = False,
     try:
         sys.path.insert(0, str(ROOT / "scripts"))
         import studio_yetkilisi as SY
-        SY.otomatik_musteri_talepleri_senkronize_et()
+        if SY.otomatik_musteri_talepleri_senkronize_et() > 0:
+            board = B.load()
     except Exception:
         pass
     B.recover_orphans(board)
