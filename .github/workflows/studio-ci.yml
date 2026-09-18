@@ -1,0 +1,27 @@
+name: Studio CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  validate:
+    name: Validate Scripts & Syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate Python Syntax
+        run: |
+          python -m py_compile studio_engine.py studio_board.py studio_ctl.py
+          python -m py_compile scripts/*.py
+      - name: Validate Shell Scripts
+        run: |
+          bash -n basla.sh
+          bash -n musteri.sh
+          bash -n setup.sh

@@ -1,0 +1,50 @@
+# -----------------------------------------------------------------------------
+# Digital Software Studio — Git Ignore Rules
+# -----------------------------------------------------------------------------
+
+# Üretilen Proje Kodları ve Çalışma Alanı (Her proje için sıfırdan üretilir)
+workspace/
+_arsiv/
+tmp/
+logs/
+
+# Python Sanal Ortamı ve Bytecode
+.venv/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Node.js Bağımlılıkları
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Günlükler ve Süreç Takip Dosyaları
+*.log
+pipeline.log
+plan.log
+
+# Hassas Bilgiler, Anahtarlar ve Çevre Değişkenleri (Zero Leakage)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+*.crt
+*.token
+.claude_token
+
+# İşletim Sistemi ve IDE Dosyaları
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.vscode/
+.idea/
