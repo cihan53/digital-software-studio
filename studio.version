@@ -1,7 +1,7 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.1",
   "released": "2026-09-20",
-  "description": "Digital Software Studio — Framework başlangıç sürümü",
+  "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
     "scripts/musteri_talepleri.py",
     "scripts/karar_verici_triage.py",
@@ -12,17 +12,26 @@
     "studio_board.py",
     "studio_engine.py",
     "studio_ctl.py",
+    "basla.sh",
     "studio.version"
   ],
   "changelog": [
+    {
+      "version": "1.0.1",
+      "date": "2026-09-20",
+      "changes": [
+        "basla.sh --durum zenginleştirildi: process bilgisi, aktif görev detayı, sprint ilerleme çubuğu, son çağrı istatistikleri, hata tespiti, kota uyarıları",
+        "basla.sh tracked_files listesine eklendi"
+      ]
+    },
     {
       "version": "1.0.0",
       "date": "2026-09-20",
       "changes": [
         "SQLite dual-write katmanı eklendi (musteri_talepleri.py)",
         "migrate_to_sqlite.py — JSON → SQLite migration scripti",
-        "recovery_sentinel.py — dinamik branch algılama (master hardcode kaldırıldı)",
-        "studio_yetkilisi.py v2.0 — proje-agnostik hale getirildi",
+        "recovery_sentinel.py — dinamik branch algılama",
+        "studio_yetkilisi.py v2.0 — proje-agnostik",
         "studio_engine.py — UAT bölümü proje-agnostik yapıya kavuşturuldu",
         "STUDIO:CUSTOM marker sistemi tanımlandı",
         "studio_updater.py — framework versiyon takip scripti eklendi"

@@ -84,9 +84,19 @@ PYEOF
       exit 0 ;;
   --durum)
       $PY - <<'PYEOF'
-import json, pathlib, subprocess, time, os
+import json, pathlib, subprocess, time, os, sys
 root = pathlib.Path(".")
 lock = root / "workspace/.lock"
+BOLD="\033[1m"; GREEN="\033[32m"; YELLOW="\033[33m"; RED="\033[31m"
+CYAN="\033[36m"; DIM="\033[2m"; NC="\033[0m"; BLUE="\033[34m"
+
+def bar(done, total, width=24):
+    if total == 0: return "[" + "─"*width + "]"
+    filled = int(width * done / total)
+    return "[" + "█"*filled + "░"*(width-filled) + f"]"
+
+# ── Process Kontrolü ──────────────────────────────────────────────────────────
+pid = None
 alive = False
 if lock.exists():
     try:
@@ -95,32 +105,165 @@ if lock.exists():
         alive = True
     except (ValueError, OSError):
         pass
-print("Koşucu :", "ÇALIŞIYOR" if alive else "boşta")
-try:
-    st = json.loads((root/"workspace/.state.json").read_text())
-    print("Roller :", ", ".join(st["completed_steps"]) or "(henüz yok)")
-    print("Dosya  :", len(st["completed_outputs"]))
-except FileNotFoundError:
-    print("Roller : (henüz tamamlanan yok)")
+
+print()
+print(f"{BOLD}{'─'*62}{NC}")
+if alive:
+    try:
+        ps = subprocess.run(
+            ["ps", "-o", "pid,%cpu,%mem,etime", "-p", str(pid)],
+            capture_output=True, text=True
+        )
+        ps_lines = ps.stdout.strip().splitlines()
+        if len(ps_lines) > 1:
+            parts = ps_lines[1].split()
+            cpu, mem, etime = parts[1], parts[2], parts[3]
+            print(f"  {GREEN}●{NC} {BOLD}ÇALIŞIYOR{NC}  PID:{pid}  CPU:{cpu}%  RAM:{mem}%  Çalışma:{etime}")
+    except Exception:
+        print(f"  {GREEN}●{NC} {BOLD}ÇALIŞIYOR{NC}  PID:{pid}")
+else:
+    if lock.exists():
+        print(f"  {RED}●{NC} {BOLD}DURDU{NC} {DIM}(lock takılı kaldı — ./basla.sh --sifirla önerilir){NC}")
+    else:
+        print(f"  {DIM}●  Boşta{NC}")
+
+# ── Aktif Görev Detayı ───────────────────────────────────────────────────────
 cur = {}
 try:
     cur = json.loads((root/"workspace/.trace/current.json").read_text())
 except Exception:
     pass
-if alive and cur.get("role"):
-    el = int(time.time() - cur.get("started_at", time.time()))
-    print(f"Şu an  : {cur['role']} -> {cur['target']}  ({el//60}dk {el%60}s)")
+
+if cur.get("role"):
+    elapsed = int(time.time() - cur.get("started_at", time.time()))
+    el_m, el_s = elapsed // 60, elapsed % 60
+
+    # Aynı role ait geçmiş ortalama süre
+    avg_s = None
+    idx_f = root/"workspace/.trace/index.jsonl"
+    if idx_f.exists():
+        rows = [json.loads(l) for l in idx_f.read_text().splitlines() if l.strip()]
+        durations = [r["duration_s"] for r in rows
+                     if r.get("duration_s") and r.get("role") == cur["role"]]
+        if durations:
+            avg_s = sum(durations) / len(durations)
+
+    print(f"\n{BOLD}  ▸ Aktif Görev{NC}")
+    print(f"  {'─'*58}")
+    print(f"  {CYAN}Rol    {NC}: {BOLD}{cur['role']}{NC}  {DIM}({cur.get('title','')}){NC}")
+    print(f"  {CYAN}Hedef  {NC}: {cur.get('target','?')}")
+    print(f"  {CYAN}Sprint {NC}: {cur.get('sprint','?')} › {cur.get('task','?')}")
+    print(f"  {CYAN}Model  {NC}: {cur.get('model','?')}  {DIM}({cur.get('effort','?')} effort){NC}")
+
+    süre_str = f"{el_m}dk {el_s}s"
+    if avg_s and elapsed > avg_s * 1.5:
+        print(f"  {CYAN}Süre   {NC}: {YELLOW}{süre_str}  ⚠ Normalden uzun (ort. {int(avg_s)}s){NC}")
+    elif avg_s:
+        kalan = max(0, int(avg_s) - elapsed)
+        kalan_str = f"{kalan//60}dk {kalan%60}s" if kalan > 0 else "bitiyor..."
+        print(f"  {CYAN}Süre   {NC}: {süre_str}  {DIM}≈ {kalan_str} kaldı (ort. {int(avg_s)}s){NC}")
+    else:
+        print(f"  {CYAN}Süre   {NC}: {süre_str}")
+
+    print(f"  {CYAN}Token  {NC}: {cur.get('prompt_chars',0):,} karakter")
+
+    # Canlı çıktının son satırları
+    out_f = root/"workspace/.trace/current.out"
+    if out_f.exists():
+        content = out_f.read_text(errors="replace").strip()
+        if content:
+            son = [l for l in content.splitlines() if l.strip()][-3:]
+            print(f"\n  {BOLD}Son çıktı:{NC}")
+            for sat in son:
+                print(f"  {DIM}│ {sat[:80]}{NC}")
+
+# ── Sprint İlerlemesi ────────────────────────────────────────────────────────
 pano = root/"workspace/pano.json"
-print("Pano   :", "var" if pano.exists() else "henüz üretilmedi (tasarım aşamasının sonunda çıkar)")
-idx = root/"workspace/.trace/index.jsonl"
-if idx.exists():
-    rows = [json.loads(l) for l in idx.read_text().splitlines() if l.strip()]
-    tot = sum(r.get("cost_usd") or 0 for r in rows)
-    print(f"Harcama: ${tot:.2f} ({len(rows)} çağrı)")
-import studio_board as B
-d = B.ledger_read(); mg, mb = B.ledger_limits()
-durum = "DOLDU — onay bekliyor" if (d["gorev"] >= mg or d["maliyet"] >= mb) else "açık"
-print(f"Kota   : bugün {d['gorev']}/{mg} görev, ${d['maliyet']:.2f}/${mb:.2f}  [{durum}]")
+if pano.exists():
+    try:
+        p = json.load(open(pano))
+        sprints = p.get("sprints", [])
+        total_s = len(sprints)
+        done_s = sum(1 for s in sprints if s.get("status") == "DONE")
+        all_tasks = [t for s in sprints for t in s.get("tasks", [])]
+        total_t = len(all_tasks)
+        done_t = sum(1 for t in all_tasks if t.get("status") == "done")
+        fail_t = sum(1 for t in all_tasks if t.get("status") in ("error", "failed"))
+
+        print(f"\n{BOLD}  Sprint İlerlemesi{NC}")
+        print(f"  {'─'*58}")
+        print(f"  Sprint  {bar(done_s, total_s)} {done_s}/{total_s}")
+        print(f"  Görev   {bar(done_t, total_t)} {done_t}/{total_t}")
+        if fail_t:
+            print(f"  {RED}  ⚠  {fail_t} görev hatalı!{NC}")
+
+        # Aktif sprint detayı
+        aktif = next((s for s in sprints if s.get("status") in ("READY","RUNNING")), None)
+        if aktif:
+            tasks = aktif.get("tasks", [])
+            done_st = sum(1 for t in tasks if t.get("status") == "done")
+            print(f"\n  {BOLD}Aktif:{NC} {aktif['id']} — {aktif.get('name','')[:45]}")
+            print(f"         {bar(done_st, len(tasks), 16)} {done_st}/{len(tasks)}")
+            for t in tasks:
+                st = t.get("status","?")
+                icon = (f"{GREEN}✓{NC}" if st=="done"
+                        else f"{YELLOW}▸{NC}" if st in ("RUNNING","running","in_progress")
+                        else f"{RED}✗{NC}" if st in ("error","failed")
+                        else f"{DIM}·{NC}")
+                note = f" {DIM}{t.get('note','')[:35]}{NC}" if t.get("note") else ""
+                dur = f" {DIM}{t.get('duration_s',0):.0f}s{NC}" if t.get("duration_s") else ""
+                print(f"    {icon} {t['id']:<10} {t.get('title','')[:40]}{dur}{note}")
+
+        # Bir sonraki sprint
+        sonraki = next((s for s in sprints if s.get("status") == "TODO"), None)
+        if sonraki:
+            tasks = sonraki.get("tasks", [])
+            print(f"\n  {DIM}Sıradaki: {sonraki['id']} — {sonraki.get('name','')[:42]}  ({len(tasks)} görev){NC}")
+    except Exception as e:
+        print(f"  {DIM}Pano okunurken hata: {e}{NC}")
+else:
+    print(f"  {DIM}Pano: henüz üretilmedi{NC}")
+
+# ── Son Çağrı İstatistikleri ─────────────────────────────────────────────────
+idx_f = root/"workspace/.trace/index.jsonl"
+if idx_f.exists():
+    rows = [json.loads(l) for l in idx_f.read_text().splitlines() if l.strip()]
+    if rows:
+        tot_cost = sum(r.get("cost_usd") or 0 for r in rows)
+        tot_tok  = sum(r.get("tokens_total") or 0 for r in rows)
+        avg_dur  = sum(r.get("duration_s") or 0 for r in rows) / len(rows)
+        errors   = [r for r in rows if r.get("error")]
+        last5    = rows[-5:]
+
+        print(f"\n{BOLD}  Çağrı Özeti{NC}  {DIM}(toplam {len(rows)} çağrı){NC}")
+        print(f"  {'─'*58}")
+        print(f"  Maliyet:{DIM} ${tot_cost:.4f}{NC}   Token:{DIM} {tot_tok:,}{NC}   Ort.süre:{DIM} {avg_dur:.0f}s{NC}")
+        if errors:
+            print(f"  {RED}⚠  {len(errors)} hatalı çağrı{NC}")
+
+        print(f"\n  {DIM}Son 5 çağrı:{NC}")
+        for r in last5:
+            dur  = r.get("duration_s", 0)
+            tok  = r.get("tokens_in", 0)
+            cost = r.get("cost_usd") or 0
+            icon = f"{RED}✗{NC}" if r.get("error") else f"{GREEN}✓{NC}"
+            err_hint = f" {RED}{str(r.get('error',''))[:30]}{NC}" if r.get("error") else ""
+            print(f"    {icon} #{r['seq']:<4} {r.get('role','?'):<22} {dur:>5.0f}s  {tok:>8,}t{err_hint}")
+
+# ── Kota ─────────────────────────────────────────────────────────────────────
+try:
+    import studio_board as B
+    d = B.ledger_read(); mg, mb = B.ledger_limits()
+    doldu = d["gorev"] >= mg or d["maliyet"] >= mb
+    dolmak_uzere = d["gorev"] >= mg * 0.8
+    kr = RED if doldu else (YELLOW if dolmak_uzere else GREEN)
+    ds = "DOLDU — onay bekliyor" if doldu else ("Dolmak üzere" if dolmak_uzere else "açık")
+    print(f"\n  {BOLD}Kota:{NC} {kr}bugün {d['gorev']}/{mg} görev  ${d['maliyet']:.2f}/${mb:.2f}  [{ds}]{NC}")
+except Exception:
+    pass
+
+print(f"{BOLD}{'─'*62}{NC}")
+print()
 PYEOF
       exit 0 ;;
   --durdur)
