@@ -167,6 +167,35 @@ if cur.get("role"):
 
     print(f"  {CYAN}Token  {NC}: {cur.get('prompt_chars',0):,} karakter")
 
+    # ── Pipeline log: 429 / hata durumu ──────────────────────────────────────
+    log_f = root / "pipeline.log"
+    if log_f.exists():
+        log_lines = log_f.read_text(errors="replace").splitlines()
+        # Son 60 satırda quota/hata ara
+        son60 = log_lines[-60:]
+        quota_lines = [l for l in son60 if "RESOURCE_EXHAUSTED" in l or "429" in l or "Kota/limit" in l]
+        err_lines   = [l for l in son60 if "hata koduyla" in l.lower() or "ERROR" in l or "error:" in l.lower()]
+        bekleme_lines = [l for l in son60 if "beklenip tekrar" in l]
+
+        if quota_lines:
+            # Kaç dakikadır bekleniyor?
+            bekleme_sure = "?"
+            for bl in reversed(bekleme_lines):
+                import re
+                m = re.search(r"(\d+)dk", bl)
+                if m:
+                    bekleme_sure = m.group(1) + "dk"
+                    break
+            print(f"\n  {BOLD}{'─'*58}{NC}")
+            print(f"  {RED}⏸  API KOTASI DOLDU — 429 RESOURCE_EXHAUSTED{NC}")
+            print(f"  {YELLOW}   Sistem 20s'de bir tekrar deniyor ({bekleme_sure} bekleniyor, maks 5sa){NC}")
+            print(f"  {DIM}   Quota açılınca otomatik devam eder.{NC}")
+            print(f"  {DIM}   Durdurmak için: ./basla.sh --durdur{NC}")
+            print(f"  {BOLD}{'─'*58}{NC}")
+        elif err_lines:
+            last_err = err_lines[-1].strip()[:100]
+            print(f"\n  {RED}⚠  Son hata:{NC} {DIM}{last_err}{NC}")
+
     # Canlı çıktının son satırları
     out_f = root/"workspace/.trace/current.out"
     if out_f.exists():
