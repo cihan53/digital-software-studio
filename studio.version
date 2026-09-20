@@ -1,5 +1,5 @@
 {
-  "version": "1.0.1",
+  "version": "1.0.2",
   "released": "2026-09-20",
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
@@ -16,6 +16,15 @@
     "studio.version"
   ],
   "changelog": [
+    {
+      "version": "1.0.2",
+      "date": "2026-09-20",
+      "changes": [
+        "basla.sh --durum: pipeline.log'dan 429 RESOURCE_EXHAUSTED durumu okunuyor",
+        "API kotası dolduğunda kırmızı ⏸ uyarısı + bekleme süresi gösteriliyor",
+        "Son hata satırı da --durum'da görünüyor"
+      ]
+    },
     {
       "version": "1.0.1",
       "date": "2026-09-20",
