@@ -1,0 +1,32 @@
+{
+  "version": "1.0.0",
+  "released": "2026-09-20",
+  "description": "Digital Software Studio — Framework başlangıç sürümü",
+  "tracked_files": [
+    "scripts/musteri_talepleri.py",
+    "scripts/karar_verici_triage.py",
+    "scripts/migrate_to_sqlite.py",
+    "scripts/recovery_sentinel.py",
+    "scripts/studio_yetkilisi.py",
+    "scripts/studio_updater.py",
+    "studio_board.py",
+    "studio_engine.py",
+    "studio_ctl.py",
+    "studio.version"
+  ],
+  "changelog": [
+    {
+      "version": "1.0.0",
+      "date": "2026-09-20",
+      "changes": [
+        "SQLite dual-write katmanı eklendi (musteri_talepleri.py)",
+        "migrate_to_sqlite.py — JSON → SQLite migration scripti",
+        "recovery_sentinel.py — dinamik branch algılama (master hardcode kaldırıldı)",
+        "studio_yetkilisi.py v2.0 — proje-agnostik hale getirildi",
+        "studio_engine.py — UAT bölümü proje-agnostik yapıya kavuşturuldu",
+        "STUDIO:CUSTOM marker sistemi tanımlandı",
+        "studio_updater.py — framework versiyon takip scripti eklendi"
+      ]
+    }
+  ]
+}
