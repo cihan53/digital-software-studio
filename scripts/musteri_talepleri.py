@@ -3,11 +3,14 @@
 scripts/musteri_talepleri.py
 Digital Software Studio — Müşteri İstek & Şikayet Takip Motoru
 
-Müşteri (proje sahibi/denetçi) bildirimlerini JSON ve Markdown olarak yönetir.
+Müşteri (proje sahibi/denetçi) bildirimlerini JSON + SQLite (studio.db) olarak yönetir.
+Dual-write: her değişiklik hem JSON hem studio.db'ye yansır.
+Okumalar önce studio.db'den gelir; DB yoksa JSON'a fallback yapılır.
 """
 
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 from datetime import datetime
@@ -22,6 +25,7 @@ except ImportError:
 ROOT = Path(__file__).resolve().parent.parent
 DOCS_DIR = ROOT / "workspace" / "docs"
 STORAGE_FILE = DOCS_DIR / "musteri_talepleri.json"
+DB_PATH = ROOT / "studio.db"
 MD_FILE = DOCS_DIR / "musteri_talepleri.md"
 PLANS_DIR = DOCS_DIR / "cozum_planlari"
 
@@ -53,9 +57,97 @@ DURUMLAR = {
 }
 
 
+# ==============================================================================
+# SQLite yardımcıları
+# ==============================================================================
+
+def db_conn() -> sqlite3.Connection | None:
+    """studio.db bağlantısı döndürür; DB yoksa None."""
+    if not DB_PATH.exists():
+        return None
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.row_factory = sqlite3.Row
+        return conn
+    except Exception:
+        return None
+
+
+def _talep_to_db(cur: sqlite3.Cursor, t: dict):
+    """Tek bir talep dict'ini talepler tablosuna UPSERT eder."""
+    gecmis_json = json.dumps(t.get("gecmis", []), ensure_ascii=False)
+    cur.execute("""
+        INSERT INTO talepler
+            (id, tarih, tur, oncelik, baslik, aciklama, sayfa_url,
+             durum, gorevli_rol, studio_notu, github_issue_number,
+             github_issue_url, gecmis)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET
+            tarih               = excluded.tarih,
+            tur                 = excluded.tur,
+            oncelik             = excluded.oncelik,
+            baslik              = excluded.baslik,
+            aciklama            = excluded.aciklama,
+            sayfa_url           = excluded.sayfa_url,
+            durum               = excluded.durum,
+            gorevli_rol         = excluded.gorevli_rol,
+            studio_notu         = excluded.studio_notu,
+            github_issue_number = excluded.github_issue_number,
+            github_issue_url    = excluded.github_issue_url,
+            gecmis              = excluded.gecmis
+    """, (
+        t.get("id"), t.get("tarih"), t.get("tur"), t.get("oncelik"),
+        t.get("baslik"), t.get("aciklama"), t.get("sayfa_url"),
+        t.get("durum"), t.get("gorevli_rol"), t.get("studio_notu"),
+        t.get("github_issue_number"), t.get("github_issue_url"),
+        gecmis_json
+    ))
+
+
+def _db_to_talep(row: sqlite3.Row) -> dict:
+    """DB satırını talep dict'ine çevirir."""
+    t = dict(row)
+    try:
+        t["gecmis"] = json.loads(t.get("gecmis") or "[]")
+    except Exception:
+        t["gecmis"] = []
+    return t
+
+
+def db_tum_talepler() -> list[dict] | None:
+    """studio.db'den tüm talepleri döndürür; DB yoksa None."""
+    conn = db_conn()
+    if not conn:
+        return None
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM talepler ORDER BY tarih")
+        rows = cur.fetchall()
+        return [_db_to_talep(r) for r in rows]
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
+# ==============================================================================
+# Veri yükleme / kaydetme
+# ==============================================================================
+
 def load_data() -> dict:
     DOCS_DIR.mkdir(parents=True, exist_ok=True)
     PLANS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Önce studio.db'den yükle
+    db_talepler = db_tum_talepler()
+    if db_talepler is not None:
+        return {
+            "son_guncelleme": datetime.now().isoformat(),
+            "toplam_talep": len(db_talepler),
+            "talepler": db_talepler
+        }
+
+    # DB yoksa JSON fallback
     if not STORAGE_FILE.exists():
         initial = {
             "son_guncelleme": datetime.now().isoformat(),
@@ -73,8 +165,24 @@ def load_data() -> dict:
 def save_data(data: dict):
     data["son_guncelleme"] = datetime.now().isoformat()
     data["toplam_talep"] = len(data.get("talepler", []))
+
+    # JSON'a yaz
     STORAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
     STORAGE_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    # studio.db'ye yaz (dual-write)
+    conn = db_conn()
+    if conn:
+        try:
+            cur = conn.cursor()
+            for t in data.get("talepler", []):
+                _talep_to_db(cur, t)
+            conn.commit()
+        except Exception as e:
+            print(f"  [UYARI] studio.db yazma hatası: {e}")
+        finally:
+            conn.close()
+
     render_markdown(data)
 
 
@@ -246,6 +354,20 @@ def yeni_talep(tur: str, baslik: str, aciklama: str, oncelik: str = "NORMAL", sa
 
 
 def getir(talep_id: str) -> dict | None:
+    """Önce studio.db'den arar, yoksa JSON'dan okur."""
+    conn = db_conn()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM talepler WHERE lower(id) = lower(?)", (talep_id,))
+            row = cur.fetchone()
+            if row:
+                return _db_to_talep(row)
+        except Exception:
+            pass
+        finally:
+            conn.close()
+    # Fallback: JSON
     data = load_data()
     for t in data.get("talepler", []):
         if t["id"].lower() == talep_id.lower():
