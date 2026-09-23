@@ -30,11 +30,77 @@ PHASE_ORDER = {"develop": 0, "test": 1, "deploy": 2}
 
 
 # ---------------------------------------------------------------- veritabanı
+SCHEMA_INIT = """
+CREATE TABLE IF NOT EXISTS sprintler (
+    id                  TEXT PRIMARY KEY,
+    ad                  TEXT,
+    hedef               TEXT,
+    planlanan_gun       INTEGER,
+    sira                INTEGER,
+    durum               TEXT,
+    planlanan_baslangic TEXT,
+    planlanan_bitis     TEXT,
+    gercek_baslangic    TEXT,
+    gercek_bitis        TEXT
+);
+
+CREATE TABLE IF NOT EXISTS pano_gorevleri (
+    id          TEXT PRIMARY KEY,
+    sprint_id   TEXT REFERENCES sprintler(id),
+    baslik      TEXT,
+    aciklama    TEXT,
+    rol         TEXT,
+    phase       TEXT,
+    ciktilar    TEXT,
+    bagimlilik  TEXT,
+    durum       TEXT,
+    deneme      INTEGER,
+    not_        TEXT,
+    baslangic   TEXT,
+    bitis       TEXT,
+    sure_s      REAL
+);
+
+CREATE TABLE IF NOT EXISTS studio_state (
+    anahtar     TEXT PRIMARY KEY,
+    deger       TEXT
+);
+
+CREATE TABLE IF NOT EXISTS gunluk_kota (
+    tarih       TEXT PRIMARY KEY,
+    gorev       INTEGER DEFAULT 0,
+    maliyet     REAL DEFAULT 0.0,
+    ek_gorev    INTEGER DEFAULT 0,
+    ek_butce    REAL DEFAULT 0.0
+);
+
+CREATE TABLE IF NOT EXISTS maliyet_kayitlari (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    tarih       TEXT,
+    rol         TEXT,
+    backend     TEXT,
+    model       TEXT,
+    cost_usd    REAL,
+    detay       TEXT
+);
+"""
+
+_SCHEMA_INITIALIZED = False
+
+
 def db_conn() -> sqlite3.Connection:
+    global _SCHEMA_INITIALIZED
     conn = sqlite3.connect(str(DB_PATH), timeout=30.0)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.row_factory = sqlite3.Row
+    if not _SCHEMA_INITIALIZED:
+        try:
+            conn.executescript(SCHEMA_INIT)
+            conn.commit()
+            _SCHEMA_INITIALIZED = True
+        except Exception:
+            pass
     return conn
 
 
