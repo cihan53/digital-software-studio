@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
+import sys
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -18,6 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 WORKSPACE = ROOT / "workspace"
 BOARD_FILE = WORKSPACE / "pano.json"
+DB_PATH = ROOT / "studio.db"
 
 TODO, READY, RUNNING, BLOCKED, DONE, FAILED, SKIPPED = (
     "TODO", "READY", "RUNNING", "BLOCKED", "DONE", "FAILED", "SKIPPED"
@@ -26,24 +29,274 @@ TERMINAL = {DONE, SKIPPED}
 PHASE_ORDER = {"develop": 0, "test": 1, "deploy": 2}
 
 
+# ---------------------------------------------------------------- veritabanı
+SCHEMA_INIT = """
+CREATE TABLE IF NOT EXISTS sprintler (
+    id                  TEXT PRIMARY KEY,
+    ad                  TEXT,
+    hedef               TEXT,
+    planlanan_gun       INTEGER,
+    sira                INTEGER,
+    durum               TEXT,
+    planlanan_baslangic TEXT,
+    planlanan_bitis     TEXT,
+    gercek_baslangic    TEXT,
+    gercek_bitis        TEXT
+);
+
+CREATE TABLE IF NOT EXISTS pano_gorevleri (
+    id          TEXT PRIMARY KEY,
+    sprint_id   TEXT REFERENCES sprintler(id),
+    baslik      TEXT,
+    aciklama    TEXT,
+    rol         TEXT,
+    phase       TEXT,
+    ciktilar    TEXT,
+    bagimlilik  TEXT,
+    durum       TEXT,
+    deneme      INTEGER,
+    not_        TEXT,
+    baslangic   TEXT,
+    bitis       TEXT,
+    sure_s      REAL
+);
+
+CREATE TABLE IF NOT EXISTS studio_state (
+    anahtar     TEXT PRIMARY KEY,
+    deger       TEXT
+);
+
+CREATE TABLE IF NOT EXISTS gunluk_kota (
+    tarih       TEXT PRIMARY KEY,
+    gorev       INTEGER DEFAULT 0,
+    maliyet     REAL DEFAULT 0.0,
+    ek_gorev    INTEGER DEFAULT 0,
+    ek_butce    REAL DEFAULT 0.0
+);
+
+CREATE TABLE IF NOT EXISTS maliyet_kayitlari (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    tarih       TEXT,
+    rol         TEXT,
+    backend     TEXT,
+    model       TEXT,
+    cost_usd    REAL,
+    detay       TEXT
+);
+"""
+
+_SCHEMA_INITIALIZED = False
+
+
+def db_conn() -> sqlite3.Connection:
+    global _SCHEMA_INITIALIZED
+    conn = sqlite3.connect(str(DB_PATH), timeout=30.0)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.row_factory = sqlite3.Row
+    if not _SCHEMA_INITIALIZED:
+        try:
+            conn.executescript(SCHEMA_INIT)
+            conn.commit()
+            _SCHEMA_INITIALIZED = True
+        except Exception:
+            pass
+    return conn
+
+
+def db_load_board() -> dict | None:
+    if not DB_PATH.exists():
+        return None
+    try:
+        conn = db_conn()
+    except Exception:
+        return None
+
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM sprintler ORDER BY sira ASC")
+        sprint_rows = cur.fetchall()
+        if not sprint_rows:
+            return None
+
+        # Meta oku
+        baseline_end = None
+        created_at = None
+        updated_at = None
+        try:
+            cur.execute("SELECT deger FROM studio_state WHERE anahtar = 'pano_meta'")
+            row = cur.fetchone()
+            if row and row["deger"]:
+                meta = json.loads(row["deger"])
+                baseline_end = meta.get("baseline_end")
+                created_at = meta.get("created_at")
+                updated_at = meta.get("updated_at")
+        except Exception:
+            pass
+
+        sprints = []
+        for sr in sprint_rows:
+            sid = sr["id"]
+            cur.execute("SELECT * FROM pano_gorevleri WHERE sprint_id = ? ORDER BY id ASC", (sid,))
+            task_rows = cur.fetchall()
+            tasks = []
+            for tr in task_rows:
+                outputs = []
+                if tr["ciktilar"]:
+                    try:
+                        outputs = json.loads(tr["ciktilar"])
+                    except Exception:
+                        outputs = [tr["ciktilar"]]
+                depends_on = []
+                if tr["bagimlilik"]:
+                    try:
+                        depends_on = json.loads(tr["bagimlilik"])
+                    except Exception:
+                        depends_on = []
+
+                tasks.append({
+                    "id": tr["id"],
+                    "title": tr["baslik"] or "",
+                    "description": tr["aciklama"] or "",
+                    "role": tr["rol"] or "",
+                    "phase": tr["phase"] or "develop",
+                    "outputs": outputs,
+                    "depends_on": depends_on,
+                    "status": tr["durum"] or TODO,
+                    "attempts": tr["deneme"] or 0,
+                    "note": tr["not_"] or "",
+                    "started_at": tr["baslangic"],
+                    "finished_at": tr["bitis"],
+                    "duration_s": tr["sure_s"],
+                })
+
+            sprints.append({
+                "id": sr["id"],
+                "name": sr["ad"] or "",
+                "goal": sr["hedef"] or "",
+                "planned_days": sr["planlanan_gun"] or 1,
+                "order": sr["sira"] if sr["sira"] is not None else len(sprints),
+                "status": sr["durum"] or TODO,
+                "planned_start": sr["planlanan_baslangic"],
+                "planned_end": sr["planlanan_bitis"],
+                "actual_start": sr["gercek_baslangic"],
+                "actual_end": sr["gercek_bitis"],
+                "tasks": tasks
+            })
+
+        board = {"sprints": sprints}
+        if baseline_end:
+            board["baseline_end"] = baseline_end
+        if created_at:
+            board["created_at"] = created_at
+        if updated_at:
+            board["updated_at"] = updated_at
+        return board
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
+def db_save_board(board: dict):
+    if not DB_PATH.exists():
+        return
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        meta = {
+            "baseline_end": board.get("baseline_end"),
+            "created_at": board.get("created_at"),
+            "updated_at": board.get("updated_at"),
+        }
+        cur.execute(
+            "INSERT OR REPLACE INTO studio_state (anahtar, deger) VALUES (?, ?)",
+            ("pano_meta", json.dumps(meta, ensure_ascii=False))
+        )
+
+        for s in board.get("sprints", []):
+            sid = s["id"]
+            cur.execute("""
+                INSERT OR REPLACE INTO sprintler
+                (id, ad, hedef, planlanan_gun, sira, durum,
+                 planlanan_baslangic, planlanan_bitis, gercek_baslangic, gercek_bitis)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                sid,
+                s.get("name") or "",
+                s.get("goal") or "",
+                s.get("planned_days") or 1,
+                s.get("order", 0),
+                s.get("status") or TODO,
+                s.get("planned_start"),
+                s.get("planned_end"),
+                s.get("actual_start"),
+                s.get("actual_end"),
+            ))
+
+            for t in s.get("tasks", []):
+                tid = t["id"]
+                ciktilar = json.dumps(t.get("outputs", []), ensure_ascii=False)
+                bagimlilik = json.dumps(t.get("depends_on", []), ensure_ascii=False)
+                cur.execute("""
+                    INSERT OR REPLACE INTO pano_gorevleri
+                    (id, sprint_id, baslik, aciklama, rol, phase, ciktilar, bagimlilik,
+                     durum, deneme, not_, baslangic, bitis, sure_s)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    tid,
+                    sid,
+                    t.get("title") or "",
+                    t.get("description") or "",
+                    t.get("role") or "",
+                    t.get("phase") or "develop",
+                    ciktilar,
+                    bagimlilik,
+                    t.get("status") or TODO,
+                    t.get("attempts", 0),
+                    t.get("note", ""),
+                    t.get("started_at"),
+                    t.get("finished_at"),
+                    t.get("duration_s"),
+                ))
+
+        conn.commit()
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------- yükle/kaydet
 def load(path: Path = BOARD_FILE) -> dict:
-    if not path.exists():
-        raise FileNotFoundError(
-            f"{path.name} yok. Önce planlayıcıyı çalıştırın: "
-            f"python studio_engine.py --plan"
-        )
-    board = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(board, dict) or "sprints" not in board:
-        raise ValueError(
-            f"{path.name} beklenen şemada değil (üst düzeyde 'sprints' yok). "
-            f"Yeniden planlayın: python studio_engine.py --replan"
-        )
-    return board
+    # 1. Önce studio.db'den yüklemeyi dene
+    db_board = db_load_board()
+    if db_board and db_board.get("sprints"):
+        return db_board
+
+    # 2. DB boşsa JSON dosyasından dene
+    if path.exists():
+        board = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(board, dict) and "sprints" in board:
+            try:
+                db_save_board(board)
+            except Exception:
+                pass
+            return board
+
+    raise FileNotFoundError(
+        f"Sprint panosu bulunamadı (ne studio.db'de ne de {path.name}'de var). "
+        f"Önce planlayıcıyı çalıştırın: python studio_engine.py --plan"
+    )
 
 
 def save(board: dict, path: Path = BOARD_FILE):
     board["updated_at"] = datetime.now().isoformat(timespec="seconds")
+    # 1. studio.db'ye yaz (Primary source of truth)
+    try:
+        db_save_board(board)
+    except Exception as e:
+        print(f"  [UYARI] studio.db pano yazma hatası: {e}", file=sys.stderr)
+
+    # 2. Geriye dönük uyumluluk için JSON'a da yaz (Dual-write)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(board, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -292,6 +545,36 @@ def mark(board: dict, task_id: str, status: str, note: str = ""):
         t["finished_at"] = time.time()
         if t.get("started_at"):
             t["duration_s"] = round(t["finished_at"] - t["started_at"], 1)
+
+    # studio.db'ye anında yansıt
+    try:
+        conn = db_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE pano_gorevleri
+                SET durum = ?, not_ = ?, deneme = ?, baslangic = ?, bitis = ?, sure_s = ?
+                WHERE id = ?
+            """, (
+                t["status"],
+                t.get("note", ""),
+                t.get("attempts", 0),
+                t.get("started_at"),
+                t.get("finished_at"),
+                t.get("duration_s"),
+                task_id,
+            ))
+            if s.get("actual_start"):
+                cur.execute(
+                    "UPDATE sprintler SET gercek_baslangic = ? WHERE id = ?",
+                    (s["actual_start"], s["id"])
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
     return t
 
 
@@ -358,11 +641,32 @@ def _bugun() -> str:
 
 def ledger_read() -> dict:
     d = {"tarih": _bugun(), "gorev": 0, "maliyet": 0.0, "ek_gorev": 0, "ek_butce": 0.0}
+    # 1. Önce studio.db'den oku
+    try:
+        conn = db_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM gunluk_kota WHERE tarih = ?", (_bugun(),))
+            row = cur.fetchone()
+            if row:
+                d["gorev"] = row["gorev"] or 0
+                d["maliyet"] = row["maliyet"] or 0.0
+                d["ek_gorev"] = row["ek_gorev"] or 0
+                d["ek_butce"] = row["ek_butce"] or 0.0
+                return d
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+    # 2. JSON fallback
     if LEDGER.exists():
         try:
             saved = json.loads(LEDGER.read_text(encoding="utf-8"))
             if saved.get("tarih") == _bugun():      # yeni gün = sıfırdan başla
                 d.update(saved)
+                # DB'ye de yaz
+                ledger_write(d)
         except (json.JSONDecodeError, OSError):
             pass
     return d
@@ -370,6 +674,28 @@ def ledger_read() -> dict:
 
 def ledger_write(d: dict):
     d["tarih"] = _bugun()
+    # 1. studio.db'ye yaz
+    try:
+        conn = db_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT OR REPLACE INTO gunluk_kota (tarih, gorev, maliyet, ek_gorev, ek_butce)
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                d["tarih"],
+                d.get("gorev", 0),
+                d.get("maliyet", 0.0),
+                d.get("ek_gorev", 0),
+                d.get("ek_butce", 0.0),
+            ))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"  [UYARI] studio.db kota yazma hatası: {e}", file=sys.stderr)
+
+    # 2. JSON'a yaz (Dual-write)
     LEDGER.parent.mkdir(parents=True, exist_ok=True)
     LEDGER.write_text(json.dumps(d, indent=2, ensure_ascii=False), encoding="utf-8")
 

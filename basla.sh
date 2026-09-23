@@ -18,6 +18,7 @@ set -uo pipefail
 cd "$(dirname "$0")" || exit 1
 
 PY=".venv/bin/python"
+[ -x "$PY" ] || PY="python3"
 LOG="pipeline.log"
 red()  { printf "\033[31m%s\033[0m\n" "$*"; }
 grn()  { printf "\033[32m%s\033[0m\n" "$*"; }
@@ -207,19 +208,29 @@ if cur.get("role"):
                 print(f"  {DIM}│ {sat[:80]}{NC}")
 
 # ── Sprint İlerlemesi ────────────────────────────────────────────────────────
-pano = root/"workspace/pano.json"
-if pano.exists():
+p = None
+try:
+    import studio_board as B
+    p = B.load()
+except Exception:
+    pano = root/"workspace/pano.json"
+    if pano.exists():
+        try:
+            p = json.load(open(pano))
+        except Exception:
+            pass
+
+if p and p.get("sprints"):
     try:
-        p = json.load(open(pano))
         sprints = p.get("sprints", [])
         total_s = len(sprints)
         done_s = sum(1 for s in sprints if s.get("status") == "DONE")
         all_tasks = [t for s in sprints for t in s.get("tasks", [])]
         total_t = len(all_tasks)
-        done_t = sum(1 for t in all_tasks if t.get("status") == "done")
-        fail_t = sum(1 for t in all_tasks if t.get("status") in ("error", "failed"))
+        done_t = sum(1 for t in all_tasks if t.get("status") in ("done", "DONE"))
+        fail_t = sum(1 for t in all_tasks if t.get("status") in ("error", "failed", "FAILED"))
 
-        print(f"\n{BOLD}  Sprint İlerlemesi{NC}")
+        print(f"\n{BOLD}  Sprint İlerlemesi (studio.db){NC}")
         print(f"  {'─'*58}")
         print(f"  Sprint  {bar(done_s, total_s)} {done_s}/{total_s}")
         print(f"  Görev   {bar(done_t, total_t)} {done_t}/{total_t}")
@@ -230,14 +241,14 @@ if pano.exists():
         aktif = next((s for s in sprints if s.get("status") in ("READY","RUNNING")), None)
         if aktif:
             tasks = aktif.get("tasks", [])
-            done_st = sum(1 for t in tasks if t.get("status") == "done")
+            done_st = sum(1 for t in tasks if t.get("status") in ("done", "DONE"))
             print(f"\n  {BOLD}Aktif:{NC} {aktif['id']} — {aktif.get('name','')[:45]}")
             print(f"         {bar(done_st, len(tasks), 16)} {done_st}/{len(tasks)}")
             for t in tasks:
                 st = t.get("status","?")
-                icon = (f"{GREEN}✓{NC}" if st=="done"
+                icon = (f"{GREEN}✓{NC}" if st in ("done", "DONE")
                         else f"{YELLOW}▸{NC}" if st in ("RUNNING","running","in_progress")
-                        else f"{RED}✗{NC}" if st in ("error","failed")
+                        else f"{RED}✗{NC}" if st in ("error","failed","FAILED")
                         else f"{DIM}·{NC}")
                 note = f" {DIM}{t.get('note','')[:35]}{NC}" if t.get("note") else ""
                 dur = f" {DIM}{t.get('duration_s',0):.0f}s{NC}" if t.get("duration_s") else ""
