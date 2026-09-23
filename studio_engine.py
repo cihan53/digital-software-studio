@@ -18,6 +18,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import time
 import subprocess
 import sys
@@ -1523,7 +1524,10 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
                     print(f"     [✓] {f.relative_to(ROOT)}")
 
     # Gerçek ortam doğrulaması / çalıştırma rehberi
-    note = verify_task_execution(task, sprint, interactive=interactive)
+    try:
+        note = verify_task_execution(task, sprint, interactive=interactive)
+    except Exception as e:
+        note = f"doğrulama uyarısı: {e}"
     B.mark(board, task["id"], B.DONE, note=note)
 
     # Müşteri talebi görevi ise durumu otomatik güncelle
@@ -1752,7 +1756,30 @@ def otomatik_kurtar_ve_temizle(board: dict) -> int:
         B.normalize(board)
         B.refresh(board)
         B.save(board)
-    return kurtarilan
+_CURRENT_ACTIVE_TASK = None
+
+
+def _setup_signal_handlers(board):
+    def _sig_handler(signum, frame):
+        global _CURRENT_ACTIVE_TASK
+        if _CURRENT_ACTIVE_TASK:
+            sprint, task = _CURRENT_ACTIVE_TASK
+            try:
+                if B.task_outputs_exist(task):
+                    B.mark(board, task["id"], B.DONE, "çıktılar doğrulandı [kapanış anında onaylandı]")
+                else:
+                    B.mark(board, task["id"], B.READY, "süreç durduruldu [hazır duruma alındı]")
+                B.refresh(board)
+                B.save(board)
+            except Exception:
+                pass
+        sys.exit(128 + signum)
+
+    try:
+        signal.signal(signal.SIGINT, _sig_handler)
+        signal.signal(signal.SIGTERM, _sig_handler)
+    except Exception:
+        pass
 
 
 def run_board(org: dict, brief: str, once: bool = False,
@@ -1768,6 +1795,7 @@ def run_board(org: dict, brief: str, once: bool = False,
         print(f"  [!] Kurtarma Ajanı uyarısı: {e}")
 
     board = B.load()
+    _setup_signal_handlers(board)
     # 1. Yarım kalan / hata veren süreçleri otomatik kurtar
     kurtarilan = otomatik_kurtar_ve_temizle(board)
     if kurtarilan > 0:
@@ -1888,10 +1916,32 @@ def run_board(org: dict, brief: str, once: bool = False,
             board = B.load()
             continue
 
+        global _CURRENT_ACTIVE_TASK
+        _CURRENT_ACTIVE_TASK = (sprint, task)
         B.mark(board, task["id"], B.RUNNING)
         B.save(board)
         onceki = spent_so_far()
-        ok = execute_task(org, task, sprint, brief, board, interactive=interactive)
+        ok = False
+        try:
+            ok = execute_task(org, task, sprint, brief, board, interactive=interactive)
+        except Exception as e:
+            print(f"\n[!] Görev yürütülürken beklenmedik hata: {e}", file=sys.stderr)
+            if B.task_outputs_exist(task):
+                B.mark(board, task["id"], B.DONE, note=f"çıktılar mevcut (hata sonrası: {str(e)[:50]})")
+                ok = True
+            else:
+                B.mark(board, task["id"], B.FAILED, note=f"hata: {str(e)[:100]}")
+        finally:
+            _CURRENT_ACTIVE_TASK = None
+            # Veritabanında RUNNING kalmasını kesin olarak engelle
+            _, cur_t = B.find_task(board, task["id"])
+            if cur_t and cur_t.get("status") == B.RUNNING:
+                if B.task_outputs_exist(task):
+                    B.mark(board, task["id"], B.DONE, note="çıktılar doğrulandı [otomatik kapatıldı]")
+                    ok = True
+                else:
+                    B.mark(board, task["id"], B.READY, note="süreç kesintiye uğradı [hazır duruma alındı]")
+
         gercek = spent_so_far() - onceki
         d = B.ledger_add(gercek)
         mg, mb = B.ledger_limits()

@@ -270,6 +270,11 @@ def load(path: Path = BOARD_FILE) -> dict:
     # 1. Önce studio.db'den yüklemeyi dene
     db_board = db_load_board()
     if db_board and db_board.get("sprints"):
+        # Eğer aktif bir koşucu yoksa, olası yetim (RUNNING) görevleri akıllıca kurtar
+        if not is_runner_active():
+            if recover_orphans(db_board):
+                refresh(db_board)
+                db_save_board(db_board)
         return db_board
 
     # 2. DB boşsa JSON dosyasından dene
@@ -447,16 +452,38 @@ def is_runner_active() -> bool:
         return False
 
 
+def task_outputs_exist(task: dict) -> bool:
+    """Görevin tanımlı tüm çıktılarının diskte oluşturulup oluşturulmadığını doğrular."""
+    outputs = task.get("outputs", [])
+    if not outputs or not isinstance(outputs, list):
+        return False
+    for out in outputs:
+        p = ROOT / out if not Path(out).is_absolute() else Path(out)
+        if not p.exists():
+            return False
+        if p.is_file() and p.stat().st_size == 0:
+            return False
+        if p.is_dir() and not any(p.iterdir()):
+            return False
+    return True
+
+
 def recover_orphans(board: dict) -> bool:
-    """Kapanmış veya çökmüş koşulardan arta kalan RUNNING durumundaki görevleri kurtarır."""
+    """Kapanmış veya çökmüş koşulardan arta kalan RUNNING durumundaki görevleri akıllıca kurtarır."""
     if is_runner_active():
         return False
     changed = False
     for s in board.get("sprints", []):
         for t in s.get("tasks", []):
             if t.get("status") == RUNNING:
-                t["status"] = READY
-                t["note"] = (t.get("note") or "") + " [yetim durumdan kurtarıldı]"
+                if task_outputs_exist(t):
+                    t["status"] = DONE
+                    t["note"] = (t.get("note") or "") + " [çıktılar mevcut, otomatik tamamlandı]"
+                    if not t.get("finished_at"):
+                        t["finished_at"] = time.time()
+                else:
+                    t["status"] = READY
+                    t["note"] = (t.get("note") or "") + " [süreç kapandı, hazır duruma alındı]"
                 changed = True
     if changed:
         refresh(board)
@@ -480,9 +507,15 @@ def refresh(board: dict) -> dict:
         statuses = {t["status"] for t in s["tasks"]}
 
         for t in s["tasks"]:
-            # Dışarıda çalışan aktif bir koşucu yoksa RUNNING kalmış yetim görevleri READY durumuna çek
+            # Dışarıda çalışan aktif bir koşucu yoksa RUNNING kalmış yetim görevleri akıllıca kurtar
             if t["status"] == RUNNING and not active:
-                t["status"] = READY
+                if task_outputs_exist(t):
+                    t["status"] = DONE
+                    t["note"] = (t.get("note") or "") + " [çıktılar doğrulandı]"
+                    if not t.get("finished_at"):
+                        t["finished_at"] = time.time()
+                else:
+                    t["status"] = READY
 
             if t["status"] in (DONE, SKIPPED, RUNNING, FAILED):
                 continue
@@ -569,6 +602,22 @@ def mark(board: dict, task_id: str, status: str, note: str = ""):
                     "UPDATE sprintler SET gercek_baslangic = ? WHERE id = ?",
                     (s["actual_start"], s["id"])
                 )
+
+            # Sprint durumunu da hesapla ve studio.db'ye anında yansıt
+            s_tasks = s.get("tasks", [])
+            s_statuses = {item["status"] for item in s_tasks}
+            if s_statuses and s_statuses <= TERMINAL:
+                s["status"] = DONE
+                if not s.get("actual_end"):
+                    s["actual_end"] = datetime.now().isoformat(timespec="seconds")
+                cur.execute(
+                    "UPDATE sprintler SET durum = ?, gercek_bitis = ? WHERE id = ?",
+                    (DONE, s["actual_end"], s["id"])
+                )
+            elif RUNNING in s_statuses:
+                s["status"] = RUNNING
+                cur.execute("UPDATE sprintler SET durum = ? WHERE id = ?", (RUNNING, s["id"]))
+
             conn.commit()
         finally:
             conn.close()
