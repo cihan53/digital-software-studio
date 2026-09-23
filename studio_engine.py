@@ -90,18 +90,59 @@ def acquire_lock() -> bool:
 
 
 def load_state() -> dict:
+    state = {"completed_outputs": [], "completed_steps": []}
+    # 1. Önce studio.db'den oku
+    try:
+        conn = B.db_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT anahtar, deger FROM studio_state WHERE anahtar IN ('completed_outputs', 'completed_steps')")
+            rows = dict(cur.fetchall())
+            if rows:
+                if "completed_outputs" in rows:
+                    state["completed_outputs"] = json.loads(rows["completed_outputs"])
+                if "completed_steps" in rows:
+                    state["completed_steps"] = json.loads(rows["completed_steps"])
+                return state
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+    # 2. JSON fallback
     if STATE_FILE.exists():
         try:
-            state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
-            state.setdefault("completed_outputs", [])
-            state.setdefault("completed_steps", [])
+            s = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+            state["completed_outputs"] = s.get("completed_outputs", [])
+            state["completed_steps"] = s.get("completed_steps", [])
+            save_state(state)
             return state
         except json.JSONDecodeError:
             print("  [!] .state.json bozuk, sıfırdan başlanıyor.", file=sys.stderr)
-    return {"completed_outputs": [], "completed_steps": []}
+    return state
 
 
 def save_state(state: dict):
+    # 1. studio.db'ye yaz
+    try:
+        conn = B.db_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT OR REPLACE INTO studio_state (anahtar, deger) VALUES (?, ?)",
+                ("completed_outputs", json.dumps(state.get("completed_outputs", []), ensure_ascii=False))
+            )
+            cur.execute(
+                "INSERT OR REPLACE INTO studio_state (anahtar, deger) VALUES (?, ?)",
+                ("completed_steps", json.dumps(state.get("completed_steps", []), ensure_ascii=False))
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"  [UYARI] studio.db state yazma hatası: {e}", file=sys.stderr)
+
+    # 2. JSON'a yaz (Dual-write)
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     STATE_FILE.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -271,6 +312,28 @@ def trace_end(meta: dict, system_prompt: str, user_prompt: str,
     summary["tokens_total"] = usage.get("total_tokens", 0) or (summary["tokens_in"] + summary["tokens_out"])
     with (TRACE_DIR / "index.jsonl").open("a", encoding="utf-8") as f:
         f.write(json.dumps(summary, ensure_ascii=False) + "\n")
+
+    # studio.db maliyet_kayitlari tablosuna ekle
+    try:
+        conn = B.db_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO maliyet_kayitlari (tarih, rol, backend, model, cost_usd, detay)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                datetime.now().isoformat(),
+                summary.get("role"),
+                summary.get("backend"),
+                summary.get("model"),
+                summary.get("cost_usd", 0.0),
+                json.dumps(summary, ensure_ascii=False)
+            ))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
 
     (TRACE_DIR / "current.json").write_text("{}", encoding="utf-8")
 
@@ -1499,7 +1562,22 @@ def tahmini_gorev_maliyeti(task: dict, varsayilan: float = 0.80) -> float:
 
 
 def spent_so_far() -> float:
-    """Bu projede şimdiye kadar harcanan toplam (iz kayıtlarından)."""
+    """Bu projede şimdiye kadar harcanan toplam (studio.db / iz kayıtlarından)."""
+    # 1. studio.db'den dene
+    try:
+        conn = B.db_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT SUM(cost_usd) FROM maliyet_kayitlari")
+            row = cur.fetchone()
+            if row and row[0] is not None and float(row[0]) > 0:
+                return float(row[0])
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+    # 2. JSONL fallback
     f = TRACE_DIR / "index.jsonl"
     if not f.exists():
         return 0.0

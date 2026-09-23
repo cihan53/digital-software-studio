@@ -27,6 +27,10 @@ TALEP_JSON = ROOT / "workspace/docs/musteri_talepleri.json"
 PANO_JSON = ROOT / "workspace/pano.json"
 ORG_CHART = ROOT / "org_chart.json"
 COZUM_DIR = ROOT / "workspace/docs/cozum_planlari"
+STATE_JSON = ROOT / "workspace/.state.json"
+KOTA_JSON = ROOT / "workspace/.gunluk.json"
+FAZLAR_JSON = ROOT / "workspace/docs/fazlar.json"
+COSTS_JSONL = ROOT / "workspace/metrics/costs.jsonl"
 
 KONTROL_MODU = "--kontrol" in sys.argv
 
@@ -104,6 +108,39 @@ CREATE TABLE IF NOT EXISTS ekip_rolleri (
     backend         TEXT,
     model           TEXT,
     max_kelime      INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS studio_state (
+    anahtar         TEXT PRIMARY KEY,
+    deger           TEXT    -- JSON string veya text
+);
+
+CREATE TABLE IF NOT EXISTS gunluk_kota (
+    tarih           TEXT PRIMARY KEY,
+    gorev           INTEGER DEFAULT 0,
+    maliyet         REAL DEFAULT 0.0,
+    ek_gorev        INTEGER DEFAULT 0,
+    ek_butce        REAL DEFAULT 0.0
+);
+
+CREATE TABLE IF NOT EXISTS maliyet_kayitlari (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    tarih           TEXT,
+    rol             TEXT,
+    backend         TEXT,
+    model           TEXT,
+    cost_usd        REAL,
+    detay           TEXT
+);
+
+CREATE TABLE IF NOT EXISTS fazlar (
+    id              TEXT PRIMARY KEY,
+    ad              TEXT NOT NULL,
+    aciklama        TEXT,
+    durum           TEXT,
+    hedef_tarih     TEXT,
+    kilitli         INTEGER DEFAULT 0,
+    onkosul_faz     TEXT
 );
 """
 
@@ -285,12 +322,121 @@ def ekip_rolleri_aktar(conn):
 
 
 # ==============================================================================
+# MOTOR STATE, KOTA, FAZLAR, MALİYETLER
+# ==============================================================================
+
+def state_aktar(conn):
+    if not STATE_JSON.exists():
+        return 0
+    try:
+        data = json.loads(STATE_JSON.read_text(encoding="utf-8"))
+        for k, v in data.items():
+            conn.execute(
+                "INSERT OR REPLACE INTO studio_state (anahtar, deger) VALUES (?, ?)",
+                (k, json.dumps(v, ensure_ascii=False) if isinstance(v, (list, dict)) else str(v))
+            )
+        conn.commit()
+        log("🔄", f"Motor state ({len(data)} anahtar) aktarıldı → studio_state tablosu", GREEN)
+        return len(data)
+    except Exception as e:
+        log("⚠️", f"State aktarım hatası: {e}", YELLOW)
+        return 0
+
+
+def kota_aktar(conn):
+    if not KOTA_JSON.exists():
+        return 0
+    try:
+        data = json.loads(KOTA_JSON.read_text(encoding="utf-8"))
+        tarih = data.get("tarih")
+        if tarih:
+            conn.execute("""
+                INSERT OR REPLACE INTO gunluk_kota (tarih, gorev, maliyet, ek_gorev, ek_butce)
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                tarih,
+                data.get("gorev", 0),
+                data.get("maliyet", 0.0),
+                data.get("ek_gorev", 0),
+                data.get("ek_butce", 0.0)
+            ))
+            conn.commit()
+            log("💰", f"Günlük kota ({tarih}) aktarıldı → gunluk_kota tablosu", GREEN)
+            return 1
+    except Exception as e:
+        log("⚠️", f"Kota aktarım hatası: {e}", YELLOW)
+    return 0
+
+
+def fazlar_aktar(conn):
+    if not FAZLAR_JSON.exists():
+        return 0
+    try:
+        data = json.loads(FAZLAR_JSON.read_text(encoding="utf-8"))
+        fazlar = data.get("fazlar", [])
+        for f in fazlar:
+            conn.execute("""
+                INSERT OR REPLACE INTO fazlar (id, ad, aciklama, durum, hedef_tarih, kilitli, onkosul_faz)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                f.get("id"),
+                f.get("ad"),
+                f.get("aciklama"),
+                f.get("durum"),
+                f.get("hedef_tarih"),
+                1 if f.get("kilitli") else 0,
+                f.get("onkosul_faz")
+            ))
+        conn.commit()
+        log("🎯", f"{len(fazlar)} faz aktarıldı → fazlar tablosu", GREEN)
+        return len(fazlar)
+    except Exception as e:
+        log("⚠️", f"Faz aktarım hatası: {e}", YELLOW)
+        return 0
+
+
+def maliyetler_aktar(conn):
+    if not COSTS_JSONL.exists():
+        return 0
+    n = 0
+    try:
+        with open(COSTS_JSONL, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                c = json.loads(line)
+                conn.execute("""
+                    INSERT INTO maliyet_kayitlari (tarih, rol, backend, model, cost_usd, detay)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    c.get("timestamp") or c.get("tarih"),
+                    c.get("role") or c.get("rol"),
+                    c.get("backend"),
+                    c.get("model"),
+                    c.get("cost_usd") or 0.0,
+                    json.dumps(c, ensure_ascii=False)
+                ))
+                n += 1
+        conn.commit()
+        if n:
+            log("💵", f"{n} maliyet kaydı aktarıldı → maliyet_kayitlari tablosu", GREEN)
+        return n
+    except Exception as e:
+        log("⚠️", f"Maliyet aktarım hatası: {e}", YELLOW)
+        return 0
+
+
+# ==============================================================================
 # RAPOR
 # ==============================================================================
 
 def rapor_yazdir(conn):
     print(f"\n  {BOLD}{CYAN}── Veritabanı Özeti ({DB_PATH.name}) ────────────────────{NC}")
-    tablolar = ["talepler", "cozum_planlari", "sprintler", "pano_gorevleri", "ekip_rolleri"]
+    tablolar = [
+        "talepler", "cozum_planlari", "sprintler", "pano_gorevleri",
+        "ekip_rolleri", "studio_state", "gunluk_kota", "maliyet_kayitlari", "fazlar"
+    ]
     for tablo in tablolar:
         try:
             sayi = conn.execute(f"SELECT COUNT(*) FROM {tablo}").fetchone()[0]
@@ -344,6 +490,10 @@ def main():
     cozum_planlari_aktar(conn)
     pano_aktar(conn)
     ekip_rolleri_aktar(conn)
+    state_aktar(conn)
+    kota_aktar(conn)
+    fazlar_aktar(conn)
+    maliyetler_aktar(conn)
 
     rapor_yazdir(conn)
     conn.close()
