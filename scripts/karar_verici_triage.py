@@ -67,17 +67,84 @@ VARSAYILAN_FAZLAR = {
 }
 
 
+def db_conn():
+    if B and hasattr(B, "db_conn"):
+        try:
+            return B.db_conn()
+        except Exception:
+            pass
+    import sqlite3
+    db_path = ROOT / "studio.db"
+    if not db_path.exists():
+        return None
+    try:
+        conn = sqlite3.connect(str(db_path), timeout=30.0)
+        conn.row_factory = sqlite3.Row
+        return conn
+    except Exception:
+        return None
+
+
 def load_fazlar() -> dict:
+    # 1. Önce studio.db'den oku
+    try:
+        conn = db_conn()
+        if conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM fazlar ORDER BY id ASC")
+            rows = cur.fetchall()
+            if rows:
+                fazlar = []
+                for r in rows:
+                    fazlar.append({
+                        "id": r["id"],
+                        "ad": r["ad"],
+                        "aciklama": r["aciklama"] or "",
+                        "durum": r["durum"] or "PLANLANDI",
+                        "hedef_tarih": r["hedef_tarih"] or "",
+                        "kilitli": bool(r["kilitli"]),
+                        "onkosul_faz": r["onkosul_faz"],
+                    })
+                return {"fazlar": fazlar}
+    except Exception:
+        pass
+
+    # 2. JSON fallback
     if not FAZLAR_FILE.exists():
         save_fazlar(VARSAYILAN_FAZLAR)
         return VARSAYILAN_FAZLAR
     try:
-        return json.loads(FAZLAR_FILE.read_text(encoding="utf-8"))
+        data = json.loads(FAZLAR_FILE.read_text(encoding="utf-8"))
+        save_fazlar(data)
+        return data
     except Exception:
         return VARSAYILAN_FAZLAR
 
 
 def save_fazlar(data: dict):
+    # 1. studio.db'ye yaz
+    try:
+        conn = db_conn()
+        if conn:
+            cur = conn.cursor()
+            for f in data.get("fazlar", []):
+                cur.execute("""
+                    INSERT OR REPLACE INTO fazlar (id, ad, aciklama, durum, hedef_tarih, kilitli, onkosul_faz)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    f.get("id"),
+                    f.get("ad") or "",
+                    f.get("aciklama") or "",
+                    f.get("durum") or "PLANLANDI",
+                    f.get("hedef_tarih") or "",
+                    1 if f.get("kilitli") else 0,
+                    f.get("onkosul_faz"),
+                ))
+            conn.commit()
+    except Exception:
+        pass
+
+    # 2. JSON dual-write
     FAZLAR_FILE.parent.mkdir(parents=True, exist_ok=True)
     FAZLAR_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
