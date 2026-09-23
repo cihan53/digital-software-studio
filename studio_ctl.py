@@ -67,8 +67,23 @@ def runner_alive() -> bool:
 def render_design(cur: dict, cols: int) -> str:
     """Pano henüz yokken tasarım aşamasının ilerlemesini gösterir."""
     org = read_json(ROOT / "org_chart.json", {"hierarchy": []})
-    state = read_json(ROOT / "workspace" / ".state.json",
-                      {"completed_steps": [], "completed_outputs": []})
+    state = {"completed_steps": [], "completed_outputs": []}
+    # Önce studio.db'den oku
+    try:
+        conn = B.db_conn()
+        try:
+            cur_db = conn.cursor()
+            cur_db.execute("SELECT anahtar, deger FROM studio_state WHERE anahtar IN ('completed_steps', 'completed_outputs')")
+            rows = dict(cur_db.fetchall())
+            if "completed_steps" in rows:
+                state["completed_steps"] = json.loads(rows["completed_steps"])
+            if "completed_outputs" in rows:
+                state["completed_outputs"] = json.loads(rows["completed_outputs"])
+        finally:
+            conn.close()
+    except Exception:
+        state = read_json(ROOT / "workspace" / ".state.json",
+                          {"completed_steps": [], "completed_outputs": []})
     done = set(state.get("completed_steps", []))
     design = [a for a in org["hierarchy"] if a.get("stage", "design") == "design"]
     active = cur.get("role")
