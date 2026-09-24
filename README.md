@@ -42,7 +42,7 @@ flowchart TD
     B --> E["UX/UI Lideri: Tasarım Sistemi & Ekranlar"]
     B --> F["Tasarım Denetçisi: WCAG 2.1 AA Kontrolü"]
     
-    F --> G["Sprint Panosu Üretimi (pano.json)"]
+    F --> G["Sprint Panosu Üretimi (studio.db)"]
     G --> H["Aşama 2: Faz & Yapım Döngüsü"]
     
     H --> I["Developer (Backend / Web / Mobil) Kodlar"]
@@ -116,6 +116,11 @@ Stüdyo çalışırken terminal üzerinden canlı olarak izlenebilir:
 | **`./basla.sh --kurtar`** | Kurtarma ajanını çalıştırır, yarım kalan işleri ve deployları tamamlar. |
 | **`./basla.sh --onayla`** | Günlük kota dolduğunda ek görev izni verir. |
 | **`./basla.sh --durdur`** | Çalışan stüdyoyu nazikçe durdurur. |
+| **`./basla.sh --oncelik <görev> <n>`** | Görev önceliğini değiştirir (büyük = önce koşar). |
+| **`./basla.sh --sira <görev> <poz>`** | Görevi sprint içinde yeniden sıralar. |
+| **`./basla.sh --sprint-sira <sprint> <poz>`** | Sprint sırasını değiştirir. |
+| **`./basla.sh --gec <görev> [--force]`** | Başka bir göreve geçer; `--force` çağrıyı anında keser. |
+| **`./basla.sh --atla [<görev>] [--force]`** | Görevi atlar (id yoksa koşan/sıradaki). |
 | **`./musteri.sh`** | Müşteri denetim masasını açar. |
 
 ---

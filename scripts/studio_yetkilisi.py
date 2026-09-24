@@ -491,7 +491,7 @@ def tum_bekleyenleri_planla():
 def otomatik_musteri_talepleri_senkronize_et() -> int:
     """Bekleyen tüm müşteri taleplerini algılar:
     1. Planı çıkmamış olanlara plan çıkarır ve GitHub issue altına postalar.
-    2. Panoya (pano.json) henüz eklenmemiş olanlar için yeni bir sprint fazı açıp
+    2. Panoya (studio.db) henüz eklenmemiş olanlar için yeni bir sprint fazı açıp
        geliştirme ve UAT doğrulama görevlerini ekler.
     3. Eklenen talep sayısını döner.
     """

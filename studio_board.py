@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import sqlite3
 import sys
 import time
@@ -19,7 +20,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 WORKSPACE = ROOT / "workspace"
-BOARD_FILE = WORKSPACE / "pano.json"
+# Tek doğruluk kaynağı studio.db'dir. Eski sürümlerde pano.json kullanılıyordu;
+# dosya bulunursa BİR KEZ studio.db'ye aktarılıp _arsiv/ altına taşınır.
+LEGACY_BOARD = WORKSPACE / "pano.json"
 DB_PATH = ROOT / "studio.db"
 
 TODO, READY, RUNNING, BLOCKED, DONE, FAILED, SKIPPED = (
@@ -58,7 +61,10 @@ CREATE TABLE IF NOT EXISTS pano_gorevleri (
     not_        TEXT,
     baslangic   TEXT,
     bitis       TEXT,
-    sure_s      REAL
+    sure_s      REAL,
+    oncelik     INTEGER DEFAULT 0,
+    sira        INTEGER DEFAULT 0,
+    talep_id    TEXT
 );
 
 CREATE TABLE IF NOT EXISTS studio_state (
@@ -97,11 +103,27 @@ def db_conn() -> sqlite3.Connection:
     if not _SCHEMA_INITIALIZED:
         try:
             conn.executescript(SCHEMA_INIT)
+            _db_migrate(conn)
             conn.commit()
             _SCHEMA_INITIALIZED = True
         except Exception:
             pass
     return conn
+
+
+def _db_migrate(conn: sqlite3.Connection):
+    """Var olan veritabanlarına sonradan eklenen kolonları ekler."""
+    cur = conn.cursor()
+    try:
+        cur.execute("PRAGMA table_info(pano_gorevleri)")
+        mevcut = {r["name"] for r in cur.fetchall()}
+        for col, tip in (("oncelik", "INTEGER NOT NULL DEFAULT 0"),
+                         ("sira", "INTEGER NOT NULL DEFAULT 0"),
+                         ("talep_id", "TEXT")):
+            if col not in mevcut:
+                cur.execute(f"ALTER TABLE pano_gorevleri ADD COLUMN {col} {tip}")
+    except Exception:
+        pass
 
 
 def db_load_board() -> dict | None:
@@ -137,7 +159,8 @@ def db_load_board() -> dict | None:
         sprints = []
         for sr in sprint_rows:
             sid = sr["id"]
-            cur.execute("SELECT * FROM pano_gorevleri WHERE sprint_id = ? ORDER BY id ASC", (sid,))
+            cur.execute("SELECT * FROM pano_gorevleri WHERE sprint_id = ? "
+                        "ORDER BY sira ASC, id ASC", (sid,))
             task_rows = cur.fetchall()
             tasks = []
             for tr in task_rows:
@@ -168,6 +191,9 @@ def db_load_board() -> dict | None:
                     "started_at": tr["baslangic"],
                     "finished_at": tr["bitis"],
                     "duration_s": tr["sure_s"],
+                    "priority": tr["oncelik"] or 0,
+                    "order": tr["sira"] or 0,
+                    "talep_id": tr["talep_id"],
                 })
 
             sprints.append({
@@ -199,8 +225,6 @@ def db_load_board() -> dict | None:
 
 
 def db_save_board(board: dict):
-    if not DB_PATH.exists():
-        return
     conn = db_conn()
     try:
         cur = conn.cursor()
@@ -241,8 +265,8 @@ def db_save_board(board: dict):
                 cur.execute("""
                     INSERT OR REPLACE INTO pano_gorevleri
                     (id, sprint_id, baslik, aciklama, rol, phase, ciktilar, bagimlilik,
-                     durum, deneme, not_, baslangic, bitis, sure_s)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     durum, deneme, not_, baslangic, bitis, sure_s, oncelik, sira, talep_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     tid,
                     sid,
@@ -258,7 +282,27 @@ def db_save_board(board: dict):
                     t.get("started_at"),
                     t.get("finished_at"),
                     t.get("duration_s"),
+                    t.get("priority", 0),
+                    t.get("order", 0),
+                    t.get("talep_id"),
                 ))
+
+        # Panodan kaldırılan sprint/görev satırlarını temizle: DB tek kaynak.
+        # FK nedeniyle önce görevler (çocuk), sonra sprint'ler (ebeveyn) silinir.
+        sprint_ids = [s["id"] for s in board.get("sprints", [])]
+        task_ids = [t["id"] for _, t in all_tasks(board)]
+        if task_ids:
+            cur.execute(
+                f"DELETE FROM pano_gorevleri WHERE id NOT IN ({','.join('?' * len(task_ids))})",
+                task_ids)
+        else:
+            cur.execute("DELETE FROM pano_gorevleri")
+        if sprint_ids:
+            cur.execute(
+                f"DELETE FROM sprintler WHERE id NOT IN ({','.join('?' * len(sprint_ids))})",
+                sprint_ids)
+        else:
+            cur.execute("DELETE FROM sprintler")
 
         conn.commit()
     finally:
@@ -266,41 +310,70 @@ def db_save_board(board: dict):
 
 
 # ---------------------------------------------------------------- yükle/kaydet
-def load(path: Path = BOARD_FILE) -> dict:
-    # 1. Önce studio.db'den yüklemeyi dene
-    db_board = db_load_board()
-    if db_board and db_board.get("sprints"):
-        return db_board
+def _migrate_legacy_board():
+    """Eski sürümden kalan workspace/pano.json varsa studio.db'ye aktarır.
 
-    # 2. DB boşsa JSON dosyasından dene
-    if path.exists():
-        board = json.loads(path.read_text(encoding="utf-8"))
-        if isinstance(board, dict) and "sprints" in board:
-            try:
-                db_save_board(board)
-            except Exception:
-                pass
-            return board
+    Dosya tek seferde _arsiv/ altına taşınır; pano.json artık hiçbir yerde
+    okunmaz/yazılmaz — tek doğruluk kaynağı studio.db'dir.
+    """
+    if not LEGACY_BOARD.exists():
+        return
+    try:
+        board = json.loads(LEGACY_BOARD.read_text(encoding="utf-8"))
+        if isinstance(board, dict) and board.get("sprints"):
+            db_save_board(board)
+            print("  [i] Eski pano.json studio.db'ye aktarıldı.")
+    except Exception as e:
+        print(f"  [UYARI] pano.json içe aktarılamadı: {e}", file=sys.stderr)
+    try:
+        arsiv = ROOT / "_arsiv"
+        arsiv.mkdir(parents=True, exist_ok=True)
+        hedef = arsiv / f"pano-{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        LEGACY_BOARD.replace(hedef)
+    except OSError:
+        LEGACY_BOARD.unlink(missing_ok=True)
 
+
+def board_exists() -> bool:
+    """studio.db'de geçerli bir sprint panosu var mı?"""
+    _migrate_legacy_board()
+    board = db_load_board()
+    return bool(board and board.get("sprints"))
+
+
+def load() -> dict:
+    _migrate_legacy_board()
+    board = db_load_board()
+    if board and board.get("sprints"):
+        return board
     raise FileNotFoundError(
-        f"Sprint panosu bulunamadı (ne studio.db'de ne de {path.name}'de var). "
-        f"Önce planlayıcıyı çalıştırın: python studio_engine.py --plan"
+        "Sprint panosu bulunamadı (studio.db'de sprint kaydı yok). "
+        "Önce planlayıcıyı çalıştırın: python studio_engine.py --plan"
     )
 
 
-def save(board: dict, path: Path = BOARD_FILE):
+def save(board: dict):
     board["updated_at"] = datetime.now().isoformat(timespec="seconds")
-    # 1. studio.db'ye yaz (Primary source of truth)
     try:
         db_save_board(board)
     except Exception as e:
         print(f"  [UYARI] studio.db pano yazma hatası: {e}", file=sys.stderr)
 
-    # 2. Geriye dönük uyumluluk için JSON'a da yaz (Dual-write)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(board, indent=2, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(path)          # atomik: yarım yazılmış pano kalmasın
+
+def board_reset():
+    """--sifirla: pano tablolarını ve meta kaydını tamamen temizler."""
+    try:
+        conn = db_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM pano_gorevleri")
+            cur.execute("DELETE FROM sprintler")
+            cur.execute("DELETE FROM studio_state WHERE anahtar = 'pano_meta'")
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"  [UYARI] studio.db pano sıfırlanamadı: {e}", file=sys.stderr)
 
 
 def all_tasks(board: dict):
@@ -357,11 +430,14 @@ def normalize(board: dict) -> dict:
         s.setdefault("actual_start", None)
         s.setdefault("actual_end", None)
         s.setdefault("planned_days", max(1, len(s["tasks"]) // 2 or 1))
-        for t in s["tasks"]:
+        for ti, t in enumerate(s["tasks"]):
             t.setdefault("status", TODO)
             t.setdefault("depends_on", [])
             t.setdefault("attempts", 0)
             t.setdefault("note", "")
+            t.setdefault("priority", 0)
+            t.setdefault("order", ti)
+            t.setdefault("talep_id", None)
     return board
 
 
@@ -518,15 +594,103 @@ def refresh(board: dict) -> dict:
 
 
 def next_ready(board: dict):
-    """Yürütülecek tek bir görev döndürür (faz sırasına saygı duyarak)."""
+    """Yürütülecek tek bir görev döndürür (öncelik ve faz sırasına saygı duyarak)."""
     for s in sorted(board["sprints"], key=lambda x: x["order"]):
         ready = [t for t in s["tasks"] if t["status"] == READY]
         if ready:
-            ready.sort(key=lambda t: (PHASE_ORDER.get(t["phase"], 9), t["id"]))
+            # Önce kullanıcı önceliği (büyük önce koşar), sonra faz ve pano sırası.
+            ready.sort(key=lambda t: (-(t.get("priority") or 0),
+                                      PHASE_ORDER.get(t["phase"], 9),
+                                      t.get("order", 0), t["id"]))
             return s, ready[0]
         if any(t["status"] not in TERMINAL for t in s["tasks"]):
             return None, None      # bu sprint bitmeden sonrakine geçilmez
     return None, None
+
+
+def find_running(board: dict):
+    """Şu an RUNNING durumundaki ilk görevi (sprint, görev) döndürür."""
+    for s, t in all_tasks(board):
+        if t["status"] == RUNNING:
+            return s, t
+    return None, None
+
+
+# ---------------------------------------------------------------- öncelik/sıra
+# Bunlar doğrudan studio.db üzerinde çalışır; koşucu 'reload' bayrağını görünce
+# panoyu yeniden yükler. Böylece koşu sırasında bellekteki pano ezilmez.
+def set_priority(task_id: str, value: int) -> bool:
+    """Görev önceliğini ayarlar. Büyük değer = daha önce koşar (varsayılan 0)."""
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("UPDATE pano_gorevleri SET oncelik = ? WHERE id = ?",
+                    (int(value), task_id))
+        ok = cur.rowcount > 0
+        conn.commit()
+        return ok
+    finally:
+        conn.close()
+
+
+def reorder_task(task_id: str, new_pos: int) -> bool:
+    """Görevi kendi sprint'i içinde <new_pos>. sıraya taşır (0 tabanlı)."""
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT sprint_id FROM pano_gorevleri WHERE id = ?", (task_id,))
+        row = cur.fetchone()
+        if not row:
+            return False
+        sid = row["sprint_id"]
+        cur.execute("SELECT id FROM pano_gorevleri WHERE sprint_id = ? "
+                    "ORDER BY sira ASC, id ASC", (sid,))
+        ids = [r["id"] for r in cur.fetchall()]
+        if task_id not in ids:
+            return False
+        ids.remove(task_id)
+        pos = max(0, min(int(new_pos), len(ids)))
+        ids.insert(pos, task_id)
+        for i, tid in enumerate(ids):
+            cur.execute("UPDATE pano_gorevleri SET sira = ? WHERE id = ?", (i, tid))
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def reorder_sprint(sprint_id: str, new_pos: int) -> bool:
+    """Sprint'i <new_pos>. sıraya taşır (0 tabanlı); diğerleri kayar."""
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM sprintler ORDER BY sira ASC, id ASC")
+        ids = [r["id"] for r in cur.fetchall()]
+        if sprint_id not in ids:
+            return False
+        ids.remove(sprint_id)
+        pos = max(0, min(int(new_pos), len(ids)))
+        ids.insert(pos, sprint_id)
+        for i, sid in enumerate(ids):
+            cur.execute("UPDATE sprintler SET sira = ? WHERE id = ?", (i, sid))
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def task_summary(task_id: str) -> dict | None:
+    """CLI çıktıları için tek görevin özetini döndürür."""
+    try:
+        board = load()
+    except Exception:
+        return None
+    s, t = find_task(board, task_id)
+    if t is None:
+        return None
+    return {"sprint": s["id"], "id": t["id"], "title": t.get("title", ""),
+            "status": t["status"], "priority": t.get("priority", 0),
+            "order": t.get("order", 0)}
 
 
 def mark(board: dict, task_id: str, status: str, note: str = ""):
@@ -591,6 +755,37 @@ def progress(board: dict) -> dict:
     }
 
 
+# ---------------------------------------------------------------- canlı ortam
+# UAT/ziyaretçi testleri canlı sisteme ihtiyaç duyar (canli.sh):
+# frontend localhost:3000 (Nuxt), backend localhost:3001 (Fastify).
+LIVE_PORTS = (3000, 3001)
+
+
+def live_status() -> dict:
+    """Canlı ortam portlarının durumu: {3000: bool, 3001: bool}."""
+    out = {}
+    for port in LIVE_PORTS:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.4):
+                out[port] = True
+        except OSError:
+            out[port] = False
+    return out
+
+
+def live_up() -> bool:
+    return all(live_status().values())
+
+
+def needs_live(task: dict) -> bool:
+    """Görev canlı sistem gerektiriyor mu? (UAT ve ziyaretçi/test sürüşleri)"""
+    role = (task.get("role") or "").lower()
+    txt = f"{task.get('title', '')} {task.get('description', '')}".lower()
+    return ("uat" in role or "uat" in txt
+            or "visitor" in role or "ziyaret" in txt
+            or "screen_" in role)
+
+
 # ---------------------------------------------------------------- kontrol
 # Çalışan bir çağrı yarıda kesilemez (para harcanmış olur), ama iki çağrı
 # ARASINDA durdurulabilir. Kontrol ekranı buraya dosya bırakır, koşucu okur.
@@ -624,6 +819,9 @@ def control_state() -> dict:
         "paused": is_set("pause"),
         "stopping": is_set("stop"),
         "skip": value_of("skip"),
+        "goto": value_of("goto"),
+        "force": is_set("force"),
+        "reload": is_set("reload"),
     }
 
 

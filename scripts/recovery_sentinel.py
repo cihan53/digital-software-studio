@@ -12,11 +12,8 @@ Bu ajan, stüdyo açılırken veya çalışma sırasında:
 4. "Yarım kalan işler ve deploy tamamlandı" raporunu verip stüdyonun olağan akışına devam etmesini sağlar.
 """
 
-import json
-import os
 import subprocess
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
 
@@ -96,19 +93,18 @@ class RecoverySentinelAgent:
         return durum
 
     def pano_yarim_isleri_incele(self) -> dict:
-        """Panodaki yarım kalmış, çökmüş veya takılmış görevleri analiz eder."""
+        """Panodaki (studio.db) yarım kalmış, çökmüş veya takılmış görevleri analiz eder."""
         rapor = {
             "yetim_running": [],
             "failed_tasks": [],
             "blocked_tasks": [],
             "toplam_yarim": 0
         }
-        pano_file = self.root / "workspace" / "pano.json"
-        if not pano_file.exists():
+        if not B:
             return rapor
 
         try:
-            board = json.loads(pano_file.read_text(encoding="utf-8"))
+            board = B.load()
             for s in board.get("sprints", []):
                 for t in s.get("tasks", []):
                     st = t.get("status")

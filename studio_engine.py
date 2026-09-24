@@ -18,6 +18,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import time
 import subprocess
 import sys
@@ -474,6 +475,55 @@ class CliResult:
         self.usage = usage
 
 
+class CallAborted(Exception):
+    """Çalışan görev/çağrı kontrol isteğiyle kesildi (stop, skip, goto, force).
+
+    RuntimeError'dan ayrı tutulur: kota/limit yeniden deneme döngüsüne
+    girmesin, doğrudan koşucunun kontrol işleyicisine ulaşsın.
+    """
+
+
+def _run_cli(cmd: list, cwd: Path, timeout: int, name: str):
+    """CLI'yi kesilebilir şekilde çalıştırır.
+
+    Normal akışta subprocess.run ile aynıdır. Farkı: her yarım saniyede
+    workspace/.control/force bayrağına bakılır; bayrak varsa süreç grubu
+    SIGTERM ile öldürülür ve CallAborted fırlatılır (--gec/--atla --force).
+    """
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, cwd=str(cwd), start_new_session=True,
+    )
+    deadline = time.time() + timeout
+    try:
+        while proc.poll() is None:
+            if B.is_set("force"):
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                    proc.wait(timeout=5)
+                except (OSError, subprocess.TimeoutExpired):
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    except OSError:
+                        pass
+                raise CallAborted(f"{name} çağrısı kullanıcı isteğiyle kesildi (--force).")
+            if time.time() > deadline:
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                except OSError:
+                    pass
+                raise RuntimeError(f"{name} {timeout}s içinde yanıt vermedi.")
+            time.sleep(0.5)
+        out, err = proc.communicate()
+    finally:
+        if proc.poll() is None:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except OSError:
+                pass
+    return proc.returncode, out or "", err or ""
+
+
 def find_exe(name: str) -> str | None:
     """Komutu bulur. PATH eksik olsa bile STUDIO_<AD>_BIN ve bilinen dizinler taranır."""
     override = os.getenv(f"STUDIO_{name.upper()}_BIN")
@@ -534,21 +584,14 @@ def _call_agy(system_prompt: str, user_prompt: str, effort: str, model: str,
     cmd.append(f"-p={merged}")
 
     run_cwd = ROOT if tools else SCRATCH_DIR
-    try:
-        proc = subprocess.run(
-            cmd, capture_output=True, text=True,
-            timeout=AGY_TIMEOUT + 60, cwd=run_cwd,
-            start_new_session=True,
-        )
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(f"agy {AGY_TIMEOUT}s içinde yanıt vermedi.")
+    rc, out, err = _run_cli(cmd, run_cwd, AGY_TIMEOUT + 60, "agy")
 
-    if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or "").strip()[:500]
-        raise RuntimeError(f"agy hata koduyla çıktı ({proc.returncode}): {detail}")
+    if rc != 0:
+        detail = (err or out or "").strip()[:500]
+        raise RuntimeError(f"agy hata koduyla çıktı ({rc}): {detail}")
 
     try:
-        data = json.loads(proc.stdout)
+        data = json.loads(out)
     except json.JSONDecodeError:
         raise RuntimeError(f"agy JSON döndürmedi: {proc.stdout.strip()[:300]}")
 
@@ -596,22 +639,15 @@ def _call_devin(system_prompt: str, user_prompt: str, effort: str, model: str,
         cmd += ["--permission-mode", DEVIN_PERMISSION_MODE]
 
     run_cwd = ROOT if tools else SCRATCH_DIR
-    try:
-        proc = subprocess.run(
-            cmd, capture_output=True, text=True,
-            timeout=DEVIN_TIMEOUT + 60, cwd=run_cwd,
-            start_new_session=True,
-        )
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(f"devin {DEVIN_TIMEOUT}s içinde yanıt vermedi.")
+    rc, out, err = _run_cli(cmd, run_cwd, DEVIN_TIMEOUT + 60, "devin")
 
-    if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or "").strip()[:500]
-        raise RuntimeError(f"devin hata koduyla çıktı ({proc.returncode}): {detail}")
+    if rc != 0:
+        detail = (err or out or "").strip()[:500]
+        raise RuntimeError(f"devin hata koduyla çıktı ({rc}): {detail}")
 
-    text = (proc.stdout or "").strip()
+    text = (out or "").strip()
     if not text:
-        detail = (proc.stderr or "").strip()[:300]
+        detail = (err or "").strip()[:300]
         raise RuntimeError(f"devin metin üretmedi: {detail or 'boş çıktı'}")
     (TRACE_DIR / "current.out").write_text(text, encoding="utf-8")
     return CliResult(text=text, stop_reason="end_turn", cost=0.0, usage={})
@@ -655,6 +691,8 @@ def wait_for_quota(reason: str, waited: int) -> int:
     while slept < step:
         if B.is_set("stop"):
             raise RuntimeError("Beklerken durdurma isteği alındı.")
+        if B.is_set("force") or B.is_set("goto") or B.value_of("skip"):
+            raise CallAborted("Kota beklemesi sırasında kontrol isteği alındı.")
         time.sleep(min(10, step - slept))
         slept += 10
     return waited + step
@@ -683,6 +721,9 @@ def query_claude(system_prompt: str, user_prompt: str,
             th_t = u.get("thinking_tokens", 0)
             print(f"      ({backend}: {in_t} girdi / {out_t} çıktı / {th_t} düşünce token)")
             break
+        except CallAborted:
+            (TRACE_DIR / "current.json").write_text("{}", encoding="utf-8")
+            raise
         except RuntimeError as e:
             if not is_limit_error(str(e)):
                 raise
@@ -1157,6 +1198,9 @@ def execute_pipeline(org: dict, brief: str, args):
             print("        Tamamlanan adımlar kaydedildi; sorunu çözüp tekrar çalıştırın.",
                   file=sys.stderr)
             sys.exit(1)
+        except CallAborted as e:
+            print(f"\n[KESİLDİ] {e}", file=sys.stderr)
+            sys.exit(0)
         except RuntimeError as e:
             print(f"\n[DURDU] {agent_id}: {e}", file=sys.stderr)
             print("        İlerleme .state.json'a kaydedildi; tekrar çalıştırınca kaldığı "
@@ -1176,11 +1220,11 @@ PLANNER_ID = "sprint_planner"
 
 
 def run_planner(org: dict, brief: str, force: bool = False) -> dict:
-    """Planlayıcı rolünü çalıştırıp pano.json üretir (JSON doğrulamalı)."""
+    """Planlayıcı rolünü çalıştırıp studio.db'ye sprint panosu üretir (JSON doğrulamalı)."""
     agent = next((a for a in org["hierarchy"] if a["id"] == PLANNER_ID), None)
     if agent is None:
         sys.exit(f"[HATA] '{PLANNER_ID}' rolü org şemasında yok.")
-    if B.BOARD_FILE.exists() and not force:
+    if B.board_exists() and not force:
         print("  [i] Mevcut pano kullanılıyor. Yeniden planlamak için --replan.")
         return B.load()
 
@@ -1202,7 +1246,7 @@ def run_planner(org: dict, brief: str, force: bool = False) -> dict:
         user = (f"===== PROJE ÖZETİ =====\n{brief}\n\n{inputs_text}\n"
                 f"{task}{note}")
         meta = {"seq": _trace_seq(), "role": PLANNER_ID, "title": agent["title"],
-                "target": str(B.BOARD_FILE.relative_to(ROOT)), "backend": backend,
+                "target": "studio.db", "backend": backend,
                 "model": model, "tools": tools}
         raw = query_claude(agent["system_prompt"] + SYSTEM_SUFFIX, user,
                            backend, model, effort, meta, tools)
@@ -1242,7 +1286,7 @@ def run_planner(org: dict, brief: str, force: bool = False) -> dict:
         B.save(board)
         p = B.progress(board)
         print(f"  [✓] Pano üretildi: {p['sprints_total']} sprint, {p['total']} görev "
-              f"→ {B.BOARD_FILE.relative_to(ROOT)}")
+              f"→ studio.db")
         return board
 
     sys.exit(f"[HATA] Planlayıcı iki denemede de geçerli pano üretemedi:\n{last_err}")
@@ -1489,6 +1533,23 @@ def self_healing_code_check(target: str) -> tuple[bool, str]:
     return True, ""
 
 
+def _pending_control(task_id: str) -> str:
+    """İki çağrı ARASINDA bakılan kontrol bayrakları.
+
+    stop/force/goto her zaman keser; skip yalnızca bu görevi hedefliyorsa
+    keser (başka bir kuyruktaki görevi atlamak koşanı kesmeyi gerektirmez).
+    """
+    if B.is_set("stop"):
+        return "stop"
+    if B.is_set("force"):
+        return "force"
+    if B.is_set("goto"):
+        return "goto"
+    if B.value_of("skip") == task_id:
+        return "skip"
+    return ""
+
+
 def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
                  interactive: bool = False) -> bool:
     """Panodaki tek bir görevi yürütür. Başarılıysa True."""
@@ -1525,6 +1586,9 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
     )
 
     for target in task["outputs"]:
+        act = _pending_control(task["id"])
+        if act:
+            raise CallAborted(f"{task['id']} '{act}' isteğiyle kesildi.")
         if target in state_of(board).get("done_outputs", []):
             continue
         siblings = [o for o in task["outputs"] if o != target]
@@ -1861,6 +1925,11 @@ def run_board(org: dict, brief: str, once: bool = False,
     B.recover_orphans(board)
     B.refresh(board)
 
+    # 'force' yalnızca uçuştaki bir çağrıyı kesmek içindir; koşucu kapalıyken
+    # bırakılmış bayat bayrak ilk çağrıyı anında öldürmesin diye temizlenir.
+    # (goto/skip bilinçli olarak korunur: kuyruğa alınmış isteklerdir.)
+    B.clear("force")
+
     start_cost = spent_so_far()
     if max_cost:
         print(f"[i] Bütçe sınırı: ${max_cost:.2f} (şimdiye kadar ${start_cost:.2f} harcandı)")
@@ -1896,7 +1965,32 @@ def run_board(org: dict, brief: str, once: bool = False,
             B.refresh(board); B.save(board)
             continue
 
-        sprint, task = B.next_ready(board)
+        # Kontrol ekranı/CLI öncelik veya sıra değiştirdiyse panoyu tazele.
+        if ctrl["reload"]:
+            B.clear("reload")
+            board = B.load()
+            B.refresh(board)
+
+        # Görev geçişi (--gec): hedef görev kuyruk düzenini baypas ederek
+        # doğrudan sıradaki iş olur. Kapalı (DONE/SKIPPED) hedef reddedilir.
+        goto = None
+        if ctrl["goto"]:
+            tid = ctrl["goto"]
+            B.clear("goto")
+            B.clear("force")
+            gs, gt = B.find_task(board, tid)
+            if gt is None:
+                print(f"\n[!] Geçiş hedefi bulunamadı: {tid}")
+            elif gt["status"] in B.TERMINAL:
+                print(f"\n[!] Geçiş hedefi zaten kapalı: {tid} ({gt['status']})")
+            else:
+                if gt["status"] != B.READY:
+                    gt["status"] = B.READY
+                    gt["note"] = "kullanıcı geçiş istedi"
+                goto = (gs, gt)
+                print(f"\n[GEÇİŞ] {tid} doğrudan sıradaki iş olarak alınıyor.")
+
+        sprint, task = goto if goto else B.next_ready(board)
 
         # Günlük kota: görev BAŞLAMADAN önce bakılır, sınır aşılmaz.
         if task is not None:
@@ -1965,10 +2059,31 @@ def run_board(org: dict, brief: str, once: bool = False,
             board = B.load()
             continue
 
+        # UAT/canlı test görevi canlı ortam gerektirir; kapalıysa ekrana uyar.
+        if B.needs_live(task) and not B.live_up():
+            kapali = [str(p) for p, ok in B.live_status().items() if not ok]
+            print(f"\n[⚠ UYARI] {task['id']} canlı sistem gerektiriyor ama "
+                  f"port {', '.join(kapali)} kapalı (canli.sh çalışmıyor).")
+            print("          UAT doğrulaması başarısız olabilir. "
+                  "Başlatmak için: ./basla.sh --canli")
+
         B.mark(board, task["id"], B.RUNNING)
         B.save(board)
         onceki = spent_so_far()
-        ok = execute_task(org, task, sprint, brief, board, interactive=interactive)
+        try:
+            ok = execute_task(org, task, sprint, brief, board, interactive=interactive)
+        except CallAborted as e:
+            # Kontrol isteği (stop/skip/goto/force) görevi yarıda kesti.
+            # Atlanan görev SKIPPED, diğerleri kuyruğa geri döner (READY).
+            print(f"\n[KESİLDİ] {e}")
+            if B.value_of("skip") == task["id"]:
+                B.mark(board, task["id"], B.SKIPPED, "kullanıcı atladı")
+                B.clear("skip")
+            else:
+                B.mark(board, task["id"], B.READY, "kesildi — kuyruğa geri alındı")
+            B.clear("force")
+            B.refresh(board); B.save(board)
+            continue
         gercek = spent_so_far() - onceki
         d = B.ledger_add(gercek)
         mg, mb = B.ledger_limits()
@@ -2014,7 +2129,7 @@ def main():
                     help="doğrusal koşucunun çalıştıracağı aşama (varsayılan: design; "
                          "yapım rollerini sprint panosu yürütür)")
     ap.add_argument("--plan", action="store_true",
-                    help="sprint panosunu üret (pano.json)")
+                    help="sprint panosunu üret (studio.db)")
     ap.add_argument("--replan", action="store_true",
                     help="mevcut panoyu yok sayıp yeniden planla")
     ap.add_argument("--tick", action="store_true",
@@ -2102,7 +2217,7 @@ def main():
 
         print("\n---> Sprint panosu üretiliyor (şema doğrulamalı)")
         run_planner(org, brief, force=args.replan)
-        if not B.BOARD_FILE.exists():
+        if not B.board_exists():
             sys.exit("[HATA] Pano üretilemedi; 'sprint_planner' rolünü kontrol edin.")
 
         print("\n########## AŞAMA 2/2 — YAPIM (sprint panosu) ##########")
@@ -2121,17 +2236,17 @@ def main():
         # Zamanlanmış tetikleyici pano üretilmeden önce de çalışır. Pano yoksa
         # tasarım aşamasını ilerlet — checkpoint'li olduğu için her tetikleme
         # kaldığı yerden devam eder ve kota açılınca kendiliğinden tamamlanır.
-        if not B.BOARD_FILE.exists():
+        if not B.board_exists():
             print("[i] Pano yok — önce tasarım aşaması ilerletiliyor.")
             args.stage = "design"
             execute_pipeline(org, brief, args)
-            if not B.BOARD_FILE.exists():
+            if not B.board_exists():
                 try:
                     run_planner(org, brief)
                 except SystemExit:
                     print("[i] Pano henüz üretilemedi; sonraki tetiklemede denenecek.")
                     return
-            if not B.BOARD_FILE.exists():
+            if not B.board_exists():
                 print("[i] Tasarım henüz tamamlanmadı; sonraki tetiklemede devam edilecek.")
                 return
         try:

@@ -5,11 +5,14 @@ Kontrol ekranı — çalışan boru hattını izler ve yönetir.
     python studio_ctl.py
 
 Tuşlar:  p duraklat/sürdür · s durdur · k mevcut görevi atla
-         r başarısız görevi tekrar sıraya al · o çıktıyı aç · q çık
+         K çağrıyı kesip atla · r başarısız görevi tekrar sıraya al
+         o çıktıyı aç · q çık
 
-Not: çalışmakta olan bir model çağrısı yarıda kesilmez (parası zaten harcanmış
-olur). Komutlar iki çağrı ARASINDA uygulanır — koşucu her görev öncesi
-workspace/.control/ altını okur.
+Not: çalışmakta olan bir model çağrısı normalde yarıda kesilmez (parası zaten
+harcanmış olur). Komutlar iki çağrı ARASINDA uygulanır — koşucu her çağrı
+öncesi workspace/.control/ altını okur. 'K' ve CLI'daki --force bayrağı
+çağrıyı anında öldürür. Görev geçişi ve öncelik için:
+  ./basla.sh --gec <görev> [--force] · --oncelik <görev> <n> · --sira <görev> <poz>
 """
 
 import json
@@ -167,8 +170,9 @@ def render(msg: str = "") -> str:
             # Not her durumda görünsün: READY'ye dönmüş ama önceki denemesi
             # başarısız olmuş görevin sebebi gizli kalmasın.
             note = f"  {RED}{t['note'][:52]}{RESET}" if t.get("note") else ""
+            onc = f"{YELLOW}▲{t['priority']}{RESET} " if t.get("priority") else ""
             L.append(f"   {m} {t['id']:<8} {DIM}{t['phase'][:7]:<8}{RESET}"
-                     f"{t['title'][:38]:<40}{dur}{note}")
+                     f"{onc}{t['title'][:38]:<40}{dur}{note}")
         L.append("")
 
     if cur.get("role"):
@@ -183,6 +187,28 @@ def render(msg: str = "") -> str:
             for line in txt[-700:].splitlines()[-6:]:
                 L.append(f"  {DIM}{line[:cols-4]}{RESET}")
 
+    # UAT/canlı test görevi koşuyor veya sırada ama canlı ortam kapalıysa uyar.
+    live_needed = []
+    _, run = B.find_running(board)
+    if run and B.needs_live(run):
+        live_needed.append(run["id"])
+    try:
+        _, nxt = B.next_ready(board)
+        if nxt and B.needs_live(nxt) and (not run or nxt["id"] != run["id"]):
+            live_needed.append(nxt["id"])
+    except Exception:
+        pass
+    if live_needed:
+        st = B.live_status()
+        kapali = [str(p) for p, ok in st.items() if not ok]
+        if kapali:
+            L.append("─" * min(cols, 96))
+            L.append(f"{RED}⚠ CANLI ORTAM KAPALI{RESET} — port "
+                     f"{', '.join(kapali)} yanıt vermiyor.")
+            L.append(f"  {YELLOW}{', '.join(live_needed)} canlı sistem "
+                     f"gerektiriyor; UAT doğrulaması başarısız olabilir.{RESET}")
+            L.append(f"  {DIM}Başlatmak için ayrı bir terminalde: ./basla.sh --canli{RESET}")
+
     L.append("─" * min(cols, 96))
     if not runner_alive() and not ctrl["paused"]:
         try:
@@ -195,7 +221,7 @@ def render(msg: str = "") -> str:
             L.append(f"  {DIM}Başlatmak için ayrı bir terminalde: ./basla.sh{RESET}")
             L.append("─" * min(cols, 96))
     L.append(f"{BOLD}p{RESET} duraklat/sürdür  {BOLD}s{RESET} durdur  "
-             f"{BOLD}k{RESET} atla  {BOLD}r{RESET} tekrar dene  "
+             f"{BOLD}k{RESET} atla  {BOLD}K{RESET} kesip atla  {BOLD}r{RESET} tekrar dene  "
              f"{BOLD}o{RESET} çıktı klasörü  {BOLD}q{RESET} çık")
     if msg:
         L.append(f"{CYAN}{msg}{RESET}")
@@ -218,19 +244,30 @@ def handle(key: str) -> str:
     if key == "s":
         B.request("stop")
         return "Durdurma istendi — mevcut çağrı bitince koşucu çıkacak."
-    if key == "k":
-        cur = read_json(TRACE / "current.json", {})
-        tid = cur.get("task")
-        if not tid:
-            try:
-                _, t = B.next_ready(B.load())
+    if key in ("k", "K"):
+        # Önce panodaki RUNNING görev hedeflenir: current.json iki çağrı
+        # arasında boşalır, oraya güvenmek yanlış görevi atlatırdı.
+        tid = None
+        try:
+            board = B.load()
+            _, run = B.find_running(board)
+            if run:
+                tid = run["id"]
+            else:
+                _, t = B.next_ready(board)
                 tid = t["id"] if t else None
-            except Exception:
-                tid = None
+        except Exception:
+            pass
+        if not tid:
+            cur = read_json(TRACE / "current.json", {})
+            tid = cur.get("task")
         if not tid:
             return "Atlanacak görev bulunamadı."
         B.request("skip", tid)
-        return f"{tid} atlanacak."
+        if key == "K":
+            B.request("force")
+            return f"{tid} atlanacak — çalışan çağrı hemen kesiliyor."
+        return f"{tid} atlanacak — mevcut çağrı bitince kalan çıktılar iptal."
     if key == "r":
         board = B.load()
         stuck = [t for _, t in B.all_tasks(board) if t["status"] in (B.FAILED, B.BLOCKED)]
