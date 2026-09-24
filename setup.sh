@@ -49,6 +49,21 @@ else
     echo -e "${DIM}  Antigravity CLI kurulu değilse model çağrıları için kurulması önerilir.${NC}"
 fi
 
+# 3b. Devin CLI (alternatif backend) Kontrolü
+echo -e "\n${BOLD}3b. Devin CLI (opsiyonel backend) Denetleniyor...${NC}"
+DEVIN_BIN="$(command -v devin 2>/dev/null || true)"
+if [ -z "$DEVIN_BIN" ] && [ -x "$HOME/.local/bin/devin" ]; then
+    DEVIN_BIN="$HOME/.local/bin/devin"
+fi
+
+if [ -n "$DEVIN_BIN" ]; then
+    echo -e "${GREEN}✓ Devin CLI bulundu: $DEVIN_BIN${NC}"
+    echo -e "${DIM}  STUDIO_BACKEND=devin ile tüm stüdyo Devin AI üzerinden çalıştırılabilir.${NC}"
+else
+    echo -e "${YELLOW}! devin CLI bulunamadı (opsiyonel).${NC}"
+    echo -e "${DIM}  Devin AI backend'ini kullanmak için Devin CLI/Desktop kurulmalıdır.${NC}"
+fi
+
 # 4. Proje İsterleri Dosyası Kontrolü
 echo -e "\n${BOLD}4. Proje Kapsamı Dosyası Denetleniyor...${NC}"
 if [ ! -f "proje_kapsami.md" ]; then
