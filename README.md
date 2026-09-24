@@ -120,6 +120,36 @@ Stüdyo çalışırken terminal üzerinden canlı olarak izlenebilir:
 
 ---
 
+## 🧩 Model Arka Ucu (Backend) Seçimi — `agy` veya `devin`
+
+Stüdyo, ajan çağrılarını iki farklı motor üzerinden yürütebilir:
+
+| Backend | Motor | Nasıl seçilir? |
+| :--- | :--- | :--- |
+| **`agy`** *(varsayılan)* | Antigravity CLI / Gemini | Ek ayar gerekmez |
+| **`devin`** | Devin AI (yerel `devin` CLI veya Devin Cloud) | `STUDIO_BACKEND=devin` |
+
+```bash
+# Tüm stüdyoyu Devin AI ile çalıştır
+STUDIO_BACKEND=devin ./basla.sh
+
+# Devin Cloud VM'lerinde çalıştır (Devin hesabı gerekir)
+STUDIO_BACKEND=devin STUDIO_DEVIN_CLOUD=1 ./basla.sh
+
+# Belirli bir Devin modeli seç (ör. swe-2, opus, codex; boş = hesap varsayılanı)
+STUDIO_BACKEND=devin STUDIO_DEVIN_MODEL=swe-2 ./basla.sh
+```
+
+**İleri düzey:** `org_chart.json` içinde tek bir role `"backend": "devin"` yazarak
+(ve isteğe bağlı `"devin_model": "..."`) karma mimari kurabilirsiniz; diğer
+roller varsayılan backend ile çalışmaya devam eder.
+
+İlgili çevre değişkenleri: `STUDIO_BACKEND`, `STUDIO_DEVIN_MODEL`,
+`STUDIO_DEVIN_CLOUD`, `STUDIO_DEVIN_TIMEOUT`, `STUDIO_DEVIN_PERMISSION_MODE`
+(bkz. `.env.example`).
+
+---
+
 ## 🛡️ Güvenlik & Gizlilik (Zero Leakage Protocol)
 
 Digital Software Studio, açık kaynak güvenliğine tam uyumludur:

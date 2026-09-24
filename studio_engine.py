@@ -268,6 +268,11 @@ def preflight_env(force: bool = False) -> Path:
 BACKEND = os.getenv("STUDIO_BACKEND", "agy").lower()
 AGY_MODEL = os.getenv("STUDIO_AGY_MODEL", "gemini-3.8-flash-high")
 AGY_TIMEOUT = int(os.getenv("STUDIO_AGY_TIMEOUT", "1800"))
+# Devin AI arka ucu (devin CLI, -p print kipi; STUDIO_DEVIN_CLOUD=1 ile bulut oturumu).
+DEVIN_MODEL = os.getenv("STUDIO_DEVIN_MODEL", "")   # boş = hesap/CLI varsayılanı
+DEVIN_TIMEOUT = int(os.getenv("STUDIO_DEVIN_TIMEOUT", "3600"))
+DEVIN_CLOUD = os.getenv("STUDIO_DEVIN_CLOUD", "0") == "1"
+DEVIN_PERMISSION_MODE = os.getenv("STUDIO_DEVIN_PERMISSION_MODE", "dangerous")
 EFFORT = os.getenv("STUDIO_EFFORT", "high")   # low | medium | high
 MAX_TOKENS = int(os.getenv("STUDIO_MAX_TOKENS", "64000"))
 
@@ -338,7 +343,7 @@ def trace_end(meta: dict, system_prompt: str, user_prompt: str,
     (TRACE_DIR / "current.json").write_text("{}", encoding="utf-8")
 
 
-VALID_BACKENDS = ("agy",)
+VALID_BACKENDS = ("agy", "devin")
 
 
 def load_and_merge_dynamic_roles(org: dict) -> dict:
@@ -352,7 +357,7 @@ def load_and_merge_dynamic_roles(org: dict) -> dict:
             for r in roles:
                 if isinstance(r, dict) and r.get("id") and r["id"] not in existing_ids:
                     r.setdefault("stage", "build")
-                    r.setdefault("backend", "agy")
+                    r.setdefault("backend", BACKEND)
                     r.setdefault("model", AGY_MODEL)
                     org["hierarchy"].append(r)
                     existing_ids.add(r["id"])
@@ -418,7 +423,7 @@ def synthesize_role(org: dict, role_id: str) -> dict:
         "inputs": inputs,
         "outputs": outputs,
         "stage": "build",
-        "backend": "agy",
+        "backend": BACKEND,
         "model": AGY_MODEL,
         "max_words": 1800,
         "tools": tools,
@@ -432,14 +437,26 @@ def synthesize_role(org: dict, role_id: str) -> dict:
 def resolve_engine(agent: dict) -> tuple[str, str, str, list]:
     """Rolün motorunu belirler: (backend, model, effort, tools).
 
-    Tüm süreç Antigravity (agy CLI) üzerinden yürütülür.
-    Varsayılan model: gemini-3.8-flash-high.
+    Rol org_chart'ta kendi "backend" değerini belirtebilir; belirtmezse
+    STUDIO_BACKEND / --backend ile seçilen genel backend kullanılır.
+    Desteklenen backend'ler: agy (Antigravity/Gemini), devin (Devin AI).
     """
-    backend = "agy"
-    model = agent.get("model") or AGY_MODEL
-    # Herhangi bir yerde claude veya opus/sonnet kalmışsa Gemini 3.8 karşılığına eşle:
-    if any(k in model.lower() for k in ("opus", "sonnet", "claude")):
-        model = "gemini-3.8-flash-high"
+    backend = (agent.get("backend") or BACKEND or "agy").lower()
+    if backend not in VALID_BACKENDS:
+        raise ValueError(
+            f"'{agent['id']}' rolünde geçersiz backend '{backend}'. "
+            f"Geçerli değerler: {', '.join(VALID_BACKENDS)}")
+
+    if backend == "devin":
+        # Devin kendi model isimlerini kullanır (ör. swe-2, opus, codex).
+        # Rol "devin_model" ile geçersiz kılabilir; aksi hâlde STUDIO_DEVIN_MODEL
+        # (boşsa CLI/hesap varsayılanı devreye girer).
+        model = agent.get("devin_model") or DEVIN_MODEL
+    else:
+        model = agent.get("model") or AGY_MODEL
+        # Herhangi bir yerde claude veya opus/sonnet kalmışsa Gemini 3.8 karşılığına eşle:
+        if any(k in model.lower() for k in ("opus", "sonnet", "claude")):
+            model = "gemini-3.8-flash-high"
 
     tools = agent.get("tools") or []
     if not isinstance(tools, list):
@@ -466,7 +483,8 @@ def find_exe(name: str) -> str | None:
     if found:
         return found
     for base in ("~/.local/bin", "~/.npm-global/bin", "/usr/local/bin",
-                 "/opt/homebrew/bin", "~/.gemini/antigravity/bin"):
+                 "/opt/homebrew/bin", "~/.gemini/antigravity/bin",
+                 "/Applications/Devin.app/Contents/Resources/app/extensions/windsurf/devin/bin"):
         cand = Path(base).expanduser() / name
         if cand.exists():
             return str(cand)
@@ -548,6 +566,57 @@ def _call_agy(system_prompt: str, user_prompt: str, effort: str, model: str,
     )
 
 
+def _call_devin(system_prompt: str, user_prompt: str, effort: str, model: str,
+                tools: list | None = None) -> CliResult:
+    """Devin CLI'yi print (etkileşimsiz) kipinde çalıştırır.
+
+    1. devin'de ayrı bir system-prompt kanalı olmadığından rol tanımı kullanıcı
+       mesajının başına etiketle eklenir (agy ile aynı sözleşme).
+    2. Rol araç (tools) istiyorsa STUDIO_DEVIN_PERMISSION_MODE ile araç
+       kullanımına izin verilir ve çalışma dizini proje kökü (ROOT) olur.
+       Saf metin üreteçleri SCRATCH_DIR'de çalışır.
+    3. STUDIO_DEVIN_CLOUD=1 ise oturum Devin Cloud VM'inde yürütülür.
+    4. devin -p kullanım istatistiği döndürmez; usage boş bırakılır.
+    """
+    exe = find_exe("devin")
+    if not exe:
+        sys.exit("[HATA] 'devin' bulunamadı. Lütfen Devin CLI'nın kurulu olduğundan "
+                 "emin olun (~/.local/bin/devin veya Devin Desktop).")
+
+    merged = (
+        f"<rol_tanimi>\n{system_prompt}\n</rol_tanimi>\n\n"
+        f"Yukarıdaki rol tanımına göre davran.\n\n{user_prompt}"
+    ).replace("\x00", "")
+    cmd = [exe, "-p", merged, "--respect-workspace-trust", "false"]
+    if DEVIN_CLOUD:
+        cmd += ["--cloud"]
+    if model:
+        cmd += ["--model", model]
+    if tools:
+        cmd += ["--permission-mode", DEVIN_PERMISSION_MODE]
+
+    run_cwd = ROOT if tools else SCRATCH_DIR
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True,
+            timeout=DEVIN_TIMEOUT + 60, cwd=run_cwd,
+            start_new_session=True,
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"devin {DEVIN_TIMEOUT}s içinde yanıt vermedi.")
+
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "").strip()[:500]
+        raise RuntimeError(f"devin hata koduyla çıktı ({proc.returncode}): {detail}")
+
+    text = (proc.stdout or "").strip()
+    if not text:
+        detail = (proc.stderr or "").strip()[:300]
+        raise RuntimeError(f"devin metin üretmedi: {detail or 'boş çıktı'}")
+    (TRACE_DIR / "current.out").write_text(text, encoding="utf-8")
+    return CliResult(text=text, stop_reason="end_turn", cost=0.0, usage={})
+
+
 # Kota/limit ve geçici ağ hatalarında ölmek yerine bekle-ve-devam et.
 LIMIT_PATTERNS = (
     "usage limit", "rate limit", "quota", "resets at", "too many requests",
@@ -594,7 +663,7 @@ def wait_for_quota(reason: str, waited: int) -> int:
 def query_claude(system_prompt: str, user_prompt: str,
                  backend: str, model: str, base_effort: str,
                  trace_meta: dict, tools: list | None = None) -> str:
-    """Antigravity (agy CLI) üzerinden modeli çalıştırıp yanıtı döndürür."""
+    """Seçilen backend (agy / devin) üzerinden modeli çalıştırıp yanıtı döndürür."""
     meta = dict(trace_meta, effort=base_effort, started_at=time.time(),
                 prompt_chars=len(system_prompt) + len(user_prompt))
     trace_begin(meta)
@@ -603,13 +672,16 @@ def query_claude(system_prompt: str, user_prompt: str,
     waited = 0
     while True:
         try:
-            res = _call_agy(system_prompt, user_prompt, base_effort, model, tools)
+            if backend == "devin":
+                res = _call_devin(system_prompt, user_prompt, base_effort, model, tools)
+            else:
+                res = _call_agy(system_prompt, user_prompt, base_effort, model, tools)
             text = res.text
             u = res.usage
             in_t = u.get("input_tokens", 0)
             out_t = u.get("output_tokens", 0)
             th_t = u.get("thinking_tokens", 0)
-            print(f"      (agy: {in_t} girdi / {out_t} çıktı / {th_t} düşünce token)")
+            print(f"      ({backend}: {in_t} girdi / {out_t} çıktı / {th_t} düşünce token)")
             break
         except RuntimeError as e:
             if not is_limit_error(str(e)):
@@ -622,7 +694,7 @@ def query_claude(system_prompt: str, user_prompt: str,
               time.time() - t0)
 
     if not text:
-        raise RuntimeError("Antigravity boş metin döndürdü.")
+        raise RuntimeError(f"{backend} boş metin döndürdü.")
     return text
 
 
@@ -963,7 +1035,7 @@ def run_agent(agent: dict, brief: str, state: dict, force: bool = False,
                                      inputs_text, revision_note)
 
         if dry_run:
-            print(f"    [dry-run] {target}  ({backend}/{model}, effort={effort}, "
+            print(f"    [dry-run] {target}  ({backend}/{model or 'varsayılan'}, effort={effort}, "
                   f"prompt ~{len(system) + len(user)} karakter)")
             continue
 
@@ -1039,7 +1111,12 @@ def execute_pipeline(org: dict, brief: str, args):
     print(f"\n{'=' * 60}")
     print(f"  🏢 {org['company_name']}")
     print(f"  📦 {org['project']}")
-    engine = f"Antigravity (agy) · {AGY_MODEL}"
+    if BACKEND == "devin":
+        engine = f"Devin AI (devin) · {DEVIN_MODEL or 'varsayılan model'}"
+        if DEVIN_CLOUD:
+            engine += " [cloud]"
+    else:
+        engine = f"Antigravity (agy) · {AGY_MODEL}"
     print(f"  🤖 {engine} (effort: {EFFORT})")
     print(f"{'=' * 60}")
 
@@ -1069,7 +1146,7 @@ def execute_pipeline(org: dict, brief: str, args):
         eng_b, eng_m, eng_e, eng_t = resolve_engine(agent)
         tool_note = f", araçlar={'+'.join(eng_t)}" if eng_t else ""
         print(f"\n---> {agent['title']} ({agent_id})  "
-              f"[{eng_b}/{eng_m}, effort={eng_e}{tool_note}]")
+              f"[{eng_b}/{eng_m or 'varsayılan'}, effort={eng_e}{tool_note}]")
         try:
             if "revises" in agent:
                 run_revision_loop(agent, org_by_id, brief, state, args.max_revisions, args.dry_run)
@@ -1109,7 +1186,7 @@ def run_planner(org: dict, brief: str, force: bool = False) -> dict:
 
     backend, model, effort, tools = resolve_engine(agent)
     inputs_text = collect_inputs(agent)
-    print(f"\n---> {agent['title']} ({PLANNER_ID})  [{backend}/{model}]")
+    print(f"\n---> {agent['title']} ({PLANNER_ID})  [{backend}/{model or 'varsayılan'}]")
 
     build_roles = [a for a in org["hierarchy"] if a.get("stage") == "build"]
     roles_block = "\n".join(
@@ -1427,7 +1504,7 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
 
     backend, model, effort, tools = resolve_engine(agent)
     print(f"\n---> [{sprint['id']}] {task['id']} · {task['title']}")
-    print(f"     rol={task['role']} faz={task['phase']} {backend}/{model}")
+    print(f"     rol={task['role']} faz={task['phase']} {backend}/{model or 'varsayılan'}")
 
     # Görev, rolün şemadaki girdilerini + görev tanımını alır.
     try:
@@ -1952,12 +2029,12 @@ def main():
                     help="ortam raporunu yeniden ölç")
     ap.add_argument("--review", action="store_true",
                     help="liderlik eksik denetimini ve yeni faz planlamasını tetikle")
-    ap.add_argument("--backend", choices=["agy"], default="agy",
-                    help="çalıştırma arka ucu (varsayılan: agy)")
+    ap.add_argument("--backend", choices=sorted(VALID_BACKENDS), default=None,
+                    help="çalıştırma arka ucu (varsayılan: STUDIO_BACKEND veya agy)")
     args = ap.parse_args()
 
     global BACKEND
-    BACKEND = "agy"
+    BACKEND = (args.backend or os.getenv("STUDIO_BACKEND", "agy")).lower()
 
     org_path = ROOT / args.org
     if not org_path.exists():
@@ -1988,22 +2065,27 @@ def main():
         STATE_FILE.unlink(missing_ok=True)
         print("[i] State sıfırlandı.")
 
-    # Yalnızca agy komutu aranır
-    if not find_exe("agy"):
-        sys.exit("[HATA] 'agy' komutu bulunamadı. Lütfen Antigravity CLI'nın kurulu olduğundan emin olun (~/.local/bin/agy).")
-
     from collections import Counter
     try:
-        engines = Counter(f"{b}/{m}" for b, m, _, _ in
-                          (resolve_engine(a) for a in org["hierarchy"]))
+        resolved = [resolve_engine(a) for a in org["hierarchy"]]
+        engines = Counter(f"{b}/{m or 'varsayılan'}" for b, m, _, _ in resolved)
     except ValueError as e:
         sys.exit(f"[HATA] {e}")
     if len(engines) > 1:
         print("[i] Motor dağılımı: " +
               ", ".join(f"{k} × {v}" for k, v in sorted(engines.items())))
 
+    # Kullanılan her backend'in CLI'si kurulu olmalı
+    for b in sorted({b for b, _, _, _ in resolved}):
+        if not find_exe(b):
+            if b == "devin":
+                sys.exit("[HATA] 'devin' komutu bulunamadı. Devin CLI kurulu olmalı "
+                         "(~/.local/bin/devin veya Devin Desktop).")
+            sys.exit("[HATA] 'agy' komutu bulunamadı. Lütfen Antigravity CLI'nın "
+                     "kurulu olduğundan emin olun (~/.local/bin/agy).")
+
     n_calls = sum(len(a["outputs"]) for a in org["hierarchy"])
-    engine = f"agy/{AGY_MODEL}"
+    engine = next(iter(engines)) if len(engines) == 1 else f"{BACKEND} (karışık)"
     print(f"[i] {len(org['hierarchy'])} rol, {n_calls} dosya hedefi "
           f"(≈{n_calls} çağrı, {engine}).")
 
