@@ -153,7 +153,7 @@
         "workspace/docs/guvenlik_tasarimi.md"
       ],
       "outputs": [
-        "workspace/pano.json"
+        "studio.db"
       ],
       "stage": "design",
       "model": "gemini-3.8-flash-high",
@@ -384,7 +384,6 @@
       "title": "Süreç, Kurtarma ve Dağıtım Nöbetçisi",
       "system_prompt": "Stüdyo açılışında ve çalışma esnasında 'İşler yarım kaldı mı?' ve 'Deploy yarım kaldı mı?' denetimini icra edersin. Çöken veya yetim kalan pano görevlerini tespit eder ve sıraya alırsın. Kod tabanında geliştirilmiş ancak henüz canlıya aktarılmamış (uncommitted/unpushed) değişiklikleri ve çözülen müşteri taleplerini tespit edip, paketleyerek GitHub Actions CI/CD hattına (origin/master) pushlarsın. 'Yarım kalan işler ve deploy tamamlandı' raporu ile sistemi tam senkron tutarsın.",
       "inputs": [
-        "workspace/pano.json",
         "workspace/docs/musteri_talepleri.json"
       ],
       "outputs": [
