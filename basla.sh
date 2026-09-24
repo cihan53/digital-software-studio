@@ -38,8 +38,13 @@ kosucu_pid() { cat workspace/.lock 2>/dev/null; }
 # ---------------------------------------------------------------- alt komutlar
 case "${1:-}" in
   --usage|--kullanim)
-      echo "── Antigravity Model Kotası ─────────────────────────"
-      (agy -p="/usage" 2>/dev/null || ~/.local/bin/agy -p="/usage")
+      if [ "${STUDIO_BACKEND:-agy}" = "devin" ]; then
+        echo "── Devin AI Backend ──────────────────────────────"
+        (devin auth status 2>/dev/null || ~/.local/bin/devin auth status 2>/dev/null || echo "devin CLI oturum durumu alınamadı")
+      else
+        echo "── Antigravity Model Kotası ─────────────────────────"
+        (agy -p="/usage" 2>/dev/null || ~/.local/bin/agy -p="/usage")
+      fi
       echo
       $PY - <<'PYEOF'
 import json, pathlib
@@ -342,16 +347,35 @@ grn "✓ Python ortamı hazır"
 # PATH'e ~/.local/bin ekle
 export PATH="$HOME/.local/bin:$PATH"
 
-# Antigravity CLI (agy) kontrolü
-AGY_EXE="$(command -v agy 2>/dev/null || true)"
-if [ -z "$AGY_EXE" ] && [ -x "$HOME/.local/bin/agy" ]; then
-  AGY_EXE="$HOME/.local/bin/agy"
-fi
+# Model arka ucu kontrolü (STUDIO_BACKEND: agy | devin)
+STUDIO_BACKEND="${STUDIO_BACKEND:-agy}"
 
-if [ -n "$AGY_EXE" ]; then
-  grn "✓ agy bulundu ($AGY_EXE)"
+if [ "$STUDIO_BACKEND" = "devin" ]; then
+  DEVIN_EXE="$(command -v devin 2>/dev/null || true)"
+  if [ -z "$DEVIN_EXE" ] && [ -x "$HOME/.local/bin/devin" ]; then
+    DEVIN_EXE="$HOME/.local/bin/devin"
+  fi
+  if [ -z "$DEVIN_EXE" ] && [ -x "/Applications/Devin.app/Contents/Resources/app/extensions/windsurf/devin/bin/devin" ]; then
+    DEVIN_EXE="/Applications/Devin.app/Contents/Resources/app/extensions/windsurf/devin/bin/devin"
+  fi
+
+  if [ -n "$DEVIN_EXE" ]; then
+    grn "✓ devin bulundu ($DEVIN_EXE)"
+    [ "${STUDIO_DEVIN_CLOUD:-0}" = "1" ] && dim "  · Devin Cloud oturumları etkin (STUDIO_DEVIN_CLOUD=1)"
+  else
+    red "✗ devin bulunamadı. Lütfen Devin CLI'nın kurulu olduğundan emin olun (~/.local/bin/devin)"; HATA=1
+  fi
 else
-  red "✗ agy bulunamadı. Lütfen Antigravity CLI'nın kurulu olduğundan emin olun (~/.local/bin/agy)"; HATA=1
+  AGY_EXE="$(command -v agy 2>/dev/null || true)"
+  if [ -z "$AGY_EXE" ] && [ -x "$HOME/.local/bin/agy" ]; then
+    AGY_EXE="$HOME/.local/bin/agy"
+  fi
+
+  if [ -n "$AGY_EXE" ]; then
+    grn "✓ agy bulundu ($AGY_EXE)"
+  else
+    red "✗ agy bulunamadı. Lütfen Antigravity CLI'nın kurulu olduğundan emin olun (~/.local/bin/agy)"; HATA=1
+  fi
 fi
 
 if [ ! -f proje_kapsami.md ]; then
@@ -415,9 +439,10 @@ echo
 dim "Log: $LOG    Durdurmak için kontrol ekranında 's'"
 echo
 
-# Arka plan sürecine mutlak komut yollarını ve Antigravity ayarlarını geçir
-export STUDIO_BACKEND="agy"
+# Arka plan sürecine mutlak komut yollarını ve backend ayarlarını geçir
+export STUDIO_BACKEND="${STUDIO_BACKEND:-agy}"
 export STUDIO_AGY_BIN="${AGY_EXE:-$HOME/.local/bin/agy}"
+[ -n "${DEVIN_EXE:-}" ] && export STUDIO_DEVIN_BIN="$DEVIN_EXE"
 nohup $PY studio_engine.py --full --yes ${STUDIO_BUTCE:+--max-cost $STUDIO_BUTCE} > "$LOG" 2>&1 &
 PID=$!
 sleep 2

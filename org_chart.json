@@ -17,7 +17,6 @@
         "workspace/docs/ekip_yapisi.json"
       ],
       "stage": "design",
-      "backend": "agy",
       "model": "gemini-3.8-flash-high",
       "max_words": 1600
     },
@@ -35,7 +34,6 @@
         "workspace/docs/kabul_kriterleri.md"
       ],
       "stage": "design",
-      "backend": "agy",
       "model": "gemini-3.8-flash-high",
       "max_words": 2200
     },
@@ -54,7 +52,6 @@
         "workspace/docs/ekran_envanteri.md"
       ],
       "stage": "design",
-      "backend": "agy",
       "model": "gemini-3.8-flash-high",
       "max_words": 2400
     },
@@ -74,7 +71,6 @@
         "workspace/docs/tasarim_onizleme.html"
       ],
       "stage": "design",
-      "backend": "agy",
       "model": "gemini-3.8-flash-high",
       "max_words": 2800
     },
@@ -95,7 +91,6 @@
         "workspace/docs/tasarim_denetimi.md"
       ],
       "stage": "design",
-      "backend": "agy",
       "model": "gemini-3.8-flash-high",
       "max_words": 1800
     },
@@ -117,7 +112,6 @@
         "workspace/docs/paket_secim_raporu.md"
       ],
       "stage": "design",
-      "backend": "agy",
       "model": "gemini-3.8-flash-high",
       "max_words": 2000,
       "tools": [
@@ -140,7 +134,6 @@
         "workspace/docs/tehdit_modeli.md"
       ],
       "stage": "design",
-      "backend": "agy",
       "model": "gemini-3.8-flash-high",
       "max_words": 2000,
       "tools": [
@@ -163,7 +156,6 @@
         "workspace/pano.json"
       ],
       "stage": "design",
-      "backend": "agy",
       "model": "gemini-3.8-flash-high",
       "max_words": 1200
     },
@@ -182,7 +174,6 @@
         "workspace/tests/backend_testleri.md"
       ],
       "stage": "build",
-      "backend": "agy",
       "model": "gemini-3.8-flash-high",
       "max_words": 1500
     },
@@ -204,7 +195,6 @@
         "workspace/tests/web_testleri.md"
       ],
       "stage": "build",
-      "backend": "agy",
       "model": "gemini-3.8-flash-high",
       "max_words": 1800
     },
@@ -226,7 +216,6 @@
         "workspace/tests/mobile_testleri.md"
       ],
       "stage": "build",
-      "backend": "agy",
       "model": "gemini-3.8-flash-high",
       "max_words": 1800
     },
@@ -248,7 +237,6 @@
         "workspace/docs/bug_raporlari.md"
       ],
       "stage": "build",
-      "backend": "agy",
       "model": "gemini-3.8-flash-high",
       "max_words": 1800,
       "tools": [
@@ -296,7 +284,6 @@
         "workspace/docs/uat_kabul_raporu.md"
       ],
       "stage": "build",
-      "backend": "agy",
       "model": "gemini-3.8-flash-high",
       "max_words": 1800,
       "tools": [
@@ -329,7 +316,6 @@
         "workspace/docs/bug_raporlari.md"
       ],
       "stage": "build",
-      "backend": "agy",
       "model": "gemini-3.8-flash-high",
       "max_words": 1800,
       "tools": [
@@ -362,7 +348,6 @@
         "canli.sh"
       ],
       "stage": "build",
-      "backend": "agy",
       "model": "gemini-3.8-flash-high",
       "max_words": 1500,
       "tools": [
@@ -406,7 +391,6 @@
         "workspace/docs/kurtarma_ve_dagitim_gunlugu.md"
       ],
       "stage": "build",
-      "backend": "agy",
       "model": "gemini-3.8-flash-high",
       "max_words": 1200,
       "tools": [
