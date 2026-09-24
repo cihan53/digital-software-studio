@@ -216,11 +216,13 @@ KATEGORILER = [
 
 def ai_danisma(talep: dict, kategori_id: str) -> str:
     """
-    Talebi analiz etmek için sırayla AGY (agy) ve Claude (claude) CLI'ye danışır.
+    Talebi analiz etmek için sırayla AGY (agy), Devin (devin) ve Claude (claude)
+    CLI'ye danışır.
     Hiçbiri mevcut değilse veya hata oluşursa boş string döner (sistem çökmez).
 
     Mevcut AI kaynakları (yerel):
-      - agy   : Google Antigravity / Gemini tabanlı
+      - agy    : Google Antigravity / Gemini tabanlı
+      - devin  : Cognition Devin AI tabanlı
       - claude : Anthropic Claude tabanlı
     """
     prompt = textwrap.dedent(f"""
@@ -244,6 +246,10 @@ def ai_danisma(talep: dict, kategori_id: str) -> str:
         {
             "ad": "AGY",
             "komut": ["agy", "ask", "--no-interactive", prompt],
+        },
+        {
+            "ad": "Devin",
+            "komut": ["devin", "-p", prompt, "--respect-workspace-trust", "false"],
         },
         {
             "ad": "Claude",
