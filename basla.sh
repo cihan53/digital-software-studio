@@ -11,6 +11,15 @@
 #   ./basla.sh --onayla     günlük kota dolduğunda bir tur daha izin ver
 #   ./basla.sh --onayla 5   bugün için 5 görevlik ek kota tanı
 #
+#   Pano yönetimi (studio.db üzerinde çalışır, koşucu bayrakla haberdar edilir):
+#   ./basla.sh --oncelik S1-T2 10      görev önceliği (büyük = önce koşar)
+#   ./basla.sh --sira S1-T2 0          görevi sprint içinde sıraya taşı
+#   ./basla.sh --sprint-sira S3 0      sprint'i yeniden sırala
+#   ./basla.sh --gec S2-T1             mevcut çağrı bitince bu göreve geç
+#   ./basla.sh --gec S2-T1 --force     çağrıyı anında kesip bu göreve geç
+#   ./basla.sh --atla [S1-T2]          görevi atla (id yoksa koşan/sıradaki)
+#   ./basla.sh --atla S1-T2 --force    çağrıyı anında kesip atla
+#
 #   Günlük varsayılan: 3 görev / 2 USD. Değiştirmek için:
 #   STUDIO_GUNLUK_GOREV, STUDIO_GUNLUK_BUTCE
 #   ./basla.sh --sifirla    ilerlemeyi sıfırlar (üretilmiş dosyalar arşive gider)
@@ -218,12 +227,7 @@ try:
     import studio_board as B
     p = B.load()
 except Exception:
-    pano = root/"workspace/pano.json"
-    if pano.exists():
-        try:
-            p = json.load(open(pano))
-        except Exception:
-            pass
+    pass
 
 if p and p.get("sprints"):
     try:
@@ -317,6 +321,85 @@ PYEOF
       grn "Durdurma istendi — çalışan çağrı bitince koşucu çıkacak."
       dim "Hemen kesmek için: pkill -f studio_engine.py  (devam eden çağrının parası gider)"
       exit 0 ;;
+  --oncelik|--sira|--sprint-sira|--gec|--atla)
+      $PY - "$@" <<'PYEOF'
+import sys
+import studio_board as B
+
+cmd = sys.argv[1]
+args = [a for a in sys.argv[2:] if not a.startswith("--")]
+force = "--force" in sys.argv[2:]
+
+if cmd == "--oncelik":
+    if len(args) < 2:
+        sys.exit("Kullanım: ./basla.sh --oncelik <görev_id> <değer>")
+    tid, deger = args[0], int(args[1])
+    if not B.set_priority(tid, deger):
+        sys.exit(f"Görev bulunamadı: {tid}")
+    B.request("reload")
+    print(f"✓ {tid} önceliği {deger} olarak ayarlandı (büyük = önce koşar).")
+
+elif cmd == "--sira":
+    if len(args) < 2:
+        sys.exit("Kullanım: ./basla.sh --sira <görev_id> <pozisyon>")
+    tid, poz = args[0], int(args[1])
+    if not B.reorder_task(tid, poz):
+        sys.exit(f"Görev bulunamadı: {tid}")
+    B.request("reload")
+    print(f"✓ {tid} sprint içinde {poz}. sıraya taşındı.")
+
+elif cmd == "--sprint-sira":
+    if len(args) < 2:
+        sys.exit("Kullanım: ./basla.sh --sprint-sira <sprint_id> <pozisyon>")
+    sid, poz = args[0], int(args[1])
+    if not B.reorder_sprint(sid, poz):
+        sys.exit(f"Sprint bulunamadı: {sid}")
+    B.request("reload")
+    print(f"✓ {sid} {poz}. sıraya taşındı.")
+
+elif cmd == "--gec":
+    if len(args) < 1:
+        sys.exit("Kullanım: ./basla.sh --gec <görev_id> [--force]")
+    tid = args[0]
+    try:
+        board = B.load()
+    except Exception:
+        sys.exit("Pano yok — önce ./basla.sh ile koşu başlatın.")
+    s, t = B.find_task(board, tid)
+    if t is None:
+        sys.exit(f"Görev bulunamadı: {tid}")
+    if t["status"] in B.TERMINAL:
+        sys.exit(f"{tid} zaten kapalı ({t['status']}).")
+    B.request("goto", tid)
+    if force:
+        B.request("force")
+        print(f"✓ {tid} hedeflendi — çalışan çağrı anında kesilip bu göreve geçilecek.")
+    else:
+        print(f"✓ {tid} hedeflendi — mevcut çağrı bitince bu göreve geçilecek.")
+
+elif cmd == "--atla":
+    tid = args[0] if args else None
+    if not tid:
+        try:
+            board = B.load()
+            _, run = B.find_running(board)
+            if run:
+                tid = run["id"]
+            else:
+                _, t = B.next_ready(board)
+                tid = t["id"] if t else None
+        except Exception:
+            tid = None
+    if not tid:
+        sys.exit("Atlanacak görev bulunamadı.")
+    B.request("skip", tid)
+    if force:
+        B.request("force")
+        print(f"✓ {tid} atlanacak — çalışan çağrı anında kesiliyor.")
+    else:
+        print(f"✓ {tid} atlanacak — mevcut çağrı bitince uygulanır.")
+PYEOF
+      exit 0 ;;
   --sifirla)
       if calisiyor_mu; then red "Önce koşuyu durdur: ./basla.sh --durdur"; exit 1; fi
       TS=$(date +%Y%m%d_%H%M%S)
@@ -324,7 +407,20 @@ PYEOF
       for d in workspace/docs workspace/src workspace/tests; do
         [ -d "$d" ] && mv "$d" "_arsiv/$TS/" 2>/dev/null
       done
-      [ -f workspace/pano.json ] && mv workspace/pano.json "_arsiv/$TS/"
+      # Panoyu arşivle (yedek) ve studio.db'den temizle
+      $PY - "_arsiv/$TS" <<'PYEOF'
+import json, pathlib, sys
+import studio_board as B
+try:
+    board = B.db_load_board()
+    if board and board.get("sprints"):
+        pathlib.Path(sys.argv[1], "sprint_panosu_yedek.json").write_text(
+            json.dumps(board, indent=2, ensure_ascii=False), encoding="utf-8")
+except Exception:
+    pass
+B.board_reset()
+PYEOF
+      rm -f workspace/pano.json
       rm -f workspace/.state.json
       rm -rf workspace/.trace workspace/.control workspace/.stale
       grn "Sıfırlandı. Önceki çıktılar: _arsiv/$TS/"
