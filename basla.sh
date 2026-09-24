@@ -362,6 +362,12 @@ if [ "$STUDIO_BACKEND" = "devin" ]; then
   if [ -n "$DEVIN_EXE" ]; then
     grn "✓ devin bulundu ($DEVIN_EXE)"
     [ "${STUDIO_DEVIN_CLOUD:-0}" = "1" ] && dim "  · Devin Cloud oturumları etkin (STUDIO_DEVIN_CLOUD=1)"
+    # Oturum kontrolü: token süresizdir; koşu ortasında patlamamak için erken uyar.
+    if "$DEVIN_EXE" auth status 2>&1 | grep -qi "not logged in"; then
+      red "✗ devin oturumu yok. Bir kez 'devin auth login' çalıştırın (token süresizdir)."; HATA=1
+    else
+      grn "✓ devin oturumu açık"
+    fi
   else
     red "✗ devin bulunamadı. Lütfen Devin CLI'nın kurulu olduğundan emin olun (~/.local/bin/devin)"; HATA=1
   fi
