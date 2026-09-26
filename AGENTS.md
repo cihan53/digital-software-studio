@@ -6,6 +6,9 @@ Bu dosya, projede yapılacak tüm görevler, hata düzeltmeleri ve özellik geli
 
 ## 📌 Zorunlu Görev / Hata Çözüm İş Akışı (Git Issue & Branch & PR Kuralı)
 
+> Bu akış `~/.gemini/config/rules/git_development_workflow.md` global kuralıyla
+> aynı konvansiyonu kullanır: `master` taban dalı, `bug/<N>` / `feature/<N>` dalları.
+
 Kullanıcı **"bunu çöz"**, **"bu hatayı gider"**, **"bunu yap"** veya herhangi bir geliştirme/düzeltme istediğinde kesinlikle aşağıdaki adımlar sırasıyla uygulanmalıdır:
 
 1. **GitHub Issue Aç:**
@@ -15,14 +18,17 @@ Kullanıcı **"bunu çöz"**, **"bu hatayı gider"**, **"bunu yap"** veya herhan
      ```
    * Oluşturulan Issue numarası (örn. `#12`) alınır.
 
-2. **Ana Daldan (main / master) Dal (Branch) Aç:**
-   * Ana dal güncellenir ve doğrudan Issue numarası referans alınarak yeni dal açılır:
+2. **Master'dan Dal (Branch) Aç:**
+   * Ana dal güncellenir ve Issue numarası referans alınarak yeni dal açılır.
+     Hatalar `bug/<N>`, özellikler/iyileştirmeler `feature/<N>` adını alır:
      ```bash
-     git checkout main
-     git pull origin main
-     git checkout -b issue-<issue_number>-<kisa_aciklama>
-     # Örnek: git checkout -b issue-12-sqlite-surec-gecisi
+     git checkout master
+     git pull origin master
+     git checkout -b bug/<issue_number>        # hata için
+     git checkout -b feature/<issue_number>    # özellik için
      ```
+   * Not: deponun ana dalı `master` yerine `main` ise `main` kullanılır
+     (`git remote show origin | grep 'HEAD branch'` ile görülebilir).
 
 3. **Geliştirmeyi Dal İçerisinde Yap ve Doğrula:**
    * İlgili değişiklikler ve testler sadece bu dal üzerinde gerçekleştirilir.
@@ -32,13 +38,13 @@ Kullanıcı **"bunu çöz"**, **"bu hatayı gider"**, **"bunu yap"** veya herhan
 4. **Değişiklikleri Commit ve Push Et:**
    ```bash
    git add .
-   git commit -m "fix/feat: <açıklama> (closes #<issue_number>)"
-   git push origin issue-<issue_number>-<kisa_aciklama>
+   git commit -m "fix/feat: <açıklama> (#<issue_number>)"
+   git push -u origin bug/<issue_number>
    ```
 
 5. **Merge Request / Pull Request (MR/PR) Aç:**
-   * GitHub üzerinde `main` dalına doğru bir Pull Request açılır ve Issue ile bağlanır:
+   * GitHub üzerinde `master` dalına doğru bir Pull Request açılır ve Issue ile bağlanır:
      ```bash
-     gh pr create --title "<PR Başlığı>" --body "Closes #<issue_number>\n\n<Yapılan değişikliklerin özeti>" --base main
+     gh pr create --title "<PR Başlığı>" --body "Closes #<issue_number>\n\n<Yapılan değişikliklerin özeti>" --base master
      ```
    * PR linki kullanıcıya sunulur.
