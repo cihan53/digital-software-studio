@@ -23,7 +23,8 @@ WORKSPACE = ROOT / "workspace"
 # Tek doğruluk kaynağı studio.db'dir. Eski sürümlerde pano.json kullanılıyordu;
 # dosya bulunursa BİR KEZ studio.db'ye aktarılıp _arsiv/ altına taşınır.
 LEGACY_BOARD = WORKSPACE / "pano.json"
-DB_PATH = ROOT / "studio.db"
+DB_PATH = WORKSPACE / "studio.db"
+_LEGACY_DB_PATH = ROOT / "studio.db"
 
 TODO, READY, RUNNING, BLOCKED, DONE, FAILED, SKIPPED = (
     "TODO", "READY", "RUNNING", "BLOCKED", "DONE", "FAILED", "SKIPPED"
@@ -159,6 +160,18 @@ _SCHEMA_INITIALIZED = False
 
 def db_conn() -> sqlite3.Connection:
     global _SCHEMA_INITIALIZED
+    # Eski sürümlerde studio.db repo kökündeydi; çalışma alanı kuralı gereği
+    # workspace/ altına taşınır (tek seferlik, -shm/-wal eşlikçileriyle).
+    if _LEGACY_DB_PATH.exists() and not DB_PATH.exists():
+        try:
+            DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+            _LEGACY_DB_PATH.replace(DB_PATH)
+            for ek in ("-shm", "-wal"):
+                eski = _LEGACY_DB_PATH.parent / (_LEGACY_DB_PATH.name + ek)
+                if eski.exists():
+                    eski.replace(DB_PATH.parent / (DB_PATH.name + ek))
+        except OSError:
+            pass
     conn = sqlite3.connect(str(DB_PATH), timeout=30.0)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
@@ -1066,3 +1079,104 @@ def ledger_check(tahmini_maliyet: float) -> tuple[bool, str]:
         return False, (f"Günlük bütçeye yaklaşıldı: bugün ${d['maliyet']:.2f} harcandı, "
                        f"sıradaki görev ~${tahmini_maliyet:.2f} tutacak, sınır ${max_butce:.2f}")
     return True, ""
+
+
+# ---------------------------------------------------------------------------
+# Framework güncelleme bildirimi
+# ---------------------------------------------------------------------------
+# Bir proje (elektriklioto-gemini vb.) digital-software-studio'yu kullanırken
+# framework'te yeni sürüm çıkıp çıkmadığını buradan öğrenir. Sonuç
+# workspace/.studio_update_check.json'a TTL'li yazılır — ctl/web/motor aynı
+# önbelleği paylaşır, her render'da ağa çıkılmaz.
+
+UPDATE_CHECK_FILE = WORKSPACE / ".studio_update_check.json"
+UPDATE_CHECK_TTL = int(os.getenv("STUDIO_UPDATE_TTL", "3600"))  # saniye
+DS_VERSION_NAME = "studio.version"
+LOCAL_VERSION_NAME = ".studio-version"
+DS_GITHUB_RAW = os.getenv(
+    "STUDIO_DS_RAW",
+    "https://raw.githubusercontent.com/cihan53/digital-software-studio/main")
+
+
+def _ver_tuple(v) -> tuple:
+    try:
+        return tuple(int(x) for x in str(v or "").split("."))
+    except ValueError:
+        return (0,)
+
+
+def _studio_version_jsonu_bul() -> tuple[dict | None, str]:
+    """DS'nin studio.version'ını bul: önce yerel dizin, yoksa GitHub raw."""
+    adaylar = []
+    env = os.getenv("STUDIO_REPO")
+    if env:
+        adaylar.append(Path(env))
+    adaylar.append(ROOT.parent / "digital-software-studio")
+    for p in adaylar:
+        vf = p / DS_VERSION_NAME
+        if vf.is_file():
+            try:
+                return json.loads(vf.read_text(encoding="utf-8")), "yerel"
+            except Exception:
+                continue
+    try:
+        import urllib.request
+        with urllib.request.urlopen(
+                f"{DS_GITHUB_RAW}/{DS_VERSION_NAME}", timeout=3) as r:
+            return json.loads(r.read().decode("utf-8")), "github"
+    except Exception:
+        return None, ""
+
+
+def _framework_update_hesapla() -> dict | None:
+    # Bu dizin framework'ün kendisiyse (studio.version var, .studio-version yok)
+    # bildirim anlamsız — karşılaştırma yapma.
+    if (ROOT / DS_VERSION_NAME).exists() and not (ROOT / LOCAL_VERSION_NAME).exists():
+        return None
+    local_ver = "0.0.0"
+    lv = ROOT / LOCAL_VERSION_NAME
+    if lv.exists():
+        try:
+            local_ver = json.loads(lv.read_text(encoding="utf-8")).get("version") or "0.0.0"
+        except Exception:
+            pass
+    ds, kaynak = _studio_version_jsonu_bul()
+    if not ds:
+        return None
+    remote_ver = ds.get("version", "0.0.0")
+    yeni = _ver_tuple(remote_ver) > _ver_tuple(local_ver)
+    degisenler = []
+    if yeni:
+        for e in ds.get("changelog", []):
+            if _ver_tuple(e.get("version")) > _ver_tuple(local_ver):
+                degisenler.extend(e.get("changes", []))
+    return {"local": local_ver, "remote": remote_ver,
+            "update": yeni, "released": ds.get("released"),
+            "changes": degisenler, "kaynak": kaynak}
+
+
+def framework_update_info(ttl: int = UPDATE_CHECK_TTL) -> dict | None:
+    """DS framework'te yeni sürüm varsa bildirim bilgisi döndürür.
+
+    {'local','remote','update','released','changes','kaynak'} veya None
+    (framework'ün kendisi / DS'ye ulaşılamadı). Sonuç dosya önbelleğinde
+    `ttl` saniye tutulur; ağ erişimi yoksa sessizce None döner.
+    """
+    try:
+        c = json.loads(UPDATE_CHECK_FILE.read_text(encoding="utf-8"))
+        if time.time() - c.get("checked_at", 0) < ttl:
+            return c.get("info")
+    except Exception:
+        pass
+    try:
+        info = _framework_update_hesapla()
+    except Exception:
+        info = None
+    try:
+        UPDATE_CHECK_FILE.parent.mkdir(parents=True, exist_ok=True)
+        UPDATE_CHECK_FILE.write_text(
+            json.dumps({"checked_at": time.time(), "info": info},
+                       ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
+    return info

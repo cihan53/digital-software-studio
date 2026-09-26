@@ -27,6 +27,10 @@
   .gizli { display: none; }
   .mdl-sekme { display: flex; gap: 6px; margin: 10px 0; }
   .ipucu { font-size: 12px; color: var(--soluk); margin: 6px 0 14px; }
+  .gunc-banner { padding: 8px 14px; background: #3a2f0b; border-bottom: 1px solid var(--sinir);
+    font-size: 13px; color: #f0c948; }
+  .gunc-banner code { background: rgba(0,0,0,.35); padding: 1px 6px; border-radius: 4px;
+    font-size: 12px; }
 </style>
 </head>
 <body>
@@ -42,6 +46,7 @@
   <button class="tehlike" onclick="kontrol('durdur')">⏹ Durdur</button>
   <a href="/"><button>⌂</button></a>
 </div>
+<div id="gunc-banner" class="gunc-banner gizli"></div>
 <div class="sekmeler">
   <div class="sekme aktif" data-t="pano" onclick="sekmeAc('pano')">📋 Pano</div>
   <div class="sekme" data-t="canli" onclick="sekmeAc('canli')">📡 Canlı Çıktı</div>
@@ -135,6 +140,16 @@ async function ozetYukle(){
     i += ` · Kota ${d.kota.gorev}/${d.kota_sinir.gorev} görev · $${(d.kota.maliyet||0).toFixed(2)}/$${(d.kota_sinir.butce||0).toFixed(2)}`;
     document.getElementById('ilerleme').textContent=i;
     document.getElementById('saat').textContent=d.zaman;
+    const gb=document.getElementById('gunc-banner');
+    const g=d.studio_guncelleme;
+    if(g&&g.update){
+      gb.innerHTML=`⚠ Studio <b>v${esc(g.remote)}</b> güncellemesi mevcut `+
+        `<span class="soluk">(kurulu v${esc(g.local)})</span> — `+
+        `<code>python3 scripts/studio_updater.py --kontrol</code>`+
+        (g.changes&&g.changes.length?
+          ` <span class="soluk">· ${esc(g.changes[0])}${g.changes.length>1?' +'+(g.changes.length-1)+' değişiklik daha':''}</span>`:'');
+      gb.classList.remove('gizli');
+    }else gb.classList.add('gizli');
     const ak=document.getElementById('aktif');
     if(d.aktif&&d.aktif.role){
       ak.classList.remove('gizli');

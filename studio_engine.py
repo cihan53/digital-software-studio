@@ -2094,6 +2094,16 @@ def run_board(org: dict, brief: str, once: bool = False,
     B.audit("engine", "kosucu_baslangic",
             detay={"once": once, "max_tasks": max_tasks, "max_cost": max_cost})
 
+    # Framework güncelleme bildirimi — yeni DS sürümü varsa koşu başında uyar.
+    try:
+        gunc = B.framework_update_info()
+        if gunc and gunc.get("update"):
+            print(f"[i] Studio v{gunc['remote']} güncellemesi mevcut "
+                  f"(kurulu v{gunc['local']}) — "
+                  f"python3 scripts/studio_updater.py --kontrol")
+    except Exception:
+        pass
+
     start_cost = spent_so_far()
     if max_cost:
         print(f"[i] Bütçe sınırı: ${max_cost:.2f} (şimdiye kadar ${start_cost:.2f} harcandı)")

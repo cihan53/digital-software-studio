@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = ROOT / "studio.db"
+DB_PATH = ROOT / "workspace" / "studio.db"
 TALEP_JSON = ROOT / "workspace/docs/musteri_talepleri.json"
 PANO_JSON = ROOT / "workspace/pano.json"
 ORG_CHART = ROOT / "org_chart.json"
