@@ -354,6 +354,25 @@ def db_save_board(board: dict):
     conn = db_conn()
     try:
         cur = conn.cursor()
+
+        # İptal edilmiş taleplere bağlı görevler panoda yaşamasın: purge satırları
+        # sildikten sonra bile bayat bellek görüntüsü tutan bir yazar (örn. uzun
+        # çağrıdaki koşucu) save ederse görevler dirilmesin — budama her yazıda
+        # yapılır. Varolmayan görevlere bağımlılıklar da aynı sebeple düşülür.
+        iptal_ids = {r["id"] for r in cur.execute(
+            "SELECT id FROM talepler WHERE durum = 'IPTAL'")}
+        if iptal_ids:
+            for s in board.get("sprints", []):
+                s["tasks"] = [t for t in s.get("tasks", [])
+                              if t.get("talep_id") not in iptal_ids]
+            board["sprints"] = [s for s in board["sprints"] if s.get("tasks")]
+        mevcut_ids = {t["id"] for _, t in all_tasks(board)}
+        for s, t in all_tasks(board):
+            deps = t.get("depends_on", [])
+            temiz = [d for d in deps if d in mevcut_ids]
+            if len(temiz) != len(deps):
+                t["depends_on"] = temiz
+
         meta = {
             "baseline_end": board.get("baseline_end"),
             "created_at": board.get("created_at"),
