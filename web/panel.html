@@ -31,6 +31,8 @@
     font-size: 13px; color: #f0c948; }
   .gunc-banner code { background: rgba(0,0,0,.35); padding: 1px 6px; border-radius: 4px;
     font-size: 12px; }
+  .motor-rozet { background: #3a2f0b; color: #f0c948; padding: 0 7px; border-radius: 8px;
+    font-size: 11px; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -164,6 +166,9 @@ async function ozetYukle(){
         ` <span class="soluk">veya <code>./basla.sh --motor ${esc(mo.hedef||'&lt;görev&gt;')} &lt;backend&gt;</code></span>`;
       mb.classList.remove('gizli');
     }else mb.classList.add('gizli');
+    motorOverrides={};
+    for(const o of (d.motor_override||[])) motorOverrides[o.hedef_id]=o;
+    if(typeof panoVeri!=='undefined'&&panoVeri) panoCiz();
     const ak=document.getElementById('aktif');
     if(d.aktif&&d.aktif.role){
       ak.classList.remove('gizli');
@@ -188,10 +193,13 @@ function panoCiz(){
   kok.innerHTML='';
   const sprintler=[...(panoVeri.sprints||[])].sort((a,b)=>(b.order??0)-(a.order??0));
   for(const s of sprintler){
+    const ov=motorOverrides[s.id];
+    const ovrz=ov?` <span class="motor-rozet" title="override — kaldırmak için tıkla" onclick="motorKaldir('${s.id}')">⚙ ${esc(ov.backend||'')}${ov.model?'/'+esc(ov.model):''} ✕</span>`:'';
     const div=document.createElement('div'); div.className='sprint';
     div.innerHTML=`<div class="sprint-bas"><b>${esc(s.id)}</b> ${esc(s.name||'')}
       <span class="soluk">${esc(s.planned_start||'?')} → ${esc(s.planned_end||'?')}</span>
-      <span class="rozet r-${s.status}">${s.status}</span></div>`;
+      <span class="rozet r-${s.status}">${s.status}</span>${ovrz}
+      <button class="kucuk" title="Sprint motorunu değiştir" onclick="motorSec('${s.id}')">⚙</button></div>`;
     const g=document.createElement('div'); g.className='gorevler'; g.dataset.sprint=s.id;
     for(const t of s.tasks||[]) g.appendChild(gorevSatir(t));
     div.appendChild(g); kok.appendChild(div);
@@ -201,11 +209,14 @@ function gorevSatir(t){
   const r=document.createElement('div');
   r.className='gorev'; r.draggable=true; r.dataset.id=t.id;
   const onc=t.priority?`<span class="rozet" title="öncelik">▲${t.priority}</span>`:'';
+  const ov=motorOverrides[t.id];
+  const ovrz=ov?`<span class="motor-rozet" title="override — kaldırmak için tıkla" onclick="motorKaldir('${t.id}')">⚙ ${esc(ov.backend||'')}${ov.model?'/'+esc(ov.model):''} ✕</span>`:'';
   r.innerHTML=`<span class="gid">${esc(t.id)}</span><span class="rozet r-${t.status}">${t.status}</span>
     <span class="gfaz">${esc(t.phase||'')}</span><span class="gad" title="${esc(t.description||'')}">${esc(t.title||'')}</span>
-    ${onc}${t.duration_s?`<span class="soluk">${insan(t.duration_s)}</span>`:''}
+    ${onc}${ovrz}${t.duration_s?`<span class="soluk">${insan(t.duration_s)}</span>`:''}
     <span class="gnot">${esc(t.note||'')}</span>
     <span class="gaks">
+      <button class="kucuk" title="Motor değiştir" onclick="motorSec('${t.id}')">⚙</button>
       <button class="kucuk" title="Öncelik öner" onclick="oncelikOner('${t.id}',${(t.priority||0)+10})">▲</button>
       <button class="kucuk" title="Bu göreve geç" onclick="kontrol('gec','${t.id}')">⇢</button>
       <button class="kucuk" title="Atla" onclick="kontrol('atla','${t.id}')">⤼</button>
@@ -238,11 +249,25 @@ async function kontrol(aks,gorev,force){
     body:JSON.stringify({aksiyon:aks,gorev:gorev,force:!!force})})).json();
   toast(d.mesaj); ozetYukle();
 }
+let motorOverrides={};
 async function motorSec(hedef,backend){
   if(!hedef){hedef=prompt('Hedef görev veya sprint (örn. S23-T1 veya S23):',''); if(!hedef)return;}
+  if(!backend){
+    backend=prompt(`${hedef} için motor:\nagy (Gemini) · devin · claude\n(boş bırakırsan değişmez)`,'claude');
+    if(backend===null)return;
+    if(!backend.trim())return;
+  }
+  const model=prompt(`${hedef} → ${backend} için model (boş = varsayılan):`,
+    backend==='claude'?'sonnet':''); if(model===null)return;
   const d=await(await fetch('/api/kontrol',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({aksiyon:'motor',hedef:hedef,backend:backend})})).json();
-  toast(d.mesaj); ozetYukle();
+    body:JSON.stringify({aksiyon:'motor',hedef:hedef,backend:backend.trim(),
+      model:model.trim()||null})})).json();
+  toast(d.mesaj); ozetYukle(); panoYukle();
+}
+async function motorKaldir(hedef){
+  const d=await(await fetch('/api/kontrol',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({aksiyon:'motor_temizle',hedef:hedef})})).json();
+  toast(d.mesaj); ozetYukle(); panoYukle();
 }
 async function onayla(){
   const g=prompt('Ek görev kotası (boş = varsayılan tur):',''); if(g===null)return;
