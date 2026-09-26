@@ -176,7 +176,15 @@ def db_conn() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.row_factory = sqlite3.Row
-    if not _SCHEMA_INITIALIZED:
+    # Bayrağa değil dosyanın kendisine bak: db canlı süreç altında taşınmış/
+    # sıfırlanmış olabilir — boş dosyaya 'no such table' ile yazılmasın.
+    try:
+        sema_var = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sprintler'"
+        ).fetchone() is not None
+    except Exception:
+        sema_var = False
+    if not _SCHEMA_INITIALIZED or not sema_var:
         try:
             conn.executescript(SCHEMA_INIT)
             _db_migrate(conn)
@@ -871,6 +879,31 @@ def mark(board: dict, task_id: str, status: str, note: str = ""):
                     "UPDATE sprintler SET gercek_baslangic = ? WHERE id = ?",
                     (s["actual_start"], s["id"])
                 )
+            # Sprint durumunu görevlerin güncel hâlinden türet — sprint
+            # göstergesi refresh() beklenmeden de doğru kalsın.
+            cur.execute("SELECT durum FROM pano_gorevleri WHERE sprint_id = ?",
+                        (s["id"],))
+            st = {r[0] for r in cur.fetchall()}
+            if st and st <= TERMINAL:
+                yeni = DONE
+            elif RUNNING in st:
+                yeni = RUNNING
+            elif FAILED in st or BLOCKED in st:
+                yeni = BLOCKED
+            elif READY in st:
+                yeni = READY
+            else:
+                yeni = TODO
+            if yeni != s.get("status"):
+                s["status"] = yeni
+                if yeni == DONE and not s.get("actual_end"):
+                    s["actual_end"] = datetime.now().isoformat(timespec="seconds")
+                    cur.execute(
+                        "UPDATE sprintler SET durum = ?, gercek_bitis = ? WHERE id = ?",
+                        (yeni, s["actual_end"], s["id"]))
+                else:
+                    cur.execute("UPDATE sprintler SET durum = ? WHERE id = ?",
+                                (yeni, s["id"]))
             conn.commit()
         finally:
             conn.close()
