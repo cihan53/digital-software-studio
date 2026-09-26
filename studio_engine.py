@@ -22,6 +22,7 @@ import signal
 import time
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 # Log'un tail -f ile anlık izlenebilmesi için satır tamponlama.
@@ -294,7 +295,9 @@ AGY_MODEL = os.getenv("STUDIO_AGY_MODEL", "gemini-3.8-flash-high")
 AGY_TIMEOUT = int(os.getenv("STUDIO_AGY_TIMEOUT", "1800"))
 # Devin AI arka ucu (devin CLI, -p print kipi; STUDIO_DEVIN_CLOUD=1 ile bulut oturumu).
 DEVIN_MODEL = os.getenv("STUDIO_DEVIN_MODEL", "")   # boş = hesap/CLI varsayılanı
+CLAUDE_MODEL = os.getenv("STUDIO_CLAUDE_MODEL", "sonnet")  # sonnet / opus / haiku
 DEVIN_TIMEOUT = int(os.getenv("STUDIO_DEVIN_TIMEOUT", "3600"))
+CLAUDE_TIMEOUT = int(os.getenv("STUDIO_CLAUDE_TIMEOUT", "1800"))
 DEVIN_CLOUD = os.getenv("STUDIO_DEVIN_CLOUD", "0") == "1"
 DEVIN_PERMISSION_MODE = os.getenv("STUDIO_DEVIN_PERMISSION_MODE", "dangerous")
 EFFORT = os.getenv("STUDIO_EFFORT", "high")   # low | medium | high
@@ -409,7 +412,7 @@ def trace_fail(meta: dict, error: str, duration: float):
         pass
 
 
-VALID_BACKENDS = ("agy", "devin")
+VALID_BACKENDS = ("agy", "devin", "claude")
 
 
 def load_and_merge_dynamic_roles(org: dict) -> dict:
@@ -500,14 +503,18 @@ def synthesize_role(org: dict, role_id: str) -> dict:
     return synthetic_agent
 
 
-def resolve_engine(agent: dict) -> tuple[str, str, str, list]:
+def resolve_engine(agent: dict, override: dict | None = None) -> tuple[str, str, str, list]:
     """Rolün motorunu belirler: (backend, model, effort, tools).
 
     Rol org_chart'ta kendi "backend" değerini belirtebilir; belirtmezse
     STUDIO_BACKEND / --backend ile seçilen genel backend kullanılır.
-    Desteklenen backend'ler: agy (Antigravity/Gemini), devin (Devin AI).
+    `override` (motor_override tablosu) görev/sprint bazında üstün gelir.
+    Desteklenen backend'ler: agy (Antigravity/Gemini), devin (Devin AI),
+    claude (Claude Code CLI).
     """
-    backend = (agent.get("backend") or BACKEND or "agy").lower()
+    override = override or {}
+    backend = (override.get("backend") or agent.get("backend")
+               or BACKEND or "agy").lower()
     if backend not in VALID_BACKENDS:
         raise ValueError(
             f"'{agent['id']}' rolünde geçersiz backend '{backend}'. "
@@ -517,17 +524,23 @@ def resolve_engine(agent: dict) -> tuple[str, str, str, list]:
         # Devin kendi model isimlerini kullanır (ör. swe-2, opus, codex).
         # Rol "devin_model" ile geçersiz kılabilir; aksi hâlde STUDIO_DEVIN_MODEL
         # (boşsa CLI/hesap varsayılanı devreye girer).
-        model = agent.get("devin_model") or DEVIN_MODEL
+        model = override.get("model") or agent.get("devin_model") or DEVIN_MODEL
+    elif backend == "claude":
+        model = (override.get("model") or agent.get("claude_model")
+                 or agent.get("model") or CLAUDE_MODEL)
+        # Rol modeli Gemini ismi taşıyorsa claude karşılığına düş.
+        if "gemini" in model.lower():
+            model = CLAUDE_MODEL
     else:
-        model = agent.get("model") or AGY_MODEL
-        # Herhangi bir yerde claude veya opus/sonnet kalmışsa Gemini 3.8 karşılığına eşle:
+        model = override.get("model") or agent.get("model") or AGY_MODEL
+        # agy altında claude ailesi isim kalmışsa Gemini 3.8 karşılığına eşle:
         if any(k in model.lower() for k in ("opus", "sonnet", "claude")):
             model = "gemini-3.8-flash-high"
 
     tools = agent.get("tools") or []
     if not isinstance(tools, list):
         raise ValueError(f"'{agent['id']}' rolünde 'tools' liste olmalı")
-    return (backend, model, agent.get("effort") or EFFORT, tools)
+    return (backend, model, override.get("effort") or agent.get("effort") or EFFORT, tools)
 
 
 class CliResult:
@@ -548,17 +561,29 @@ class CallAborted(Exception):
     """
 
 
-def _run_cli(cmd: list, cwd: Path, timeout: int, name: str):
+def _run_cli(cmd: list, cwd: Path, timeout: int, name: str,
+             stdin_text: str | None = None):
     """CLI'yi kesilebilir şekilde çalıştırır.
 
     Normal akışta subprocess.run ile aynıdır. Farkı: her yarım saniyede
     workspace/.control/force bayrağına bakılır; bayrak varsa süreç grubu
     SIGTERM ile öldürülür ve CallAborted fırlatılır (--gec/--atla --force).
+    `stdin_text` verilirse ayrı bir yazıcı iş parçacığıyla sürecin
+    stdin'ine beslenir (uzun prompt'lar argv sınırını aşar).
     """
     proc = subprocess.Popen(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        cmd, stdin=subprocess.PIPE if stdin_text is not None else None,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, cwd=str(cwd), start_new_session=True,
     )
+    if stdin_text is not None:
+        def _besle():
+            try:
+                proc.stdin.write(stdin_text)
+                proc.stdin.close()
+            except (OSError, BrokenPipeError):
+                pass
+        threading.Thread(target=_besle, daemon=True).start()
     deadline = time.time() + timeout
     try:
         while proc.poll() is None:
@@ -718,6 +743,54 @@ def _call_devin(system_prompt: str, user_prompt: str, effort: str, model: str,
     return CliResult(text=text, stop_reason="end_turn", cost=0.0, usage={})
 
 
+def _call_claude(system_prompt: str, user_prompt: str, effort: str, model: str,
+                 tools: list | None = None) -> CliResult:
+    """Claude Code CLI'yi print (etkileşimsiz) kipinde çalıştırır.
+
+    1. `claude -p --output-format json` stdin'den kullanıcı promptunu okur;
+       rol tanımı `--system-prompt` ile geçilir.
+    2. Rol araçları org_chart'ta zaten Claude Code adlarıyla yazılıdır
+       (Read, Glob, Grep, Bash(x:*), WebSearch...) → doğrudan --allowedTools.
+    3. Araçsız roller SCRATCH_DIR'de çalışır; araçlılar ROOT'ta.
+    4. JSON çıktısı usage + total_cost_usd içerir.
+    """
+    exe = find_exe("claude")
+    if not exe:
+        raise RuntimeError("'claude' bulunamadı. Claude Code CLI kurulu olmalı "
+                           "(npm i -g @anthropic-ai/claude-code).")
+
+    cmd = [exe, "-p", "--output-format", "json"]
+    if model:
+        cmd += ["--model", model]
+    if system_prompt:
+        cmd += ["--system-prompt", system_prompt.replace("\x00", "")]
+    for t in tools or []:
+        cmd += ["--allowedTools", t]
+
+    run_cwd = ROOT if tools else SCRATCH_DIR
+    rc, out, err = _run_cli(cmd, run_cwd, CLAUDE_TIMEOUT + 60, "claude",
+                            stdin_text=user_prompt)
+
+    if rc != 0:
+        detail = (err or out or "").strip()[:500]
+        raise RuntimeError(f"claude hata koduyla çıktı ({rc}): {detail}")
+
+    try:
+        data = json.loads((out or "").strip())
+    except json.JSONDecodeError:
+        raise RuntimeError(f"claude JSON döndürmedi: {(out or '').strip()[:300]}")
+    if data.get("is_error"):
+        raise RuntimeError(f"claude hata bildirdi: {str(data.get('result'))[:300]}")
+
+    text = (data.get("result") or "").strip()
+    if not text:
+        raise RuntimeError("claude metin üretmedi (boş sonuç).")
+    (TRACE_DIR / "current.out").write_text(text, encoding="utf-8")
+    return CliResult(text=text, stop_reason="end_turn",
+                     cost=float(data.get("total_cost_usd") or 0.0),
+                     usage=data.get("usage") or {})
+
+
 # Kota/limit ve geçici ağ hatalarında ölmek yerine bekle-ve-devam et.
 LIMIT_PATTERNS = (
     "usage limit", "rate limit", "quota", "resets at", "too many requests",
@@ -748,8 +821,12 @@ def is_limit_error(msg: str) -> bool:
     return any(pat in low for pat in LIMIT_PATTERNS)
 
 
-def wait_for_quota(reason: str, waited: int) -> int:
-    """Limit hatasında bekler. Bekleme sırasında durdurma isteğine saygı duyar."""
+def wait_for_quota(reason: str, waited: int, backend: str = "",
+                   task_id: str = "") -> int:
+    """Limit hatasında bekler. Bekleme sırasında durdurma ve motor
+    değişikliği isteklerine saygı duyar — görevin override backend'i
+    beklenenden farklıysa çağrı kesilir, görev kuyruğa dönüp yeni
+    motorla yeniden alınır."""
     if waited >= MAX_WAIT:
         raise RuntimeError(
             f"Kota limiti {MAX_WAIT // 3600} saattir açılmadı, vazgeçiliyor. Son hata: {reason}"
@@ -767,15 +844,34 @@ def wait_for_quota(reason: str, waited: int) -> int:
             raise RuntimeError("Beklerken durdurma isteği alındı.")
         if B.is_set("force") or B.is_set("goto") or B.value_of("skip"):
             raise CallAborted("Kota beklemesi sırasında kontrol isteği alındı.")
+        if task_id and backend:
+            try:
+                ov = B.motor_override(task_id)
+                if ov.get("backend") and ov["backend"] != backend:
+                    B.motor_oneri_temizle()
+                    raise CallAborted(
+                        f"Motor değişimi: {backend} → {ov['backend']} "
+                        f"({ov['hedef']} override)")
+            except RuntimeError:
+                pass  # sqlite kilitlenmesi vb. — bir sonraki turda tekrar bakılır
         time.sleep(min(10, step - slept))
         slept += 10
     return waited + step
 
 
+# Kota beklemesi bu süreyi aşınca ctl/web'de alternatif motor önerilir.
+MOTOR_ONERI_ESIK = int(os.getenv("STUDIO_MOTOR_ONERI_ESIK", "120"))
+
+
+def _motor_alternatifler(current: str) -> list[str]:
+    """Kurulu CLI'si bulunan diğer backend'ler (öneri için)."""
+    return [b for b in VALID_BACKENDS if b != current and find_exe(b)]
+
+
 def query_claude(system_prompt: str, user_prompt: str,
                  backend: str, model: str, base_effort: str,
                  trace_meta: dict, tools: list | None = None) -> str:
-    """Seçilen backend (agy / devin) üzerinden modeli çalıştırıp yanıtı döndürür."""
+    """Seçilen backend (agy / devin / claude) üzerinden modeli çalıştırıp yanıtı döndürür."""
     meta = dict(trace_meta, effort=base_effort, started_at=time.time(),
                 prompt_chars=len(system_prompt) + len(user_prompt))
     trace_begin(meta)
@@ -787,6 +883,8 @@ def query_claude(system_prompt: str, user_prompt: str,
             try:
                 if backend == "devin":
                     res = _call_devin(system_prompt, user_prompt, base_effort, model, tools)
+                elif backend == "claude":
+                    res = _call_claude(system_prompt, user_prompt, base_effort, model, tools)
                 else:
                     res = _call_agy(system_prompt, user_prompt, base_effort, model, tools)
                 text = res.text
@@ -795,6 +893,7 @@ def query_claude(system_prompt: str, user_prompt: str,
                 out_t = u.get("output_tokens", 0)
                 th_t = u.get("thinking_tokens", 0)
                 print(f"      ({backend}: {in_t} girdi / {out_t} çıktı / {th_t} düşünce token)")
+                B.motor_oneri_temizle()
                 break
             except CallAborted:
                 (TRACE_DIR / "current.json").write_text("{}", encoding="utf-8")
@@ -802,7 +901,12 @@ def query_claude(system_prompt: str, user_prompt: str,
             except RuntimeError as e:
                 if not is_limit_error(str(e)):
                     raise
-                waited = wait_for_quota(str(e), waited)
+                waited = wait_for_quota(str(e), waited, backend,
+                                        meta.get("task") or "")
+                if waited >= MOTOR_ONERI_ESIK:
+                    B.motor_oneri_yaz(backend, model,
+                                      meta.get("task") or meta.get("sprint") or "",
+                                      str(e), _motor_alternatifler(backend))
     except RuntimeError as e:
         # Fatal hata: çağrının 'sona erdiğini' trace'e yaz ki kontrol ekranı
         # bayat started_at'ten sayan donuk bir sayaç göstermesin.
@@ -1730,9 +1834,13 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
         B.mark(board, task["id"], B.FAILED, f"rol bulunamadı: {task['role']}")
         return False
 
-    backend, model, effort, tools = resolve_engine(agent)
+    override = B.motor_override(task["id"])
+    backend, model, effort, tools = resolve_engine(agent, override)
     print(f"\n---> [{sprint['id']}] {task['id']} · {task['title']}")
     print(f"     rol={task['role']} faz={task['phase']} {backend}/{model or 'varsayılan'}")
+    if override:
+        print(f"     [motor] {override['hedef']} override → "
+              f"{backend}/{model or 'varsayılan'} effort={effort}")
 
     # Görev, rolün şemadaki girdilerini + görev tanımını alır.
     try:
