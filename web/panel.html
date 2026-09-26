@@ -246,7 +246,7 @@ function gorevSatir(t){
       <button class="kucuk" title="Öncelik öner" onclick="oncelikOner('${t.id}',${(t.priority||0)+10})">▲</button>
       <button class="kucuk" title="Bu göreve geç" onclick="kontrol('gec','${t.id}')">⇢</button>
       <button class="kucuk" title="Atla" onclick="kontrol('atla','${t.id}')">⤼</button>
-      ${['FAILED','BLOCKED'].includes(t.status)?`<button class="kucuk" title="Tekrar dene" onclick="kontrol('tekrar','${t.id}')">↻</button>`:''}
+      ${['FAILED','BLOCKED','SKIPPED'].includes(t.status)?`<button class="kucuk" title="Tekrar sıraya al" onclick="kontrol('tekrar','${t.id}')">↻</button>`:''}
     </span>`;
   r.addEventListener('dragstart',e=>{e.dataTransfer.setData('text',t.id);r.classList.add('surukle');});
   r.addEventListener('dragend',()=>r.classList.remove('surukle'));
