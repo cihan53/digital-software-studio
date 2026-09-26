@@ -85,7 +85,12 @@ def durum_ozeti() -> dict:
         "canli": B.live_status(),
         "pano": None,
         "asama": "sprint",
+        "studio_guncelleme": None,
     }
+    try:
+        out["studio_guncelleme"] = B.framework_update_info()
+    except Exception:
+        pass
     try:
         board = B.load()
         p = B.progress(board)
