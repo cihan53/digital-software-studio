@@ -337,9 +337,10 @@ def handle(key: str) -> str:
         return f"{tid} atlanacak — mevcut çağrı bitince kalan çıktılar iptal."
     if key == "r":
         board = B.load()
-        stuck = [t for _, t in B.all_tasks(board) if t["status"] in (B.FAILED, B.BLOCKED)]
+        stuck = [t for _, t in B.all_tasks(board)
+                 if t["status"] in (B.FAILED, B.BLOCKED, B.SKIPPED)]
         if not stuck:
-            return "Başarısız/bloke görev yok."
+            return "Başarısız/bloke/atlanmış görev yok."
         for t in stuck:
             t["status"] = B.TODO
             t["note"] = ""
