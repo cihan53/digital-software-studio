@@ -1,13 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd zamanlayıcı şablonu — koşucu çöktüğünde/kesildiğinde her 15 dk'da
+  bir tek görevlik tick atar; pano durum makinesi kaldığı yerden devam eder.
+  Kurulum (yolları ve Label'ı kendi projenize göre düzenleyin):
+    cp studio.tick.plist ~/Library/LaunchAgents/studio.<proje>.plist
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/studio.<proje>.plist
+-->
 <plist version="1.0">
 <dict>
-    <key>Label</key><string>studio.yeni-proje</string>
-    <key>ProgramArguments</key><array><string>/Users/cihan/PROJECT/yeni-proje/studio_schedule.sh</string></array>
+    <key>Label</key><string>studio.PROJE_ADI</string>
+    <key>ProgramArguments</key><array><string>/Users/cihan/PROJECT/PROJE_ADI/studio_schedule.sh</string></array>
     <key>StartInterval</key><integer>900</integer>
-    <key>WorkingDirectory</key><string>/Users/cihan/PROJECT/yeni-proje</string>
-    <key>StandardOutPath</key><string>/Users/cihan/PROJECT/yeni-proje/pipeline.log</string>
-    <key>StandardErrorPath</key><string>/Users/cihan/PROJECT/yeni-proje/pipeline.log</string>
+    <key>WorkingDirectory</key><string>/Users/cihan/PROJECT/PROJE_ADI</string>
+    <key>StandardOutPath</key><string>/Users/cihan/PROJECT/PROJE_ADI/pipeline.log</string>
+    <key>StandardErrorPath</key><string>/Users/cihan/PROJECT/PROJE_ADI/pipeline.log</string>
     <key>RunAtLoad</key><false/>
 </dict>
 </plist>

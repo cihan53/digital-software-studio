@@ -344,6 +344,48 @@ def trace_end(meta: dict, system_prompt: str, user_prompt: str,
     (TRACE_DIR / "current.json").write_text("{}", encoding="utf-8")
 
 
+def trace_fail(meta: dict, error: str, duration: float):
+    """Başarısız çağrıyı kalıcı olarak kaydeder.
+
+    Kritik nokta: current.json 'ended_at' + 'error' ile yazılır ki koşucu
+    öldüğünde kontrol ekranı bayat 'started_at'ten sayan donuk bir sayaç
+    göstermesin; bunun yerine kesilen çağrı ve sebebi görünsün.
+    """
+    now = time.time()
+    record = {
+        **meta,
+        "finished_at": now,
+        "duration_s": round(duration, 1),
+        "error": error[:500],
+    }
+    try:
+        (TRACE_DIR / f"{meta['seq']:04d}.json").write_text(
+            json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
+
+    summary = {k: record.get(k) for k in
+               ("seq", "role", "target", "backend", "model", "effort", "duration_s")}
+    summary["error"] = error[:200]
+    try:
+        with (TRACE_DIR / "index.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps(summary, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+    # Kesilen çağrı 'sona erdi' olarak işaretlenir — ctl artık sağlam sayaç yerine
+    # sabitlenmiş süre + hata sebebini gösterir.
+    ended = {**meta, "ended_at": now, "error": error[:300],
+             "duration_s": round(duration, 1)}
+    try:
+        (TRACE_DIR / "current.json").write_text(
+            json.dumps(ended, indent=2, ensure_ascii=False), encoding="utf-8")
+        (TRACE_DIR / "current.out").write_text(
+            f"[ÇAĞRI KESİLDİ] {error}\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
 VALID_BACKENDS = ("agy", "devin")
 
 
@@ -663,6 +705,15 @@ LIMIT_PATTERNS = (
     "internal error", "temporarily unavailable", "connection reset",
     "unavailable", "503", "no capacity available", "capacity", "resource exhausted",
     "service unavailable", "model overloaded",
+    # --- geçici ağ / taşıma katmanı hataları (anlık kopmalar görevi öldürmesin) ---
+    "broken pipe", "protocol version", "tls:", "tls handshake", "remote error",
+    "unexpected eof", " eof", "eof,", "eof)", "connection refused",
+    "connection aborted", "connection timed out", "i/o timeout", "dial tcp",
+    "no route to host", "network is unreachable", "deadline exceeded",
+    "context deadline", "socket hang", "bad gateway", "502", "504",
+    "gateway timeout", "econnreset", "econnrefused", "etimedout", "eai_again",
+    "enotfound", "request failed", "streamgeneratecontent",
+    "yanıt vermedi", "empty reply", "server disconnected",
 )
 MAX_WAIT = int(os.getenv("STUDIO_MAX_WAIT", "18000"))   # varsayılan 5 saat
 WAIT_STEP = 20
@@ -708,26 +759,32 @@ def query_claude(system_prompt: str, user_prompt: str,
     t0 = time.time()
 
     waited = 0
-    while True:
-        try:
-            if backend == "devin":
-                res = _call_devin(system_prompt, user_prompt, base_effort, model, tools)
-            else:
-                res = _call_agy(system_prompt, user_prompt, base_effort, model, tools)
-            text = res.text
-            u = res.usage
-            in_t = u.get("input_tokens", 0)
-            out_t = u.get("output_tokens", 0)
-            th_t = u.get("thinking_tokens", 0)
-            print(f"      ({backend}: {in_t} girdi / {out_t} çıktı / {th_t} düşünce token)")
-            break
-        except CallAborted:
-            (TRACE_DIR / "current.json").write_text("{}", encoding="utf-8")
-            raise
-        except RuntimeError as e:
-            if not is_limit_error(str(e)):
+    try:
+        while True:
+            try:
+                if backend == "devin":
+                    res = _call_devin(system_prompt, user_prompt, base_effort, model, tools)
+                else:
+                    res = _call_agy(system_prompt, user_prompt, base_effort, model, tools)
+                text = res.text
+                u = res.usage
+                in_t = u.get("input_tokens", 0)
+                out_t = u.get("output_tokens", 0)
+                th_t = u.get("thinking_tokens", 0)
+                print(f"      ({backend}: {in_t} girdi / {out_t} çıktı / {th_t} düşünce token)")
+                break
+            except CallAborted:
+                (TRACE_DIR / "current.json").write_text("{}", encoding="utf-8")
                 raise
-            waited = wait_for_quota(str(e), waited)
+            except RuntimeError as e:
+                if not is_limit_error(str(e)):
+                    raise
+                waited = wait_for_quota(str(e), waited)
+    except RuntimeError as e:
+        # Fatal hata: çağrının 'sona erdiğini' trace'e yaz ki kontrol ekranı
+        # bayat started_at'ten sayan donuk bir sayaç göstermesin.
+        trace_fail(meta, str(e), time.time() - t0)
+        raise
 
     trace_end(meta, system_prompt, user_prompt, text,
               dict(u) if isinstance(u, dict) else {},
