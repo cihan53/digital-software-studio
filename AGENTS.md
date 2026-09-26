@@ -48,3 +48,19 @@ Kullanıcı **"bunu çöz"**, **"bu hatayı gider"**, **"bunu yap"** veya herhan
      gh pr create --title "<PR Başlığı>" --body "Closes #<issue_number>\n\n<Yapılan değişikliklerin özeti>" --base master
      ```
    * PR linki kullanıcıya sunulur.
+
+---
+
+## 🏷️ Versiyonlama & Release
+
+Ana dala (`main`/`master`) yapılan her merge'de GitHub Actions
+(`.github/workflows/release.yml`) otomatik olarak `studio.version` sürümünü
+yükseltir, changelog'a merge mesajını düşer ve `vX.Y.Z` tag'i atar:
+
+- `feat:`/`feature:` önekli merge → **minor**, `BREAKING`/`!:` → **major**,
+  diğerleri → **patch**
+- Release commit'i `chore(release): vX.Y.Z [skip ci]` ile atılır ve yeniden
+  tetiklenmez (döngü koruması)
+- Projelerdeki `framework_update_info()` bu sürüm değişimini görüp kullanıcıya
+  güncelleme bildirimi gösterir — tag/sürüm disiplini bildirim sisteminin
+  tetikleyicisidir, elle `studio.version` düzenlenmesi gerekmez.
