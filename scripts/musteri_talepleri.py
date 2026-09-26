@@ -311,21 +311,40 @@ def acik_talep_bul(baslik: str) -> dict | None:
 
 
 def talep_iptal(talep_id: str, sebep: str = "") -> dict | None:
-    """Talebi IPTAL durumuna çeker (soft-delete — geçmiş ve audit korunur)."""
+    """Talebi IPTAL durumuna çeker (soft-delete — geçmiş ve audit korunur).
+
+    Talebe bağlı pano görevleri de temizlenir ve pano yeniden sıralanır;
+    sonuç çağırana `_pano` anahtarıyla (kalıcı olmayan) döner.
+    """
     data = load_data()
     for t in data.get("talepler", []):
         if t.get("id") == talep_id:
             if t.get("durum") in ("COZULDU", "IPTAL"):
                 return None
             t["durum"] = "IPTAL"
-            t.setdefault("gecmis", []).append({
+            gecmis = t.setdefault("gecmis", [])
+            gecmis.append({
                 "zaman": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "eylem": f"İptal edildi{': ' + sebep if sebep else ''}",
                 "durum": "IPTAL",
             })
+            try:
+                pano = B.purge_talep_gorevleri(talep_id)
+            except Exception:
+                pano = {"silinen": [], "kosan": []}
+            if pano["silinen"] or pano["kosan"]:
+                gecmis.append({
+                    "zaman": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "eylem": f"{len(pano['silinen'])} pano görevi kaldırıldı"
+                             + (f", {len(pano['kosan'])} koşan görev atlandı"
+                                if pano["kosan"] else "")
+                             + f": {', '.join(pano['silinen'] + pano['kosan'])}",
+                    "durum": "IPTAL",
+                })
             save_data(data)
             B.audit("musteri", "talep_iptal", talep_id=talep_id,
-                    detay={"sebep": sebep})
+                    detay={"sebep": sebep, "pano": pano})
+            t["_pano"] = pano
             return t
     return None
 
