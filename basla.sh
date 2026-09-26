@@ -581,6 +581,24 @@ if ! kill -0 "$PID" 2>/dev/null; then
   red "✗ Koşucu hemen düştü. Son satırlar:"; tail -15 "$LOG"; exit 1
 fi
 grn "✓ Koşucu çalışıyor (pid $PID)"
+
+# Web arayüzü de kalksın — port doluysa ya da dosya yoksa atla.
+WEB_PORT="${STUDIO_WEB_PORT:-8080}"
+WEB_HOST="${STUDIO_WEB_HOST:-127.0.0.1}"
+if [ ! -f studio_web.py ]; then
+  dim "studio_web.py yok — web paneli atlandı"
+elif lsof -iTCP:"$WEB_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  dim "Web paneli zaten açık: http://$WEB_HOST:$WEB_PORT/panel"
+else
+  mkdir -p workspace/logs
+  nohup $PY studio_web.py > workspace/logs/web.log 2>&1 &
+  sleep 1
+  if kill -0 $! 2>/dev/null; then
+    grn "✓ Web paneli: http://$WEB_HOST:$WEB_PORT/panel"
+  else
+    ylw "Web paneli başlatılamadı — log: workspace/logs/web.log"
+  fi
+fi
 echo
 dim "Kontrol ekranı açılıyor — çıkmak için 'q' (koşu arka planda devam eder)"
 sleep 2
