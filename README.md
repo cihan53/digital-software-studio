@@ -102,7 +102,7 @@ Tarayıcıdan erişilen sıfır-bağımlılık web arayüzü (saf Python `http.s
 Windows/Linux/macOS ve IoT dahil tarayıcısı olan her cihazda çalışır):
 
 ```bash
-./basla.sh --web                # http://127.0.0.1:8080
+./basla.sh --web                # http://127.0.0.1:8090
 STUDIO_WEB_HOST=0.0.0.0 ./basla.sh --web   # LAN/IoT erişimine aç
 ```
 
@@ -139,7 +139,7 @@ Stüdyo çalışırken terminal üzerinden canlı olarak izlenebilir:
 | Komut | Açıklama |
 | :--- | :--- |
 | **`./basla.sh`** | Stüdyoyu arka planda başlatır ve kontrol ekranını açar. |
-| **`./basla.sh --web`** | Web arayüzünü başlatır (panel + müşteri odası, :8080). |
+| **`./basla.sh --web`** | Web arayüzünü başlatır (panel + müşteri odası, :8090). |
 | **`./basla.sh --izle`** | Canlı TUI kontrol ekranını açar. |
 | **`./basla.sh --durum`** | Tek satırlık durum ve kota özeti basar. |
 | **`./basla.sh --kurtar`** | Kurtarma ajanını çalıştırır, yarım kalan işleri ve deployları tamamlar. |
