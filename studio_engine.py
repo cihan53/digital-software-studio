@@ -1191,6 +1191,10 @@ def execute_pipeline(org: dict, brief: str, args):
 
     for agent in steps:
         agent_id = agent["id"]
+        if agent.get("stage") == "service":
+            # Servis rolleri (ör. musteri_temsilcisi) boru hattına girmez;
+            # web sohbeti gibi kendi kanallarında çalışır.
+            continue
         if agent_id == PLANNER_ID:
             # Pano şema doğrulaması gerektirir; run_planner() üzerinden üretilir.
             continue
@@ -1300,6 +1304,9 @@ def run_planner(org: dict, brief: str, force: bool = False) -> dict:
         B.refresh(board)
         B.save(board)
         p = B.progress(board)
+        B.audit("engine", "pano_planlandi",
+                detay={"sprint": p["sprints_total"], "gorev": p["total"],
+                       "baseline_end": board.get("baseline_end")})
         print(f"  [✓] Pano üretildi: {p['sprints_total']} sprint, {p['total']} görev "
               f"→ studio.db")
         return board
@@ -2013,7 +2020,9 @@ def run_board(org: dict, brief: str, once: bool = False,
     try:
         sys.path.insert(0, str(ROOT / "scripts"))
         import studio_yetkilisi as SY
-        if SY.otomatik_musteri_talepleri_senkronize_et() > 0:
+        eklenen = SY.otomatik_musteri_talepleri_senkronize_et()
+        if eklenen > 0:
+            B.audit("engine", "talep_senkron", detay={"eklenen_talep": eklenen})
             board = B.load()
     except Exception:
         pass
@@ -2024,6 +2033,9 @@ def run_board(org: dict, brief: str, once: bool = False,
     # bırakılmış bayat bayrak ilk çağrıyı anında öldürmesin diye temizlenir.
     # (goto/skip bilinçli olarak korunur: kuyruğa alınmış isteklerdir.)
     B.clear("force")
+
+    B.audit("engine", "kosucu_baslangic",
+            detay={"once": once, "max_tasks": max_tasks, "max_cost": max_cost})
 
     start_cost = spent_so_far()
     if max_cost:
@@ -2111,7 +2123,9 @@ def run_board(org: dict, brief: str, once: bool = False,
             try:
                 sys.path.insert(0, str(ROOT / "scripts"))
                 import studio_yetkilisi as SY
-                if SY.otomatik_musteri_talepleri_senkronize_et() > 0:
+                eklenen = SY.otomatik_musteri_talepleri_senkronize_et()
+                if eklenen > 0:
+                    B.audit("engine", "talep_senkron", detay={"eklenen_talep": eklenen})
                     board = B.load()
                     B.refresh(board)
                     B.save(board)
@@ -2132,6 +2146,8 @@ def run_board(org: dict, brief: str, once: bool = False,
                     print("\n[LİDERLİK KONTROLÜ] Panodaki mevcut görevler kapandı. CTO ve Product Owner eksik ve faz incelemesi yapıyor...")
                     added = autonomous_gap_review_and_phasing(org, brief, board)
                     if added > 0:
+                        B.audit("engine", "liderlik_faz_eklendi",
+                                detay={"yeni_sprint": added})
                         print(f"  [✓] {added} yeni sprint fazı planlandı ve panoya eklendi. Normal akış devam ediyor...\n")
                         B.refresh(board)
                         B.save(board)
@@ -2202,6 +2218,7 @@ def run_board(org: dict, brief: str, once: bool = False,
         if once:
             break
 
+    B.audit("engine", "kosucu_bitis", detay={"yurutulen_gorev": executed})
     return executed
 
 

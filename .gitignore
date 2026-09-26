@@ -26,6 +26,8 @@ yarn-error.log*
 *.log
 pipeline.log
 plan.log
+studio.db-shm
+studio.db-wal
 
 # Hassas Bilgiler, Anahtarlar ve Çevre Değişkenleri (Zero Leakage)
 .env

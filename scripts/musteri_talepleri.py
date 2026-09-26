@@ -3,9 +3,11 @@
 scripts/musteri_talepleri.py
 Digital Software Studio — Müşteri İstek & Şikayet Takip Motoru
 
-Müşteri (proje sahibi/denetçi) bildirimlerini JSON + SQLite (studio.db) olarak yönetir.
-Dual-write: her değişiklik hem JSON hem studio.db'ye yansır.
-Okumalar önce studio.db'den gelir; DB yoksa JSON'a fallback yapılır.
+Müşteri (proje sahibi/denetçi) bildirimleri yalnızca studio.db'de (talepler
+tablosu) yaşar — tek doğruluk kaynağı budur. Eski sürümlerdeki
+workspace/docs/musteri_talepleri.json bulunursa BİR KEZ studio.db'ye aktarılıp
+_arsiv/ altına taşınır; artık JSON'a okuma/yazma yapılmaz.
+musteri_talepleri.md yalnızca insan-okur export olarak üretilir.
 """
 
 import json
@@ -16,16 +18,20 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 # GitHub Issue Entegrasyonu
 try:
     import github_issue_bridge as GH
 except ImportError:
     GH = None
 
-ROOT = Path(__file__).resolve().parent.parent
+import studio_board as B
+
 DOCS_DIR = ROOT / "workspace" / "docs"
-STORAGE_FILE = DOCS_DIR / "musteri_talepleri.json"
-DB_PATH = ROOT / "studio.db"
+LEGACY_JSON = DOCS_DIR / "musteri_talepleri.json"
 MD_FILE = DOCS_DIR / "musteri_talepleri.md"
 PLANS_DIR = DOCS_DIR / "cozum_planlari"
 
@@ -61,16 +67,9 @@ DURUMLAR = {
 # SQLite yardımcıları
 # ==============================================================================
 
-def db_conn() -> sqlite3.Connection | None:
-    """studio.db bağlantısı döndürür; DB yoksa None."""
-    if not DB_PATH.exists():
-        return None
-    try:
-        conn = sqlite3.connect(str(DB_PATH))
-        conn.row_factory = sqlite3.Row
-        return conn
-    except Exception:
-        return None
+def db_conn() -> sqlite3.Connection:
+    """studio.db bağlantısı — şema (talepler dahil) studio_board garantisinde."""
+    return B.db_conn()
 
 
 def _talep_to_db(cur: sqlite3.Cursor, t: dict):
@@ -80,8 +79,8 @@ def _talep_to_db(cur: sqlite3.Cursor, t: dict):
         INSERT INTO talepler
             (id, tarih, tur, oncelik, baslik, aciklama, sayfa_url,
              durum, gorevli_rol, studio_notu, github_issue_number,
-             github_issue_url, gecmis)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+             github_issue_url, cozum_plani, faz_id, efor, triage_notu, gecmis)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET
             tarih               = excluded.tarih,
             tur                 = excluded.tur,
@@ -94,13 +93,18 @@ def _talep_to_db(cur: sqlite3.Cursor, t: dict):
             studio_notu         = excluded.studio_notu,
             github_issue_number = excluded.github_issue_number,
             github_issue_url    = excluded.github_issue_url,
+            cozum_plani         = excluded.cozum_plani,
+            faz_id              = excluded.faz_id,
+            efor                = excluded.efor,
+            triage_notu         = excluded.triage_notu,
             gecmis              = excluded.gecmis
     """, (
         t.get("id"), t.get("tarih"), t.get("tur"), t.get("oncelik"),
         t.get("baslik"), t.get("aciklama"), t.get("sayfa_url"),
         t.get("durum"), t.get("gorevli_rol"), t.get("studio_notu"),
         t.get("github_issue_number"), t.get("github_issue_url"),
-        gecmis_json
+        t.get("cozum_plani"), t.get("faz_id"), t.get("efor"),
+        t.get("triage_notu"), gecmis_json
     ))
 
 
@@ -114,20 +118,48 @@ def _db_to_talep(row: sqlite3.Row) -> dict:
     return t
 
 
-def db_tum_talepler() -> list[dict] | None:
-    """studio.db'den tüm talepleri döndürür; DB yoksa None."""
+def db_tum_talepler() -> list[dict]:
+    """studio.db'den tüm talepleri döndürür."""
     conn = db_conn()
-    if not conn:
-        return None
     try:
         cur = conn.cursor()
         cur.execute("SELECT * FROM talepler ORDER BY tarih")
         rows = cur.fetchall()
         return [_db_to_talep(r) for r in rows]
-    except Exception:
-        return None
     finally:
         conn.close()
+
+
+def _migrate_legacy_json():
+    """Eski musteri_talepleri.json varsa studio.db'ye aktarıp arşivler.
+
+    Dosya tek seferde _arsiv/ altına taşınır; artık hiçbir yerde
+    okunmaz/yazılmaz — tek doğruluk kaynağı studio.db'dir.
+    """
+    if not LEGACY_JSON.exists():
+        return
+    try:
+        veri = json.loads(LEGACY_JSON.read_text(encoding="utf-8"))
+        talepler = veri.get("talepler", []) if isinstance(veri, dict) else []
+        if talepler:
+            conn = db_conn()
+            try:
+                cur = conn.cursor()
+                for t in talepler:
+                    _talep_to_db(cur, t)
+                conn.commit()
+            finally:
+                conn.close()
+            print(f"  [i] {len(talepler)} eski talep musteri_talepleri.json'dan studio.db'ye aktarıldı.")
+    except Exception as e:
+        print(f"  [UYARI] musteri_talepleri.json içe aktarılamadı: {e}", file=sys.stderr)
+    try:
+        arsiv = ROOT / "_arsiv"
+        arsiv.mkdir(parents=True, exist_ok=True)
+        hedef = arsiv / f"musteri_talepleri-{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        LEGACY_JSON.replace(hedef)
+    except OSError:
+        LEGACY_JSON.unlink(missing_ok=True)
 
 
 # ==============================================================================
@@ -137,51 +169,27 @@ def db_tum_talepler() -> list[dict] | None:
 def load_data() -> dict:
     DOCS_DIR.mkdir(parents=True, exist_ok=True)
     PLANS_DIR.mkdir(parents=True, exist_ok=True)
-
-    # Önce studio.db'den yükle
-    db_talepler = db_tum_talepler()
-    if db_talepler is not None:
-        return {
-            "son_guncelleme": datetime.now().isoformat(),
-            "toplam_talep": len(db_talepler),
-            "talepler": db_talepler
-        }
-
-    # DB yoksa JSON fallback
-    if not STORAGE_FILE.exists():
-        initial = {
-            "son_guncelleme": datetime.now().isoformat(),
-            "toplam_talep": 0,
-            "talepler": []
-        }
-        STORAGE_FILE.write_text(json.dumps(initial, indent=2, ensure_ascii=False), encoding="utf-8")
-        return initial
-    try:
-        return json.loads(STORAGE_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {"son_guncelleme": datetime.now().isoformat(), "toplam_talep": 0, "talepler": []}
+    _migrate_legacy_json()
+    talepler = db_tum_talepler()
+    return {
+        "son_guncelleme": datetime.now().isoformat(),
+        "toplam_talep": len(talepler),
+        "talepler": talepler
+    }
 
 
 def save_data(data: dict):
     data["son_guncelleme"] = datetime.now().isoformat()
     data["toplam_talep"] = len(data.get("talepler", []))
 
-    # JSON'a yaz
-    STORAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    STORAGE_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-
-    # studio.db'ye yaz (dual-write)
     conn = db_conn()
-    if conn:
-        try:
-            cur = conn.cursor()
-            for t in data.get("talepler", []):
-                _talep_to_db(cur, t)
-            conn.commit()
-        except Exception as e:
-            print(f"  [UYARI] studio.db yazma hatası: {e}")
-        finally:
-            conn.close()
+    try:
+        cur = conn.cursor()
+        for t in data.get("talepler", []):
+            _talep_to_db(cur, t)
+        conn.commit()
+    finally:
+        conn.close()
 
     render_markdown(data)
 
@@ -264,13 +272,30 @@ def render_markdown(data: dict):
     MD_FILE.write_text("\n".join(md), encoding="utf-8")
 
 
+def _sonraki_talep_no() -> int:
+    """DB'deki en yüksek TALEP numarası + 1 (eşzamanlı kayıtta çakışmaz)."""
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM talepler")
+        en_buyuk = 0
+        for (tid,) in cur.fetchall():
+            if tid and tid.upper().startswith("TALEP-"):
+                try:
+                    en_buyuk = max(en_buyuk, int(tid.split("-", 1)[1]))
+                except (ValueError, IndexError):
+                    pass
+        return en_buyuk + 1
+    finally:
+        conn.close()
+
+
 def yeni_talep(tur: str, baslik: str, aciklama: str, oncelik: str = "NORMAL", sayfa_url: str = "/") -> dict:
     data = load_data()
     mevcut = data.get("talepler", [])
-    
+
     # ID Üretimi: TALEP-001, TALEP-002...
-    num = len(mevcut) + 1
-    talep_id = f"TALEP-{num:03d}"
+    talep_id = f"TALEP-{_sonraki_talep_no():03d}"
     
     tur_upper = tur.upper() if tur.upper() in TURLER else "HATA"
     oncelik_upper = oncelik.upper() if oncelik.upper() in ONCELIKLER else "NORMAL"
@@ -316,6 +341,9 @@ def yeni_talep(tur: str, baslik: str, aciklama: str, oncelik: str = "NORMAL", sa
     mevcut.append(yeni)
     data["talepler"] = mevcut
     save_data(data)
+    B.audit("musteri", "talep_olustu", talep_id=talep_id,
+            detay={"tur": tur_upper, "oncelik": oncelik_upper,
+                   "baslik": yeni["baslik"][:120]})
 
     # Otomatik Triage ve Planlama (Hata vs Özellik Ayrımı)
     try:
@@ -323,7 +351,6 @@ def yeni_talep(tur: str, baslik: str, aciklama: str, oncelik: str = "NORMAL", sa
         sys.path.insert(0, str(ROOT / "scripts"))
         import karar_verici_triage as KVT
         import studio_yetkilisi as SY
-        import studio_board as B
 
         analiz = KVT.talep_analiz_et(yeni)
         yeni["faz_id"] = analiz["onerilen_faz"]
@@ -354,24 +381,16 @@ def yeni_talep(tur: str, baslik: str, aciklama: str, oncelik: str = "NORMAL", sa
 
 
 def getir(talep_id: str) -> dict | None:
-    """Önce studio.db'den arar, yoksa JSON'dan okur."""
+    """Talebi studio.db'den getirir."""
     conn = db_conn()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT * FROM talepler WHERE lower(id) = lower(?)", (talep_id,))
-            row = cur.fetchone()
-            if row:
-                return _db_to_talep(row)
-        except Exception:
-            pass
-        finally:
-            conn.close()
-    # Fallback: JSON
-    data = load_data()
-    for t in data.get("talepler", []):
-        if t["id"].lower() == talep_id.lower():
-            return t
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM talepler WHERE lower(id) = lower(?)", (talep_id,))
+        row = cur.fetchone()
+        if row:
+            return _db_to_talep(row)
+    finally:
+        conn.close()
     return None
 
 
@@ -424,6 +443,9 @@ def guncelle(talep_id: str, durum: str = None, gorevli_rol: str = None,
             if cozum_plani:
                 t["cozum_plani"] = cozum_plani
             save_data(data)
+            B.audit("musteri", "talep_guncelle", talep_id=t["id"],
+                    detay={"durum": t.get("durum"),
+                           "gorevli_rol": t.get("gorevli_rol")})
             return True
     return False
 

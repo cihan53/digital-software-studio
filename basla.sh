@@ -6,6 +6,7 @@
 #   ./basla.sh --durdur     çalışan koşuyu nazikçe durdurur
 #   ./basla.sh --izle       sadece kontrol ekranını açar
 #   ./basla.sh --durum      tek satırlık durum özeti (ekran açmadan)
+#   ./basla.sh --web        web arayüzünü başlatır (panel + müşteri odası, :8080)
 #
 #   ./basla.sh --musteri    müşteri denetim masasını (istek/şikayet) açar
 #   ./basla.sh --onayla     günlük kota dolduğunda bir tur daha izin ver
@@ -86,6 +87,8 @@ PYEOF
   --musteri|--talep|--talepler)
       exec ./musteri.sh "${@:2}" ;;
   --izle)   exec $PY studio_ctl.py ;;
+  --web|--panel|--arayuz)
+      exec $PY studio_web.py "${@:2}" ;;
   --onayla)
       $PY - "$@" <<'PYEOF'
 import sys, studio_board as B
@@ -317,7 +320,7 @@ PYEOF
       exit 0 ;;
   --durdur)
       if ! calisiyor_mu; then ylw "Çalışan koşu yok."; exit 0; fi
-      $PY -c "import studio_board as B; B.request('stop')"
+      $PY -c "import studio_board as B; B.request('stop', kaynak='cli')"
       grn "Durdurma istendi — çalışan çağrı bitince koşucu çıkacak."
       dim "Hemen kesmek için: pkill -f studio_engine.py  (devam eden çağrının parası gider)"
       exit 0 ;;
@@ -336,7 +339,7 @@ if cmd == "--oncelik":
     tid, deger = args[0], int(args[1])
     if not B.set_priority(tid, deger):
         sys.exit(f"Görev bulunamadı: {tid}")
-    B.request("reload")
+    B.request("reload", kaynak="cli")
     print(f"✓ {tid} önceliği {deger} olarak ayarlandı (büyük = önce koşar).")
 
 elif cmd == "--sira":
@@ -345,7 +348,7 @@ elif cmd == "--sira":
     tid, poz = args[0], int(args[1])
     if not B.reorder_task(tid, poz):
         sys.exit(f"Görev bulunamadı: {tid}")
-    B.request("reload")
+    B.request("reload", kaynak="cli")
     print(f"✓ {tid} sprint içinde {poz}. sıraya taşındı.")
 
 elif cmd == "--sprint-sira":
@@ -354,7 +357,7 @@ elif cmd == "--sprint-sira":
     sid, poz = args[0], int(args[1])
     if not B.reorder_sprint(sid, poz):
         sys.exit(f"Sprint bulunamadı: {sid}")
-    B.request("reload")
+    B.request("reload", kaynak="cli")
     print(f"✓ {sid} {poz}. sıraya taşındı.")
 
 elif cmd == "--gec":
@@ -370,9 +373,9 @@ elif cmd == "--gec":
         sys.exit(f"Görev bulunamadı: {tid}")
     if t["status"] in B.TERMINAL:
         sys.exit(f"{tid} zaten kapalı ({t['status']}).")
-    B.request("goto", tid)
+    B.request("goto", tid, kaynak="cli")
     if force:
-        B.request("force")
+        B.request("force", kaynak="cli")
         print(f"✓ {tid} hedeflendi — çalışan çağrı anında kesilip bu göreve geçilecek.")
     else:
         print(f"✓ {tid} hedeflendi — mevcut çağrı bitince bu göreve geçilecek.")
@@ -392,9 +395,9 @@ elif cmd == "--atla":
             tid = None
     if not tid:
         sys.exit("Atlanacak görev bulunamadı.")
-    B.request("skip", tid)
+    B.request("skip", tid, kaynak="cli")
     if force:
-        B.request("force")
+        B.request("force", kaynak="cli")
         print(f"✓ {tid} atlanacak — çalışan çağrı anında kesiliyor.")
     else:
         print(f"✓ {tid} atlanacak — mevcut çağrı bitince uygulanır.")
