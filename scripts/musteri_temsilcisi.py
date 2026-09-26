@@ -257,34 +257,71 @@ def _mesaj_getir(mesaj_id: int) -> dict | None:
 
 
 def taslak_onayla(oid: str, mesaj_id: int) -> dict:
-    """Taslak talebi müşteri onayıyla talep havuzuna aktarır."""
+    """Taslak talebi müşteri onayıyla talep havuzuna aktarır.
+
+    Idempotent: taslak önce atomik olarak NULL'lanır — çift tık / yarış
+    koşulunda ikinci istek rowcount=0 ile elenir ve mevcut talebi döner.
+    """
     m = _mesaj_getir(mesaj_id)
-    if not m or m.get("oturum_id") != oid or not m.get("taslak"):
+    if not m or m.get("oturum_id") != oid:
+        raise ValueError("Onaylanacak taslak bulunamadı.")
+    if m.get("talep_id"):
+        return {"ok": True, "talep_id": m["talep_id"], "talep": None}
+    if not m.get("taslak"):
         raise ValueError("Onaylanacak taslak bulunamadı.")
 
     t = m["taslak"]
-    yeni = MT.yeni_talep(
-        t.get("tur", "HATA"), t.get("baslik", "Sohbet talebi"),
-        t.get("aciklama", ""), oncelik=t.get("oncelik", "NORMAL"),
-        sayfa_url=t.get("sayfa_url", "/"))
+
+    # Atomik kilit: taslak'ı NULL'layan ilk istek kazanır.
+    conn = B.db_conn()
+    try:
+        cur = conn.execute(
+            "UPDATE sohbet_mesajlari SET taslak = NULL "
+            "WHERE id = ? AND taslak IS NOT NULL", (mesaj_id,))
+        conn.commit()
+        if cur.rowcount == 0:
+            row = conn.execute(
+                "SELECT talep_id FROM sohbet_mesajlari WHERE id = ?",
+                (mesaj_id,)).fetchone()
+            tid = row["talep_id"] if row else None
+            return {"ok": True, "talep_id": tid,
+                    "mesaj": "Taslak zaten işleniyor." if not tid else None,
+                    "talep": None}
+    finally:
+        conn.close()
+
+    # Aynı başlıklı açık talep varsa yenisini açma — mevcuda bağla.
+    mevcut = MT.acik_talep_bul(t.get("baslik", ""))
+    if mevcut:
+        yeni = mevcut
+        _mesaj_ekle(oid, "sistem",
+                    f"ℹ️ Bu konuda zaten açık bir talep var: {mevcut['id']} "
+                    f"— \"{mevcut['baslik']}\". Yeni talep açılmadı; "
+                    "isterseniz mesaj yazarak detay ekleyebilirsiniz.",
+                    talep_id=mevcut["id"])
+    else:
+        yeni = MT.yeni_talep(
+            t.get("tur", "HATA"), t.get("baslik", "Sohbet talebi"),
+            t.get("aciklama", ""), oncelik=t.get("oncelik", "NORMAL"),
+            sayfa_url=t.get("sayfa_url", "/"))
+        _mesaj_ekle(oid, "sistem",
+                    f"✅ Talebiniz havuza alındı: {yeni['id']} — \"{yeni['baslik']}\". "
+                    "Stüdyo ekibi triage ve planlamayı otomatik yürütecek; "
+                    "durumunu Taleplerim listesinden izleyebilirsiniz.",
+                    talep_id=yeni["id"])
 
     conn = B.db_conn()
     try:
         conn.execute(
-            "UPDATE sohbet_mesajlari SET talep_id = ?, taslak = NULL WHERE id = ?",
+            "UPDATE sohbet_mesajlari SET talep_id = ? WHERE id = ?",
             (yeni["id"], mesaj_id))
         conn.commit()
     finally:
         conn.close()
 
-    _mesaj_ekle(oid, "sistem",
-                f"✅ Talebiniz havuza alındı: {yeni['id']} — \"{yeni['baslik']}\". "
-                "Stüdyo ekibi triage ve planlamayı otomatik yürütecek; "
-                "durumunu Taleplerim listesinden izleyebilirsiniz.",
-                talep_id=yeni["id"])
     B.audit("sohbet", "taslak_onaylandi", talep_id=yeni["id"],
-            detay={"oturum": oid})
-    return {"talep_id": yeni["id"], "talep": yeni}
+            detay={"oturum": oid, "mukerrer": bool(mevcut)})
+    return {"ok": True, "talep_id": yeni["id"], "talep": yeni}
 
 
 def taslak_reddet(oid: str, mesaj_id: int) -> dict:
