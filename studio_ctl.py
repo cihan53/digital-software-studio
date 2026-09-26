@@ -131,7 +131,10 @@ def cur_block(cur: dict, cols: int) -> list[str]:
 
 def render_design(cur: dict, cols: int) -> str:
     """Pano henüz yokken tasarım aşamasının ilerlemesini gösterir."""
-    org = read_json(ROOT / "org_chart.json", {"hierarchy": []})
+    org_f = ROOT / "workspace" / "docs" / "org_chart.json"
+    if not org_f.exists():
+        org_f = ROOT / "org_chart.json"
+    org = read_json(org_f, {"hierarchy": []})
     state = {"completed_steps": [], "completed_outputs": []}
     # Önce studio.db'den oku
     try:
