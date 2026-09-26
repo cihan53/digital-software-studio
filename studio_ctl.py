@@ -67,6 +67,56 @@ def runner_alive() -> bool:
         return False
 
 
+def cur_block(cur: dict, cols: int) -> list[str]:
+    """'Şu anki çağrı' bloğu.
+
+    Çağrı kesildiyse (ended_at/error yazıldı ya da koşucu öldü) bayat
+    started_at'ten sayan donuk bir sayaç yerine sabitlenmiş süre ve
+    kesilme sebebi gösterilir.
+    """
+    if not cur.get("role"):
+        return []
+    live = TRACE / "current.out"
+    label = f"{cur.get('task')} · " if cur.get("task") else ""
+    who = f"{label}{cur['role']} → {cur.get('target', '?')}"
+
+    if cur.get("ended_at") or cur.get("error") or not runner_alive():
+        ended = cur.get("ended_at")
+        if not ended:
+            # Koşucu trace'i kapatamadan öldü (SIGKILL / güç kesintisi):
+            # dosyanın son yazılma zamanı 'son canlı iz' olarak kullanılır.
+            try:
+                ended = max((TRACE / "current.json").stat().st_mtime,
+                            live.stat().st_mtime if live.exists() else 0)
+            except OSError:
+                ended = time.time()
+        el = max(0, ended - (cur.get("started_at") or ended))
+        L = [f"{RED}✗ KESİLDİ{RESET} {who}",
+             f"  {DIM}{cur.get('backend', '?')}/{cur.get('model', '?')} · süre "
+             f"{human(el)} · son iz {time.strftime('%H:%M:%S', time.localtime(ended))}{RESET}"]
+        if cur.get("error"):
+            L.append(f"  {RED}{str(cur['error'])[:cols - 4]}{RESET}")
+        else:
+            L.append(f"  {DIM}koşucu sonlandı — yeniden başlatılınca "
+                     f"kaldığı yerden devam eder{RESET}")
+        if live.exists():
+            txt = live.read_text(encoding="utf-8", errors="replace").strip()
+            for line in txt.splitlines()[-4:]:
+                L.append(f"  {DIM}{line[:cols - 4]}{RESET}")
+        return L
+
+    el = time.time() - cur.get("started_at", time.time())
+    L = [f"{YELLOW}▸ ŞU AN{RESET} {who}",
+         f"  {DIM}{cur.get('backend', '?')}/{cur.get('model', '?')} · giden "
+         f"{cur.get('prompt_chars', 0):,} krk · geçen {human(el)}{RESET}"]
+    if live.exists():
+        txt = live.read_text(encoding="utf-8", errors="replace")
+        L.append(f"  {DIM}gelen {len(txt):,} krk{RESET}")
+        for line in txt[-700:].splitlines()[-6:]:
+            L.append(f"  {DIM}{line[:cols - 4]}{RESET}")
+    return L
+
+
 def render_design(cur: dict, cols: int) -> str:
     """Pano henüz yokken tasarım aşamasının ilerlemesini gösterir."""
     org = read_json(ROOT / "org_chart.json", {"hierarchy": []})
@@ -110,16 +160,7 @@ def render_design(cur: dict, cols: int) -> str:
               f"üretilecek.{RESET}"]
 
     if cur.get("role"):
-        el = time.time() - cur.get("started_at", time.time())
-        L += ["", f"{YELLOW}▸ ŞU AN{RESET} {cur['role']} → {cur['target']}",
-              f"  {DIM}{cur['backend']}/{cur['model']} · giden "
-              f"{cur.get('prompt_chars', 0):,} krk · geçen {human(el)}{RESET}"]
-        live = TRACE / "current.out"
-        if live.exists():
-            txt = live.read_text(encoding="utf-8", errors="replace")
-            L.append(f"  {DIM}gelen {len(txt):,} krk{RESET}")
-            for line in txt[-900:].splitlines()[-8:]:
-                L.append(f"  {DIM}{line[:cols-4]}{RESET}")
+        L += [""] + cur_block(cur, cols)
 
     L += ["─" * min(cols, 96),
           f"{BOLD}p{RESET} duraklat/sürdür  {BOLD}s{RESET} durdur  {BOLD}q{RESET} çık"]
@@ -176,16 +217,7 @@ def render(msg: str = "") -> str:
         L.append("")
 
     if cur.get("role"):
-        el = time.time() - cur.get("started_at", time.time())
-        L.append(f"{YELLOW}▸ ŞU AN{RESET} {cur.get('task', '')} · {cur['role']} → {cur['target']}")
-        L.append(f"  {DIM}{cur['backend']}/{cur['model']} · giden "
-                 f"{cur.get('prompt_chars', 0):,} krk · geçen {human(el)}{RESET}")
-        live = TRACE / "current.out"
-        if live.exists():
-            txt = live.read_text(encoding="utf-8", errors="replace")
-            L.append(f"  {DIM}gelen {len(txt):,} krk{RESET}")
-            for line in txt[-700:].splitlines()[-6:]:
-                L.append(f"  {DIM}{line[:cols-4]}{RESET}")
+        L += cur_block(cur, cols)
 
     # UAT/canlı test görevi koşuyor veya sırada ama canlı ortam kapalıysa uyar.
     live_needed = []

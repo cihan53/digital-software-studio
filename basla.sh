@@ -152,6 +152,16 @@ try:
 except Exception:
     pass
 
+# Koşucu ölmüşse bayat 'started_at' sayacı gösterme; kesilme sebebini bas.
+if cur.get("role") and (cur.get("ended_at") or cur.get("error") or not alive):
+    ended = cur.get("ended_at") or cur.get("started_at") or time.time()
+    kesildi = max(0, int(ended - cur.get("started_at", ended)))
+    print(f"\n  {RED}✗ Son çağrı kesildi{NC}: {cur.get('task','?')} · {cur.get('role','?')}  "
+          f"{DIM}({kesildi//60}dk {kesildi%60:02d}s sürdü){NC}")
+    if cur.get("error"):
+        print(f"  {DIM}sebep: {str(cur['error'])[:100]}{NC}")
+    cur = {}
+
 if cur.get("role"):
     elapsed = int(time.time() - cur.get("started_at", time.time()))
     el_m, el_s = elapsed // 60, elapsed % 60
