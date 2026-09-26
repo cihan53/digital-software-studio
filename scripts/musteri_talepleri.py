@@ -290,7 +290,59 @@ def _sonraki_talep_no() -> int:
         conn.close()
 
 
+# Henüz kapanmamış (mükerrer kontrolüne dahil) talep durumları.
+ACIK_DURUMLAR = {"DEGERLENDIRMEDE", "FAZ_BEKLIYOR", "BEKLEMEDE",
+                 "PLANLANDI", "GELISTIRILIYOR", "TESTTE"}
+
+
+def _norm_baslik(s: str) -> str:
+    return " ".join(str(s or "").lower().split())
+
+
+def acik_talep_bul(baslik: str) -> dict | None:
+    """Aynı başlıklı açık (çözülmemiş/iptal edilmemiş) talebi döndürür."""
+    n = _norm_baslik(baslik)
+    if not n:
+        return None
+    for t in load_data().get("talepler", []):
+        if t.get("durum") in ACIK_DURUMLAR and _norm_baslik(t.get("baslik")) == n:
+            return t
+    return None
+
+
+def talep_iptal(talep_id: str, sebep: str = "") -> dict | None:
+    """Talebi IPTAL durumuna çeker (soft-delete — geçmiş ve audit korunur)."""
+    data = load_data()
+    for t in data.get("talepler", []):
+        if t.get("id") == talep_id:
+            if t.get("durum") in ("COZULDU", "IPTAL"):
+                return None
+            t["durum"] = "IPTAL"
+            t.setdefault("gecmis", []).append({
+                "zaman": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "eylem": f"İptal edildi{': ' + sebep if sebep else ''}",
+                "durum": "IPTAL",
+            })
+            save_data(data)
+            B.audit("musteri", "talep_iptal", talep_id=talep_id,
+                    detay={"sebep": sebep})
+            return t
+    return None
+
+
 def yeni_talep(tur: str, baslik: str, aciklama: str, oncelik: str = "NORMAL", sayfa_url: str = "/") -> dict:
+    # Mükerrer koruması: aynı başlıklı açık talep varsa yenisini açma.
+    var = acik_talep_bul(baslik)
+    if var:
+        print(f"  [i] Aynı başlıklı açık talep mevcut: {var['id']} — "
+              "mükerrer talep açılmadı.")
+        var.setdefault("gecmis", []).append({
+            "zaman": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "eylem": "Mükerrer talep isteği mevcut kayda bağlandı",
+            "durum": var.get("durum"),
+        })
+        return var
+
     data = load_data()
     mevcut = data.get("talepler", [])
 

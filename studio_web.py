@@ -222,6 +222,17 @@ def kontrol(body: dict) -> dict:
         if ok:
             B.request("reload", kaynak="web")
         return {"ok": ok, "mesaj": msg}
+    if aks == "talep_iptal":
+        tid = (body.get("talep_id") or "").strip()
+        try:
+            import musteri_talepleri as MT
+            t = MT.talep_iptal(tid, sebep=(body.get("sebep") or ""))
+        except Exception as e:
+            return {"ok": False, "mesaj": f"Talep modülü: {e}"}
+        if t:
+            B.request("reload", kaynak="web")
+            return {"ok": True, "mesaj": f"{tid} iptal edildi."}
+        return {"ok": False, "mesaj": f"{tid} bulunamadı veya zaten kapalı."}
     if aks == "onayla":
         g = body.get("gorev_kota")
         b = body.get("butce")
