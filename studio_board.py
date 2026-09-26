@@ -240,6 +240,18 @@ def _db_migrate(conn: sqlite3.Connection):
         pass
 
 
+def _epoch_float(deger):
+    """TEXT affinity'li kolondan gelen epoch'u float'a çevirir.
+
+    baslangic/bitis kolonları TEXT tanımlı; mark() float epoch yazınca
+    sqlite bunu '1788...' string olarak saklıyor. Sayısal değilse None.
+    """
+    try:
+        return float(deger)
+    except (TypeError, ValueError):
+        return None
+
+
 def db_load_board() -> dict | None:
     if not DB_PATH.exists():
         return None
@@ -302,8 +314,8 @@ def db_load_board() -> dict | None:
                     "status": tr["durum"] or TODO,
                     "attempts": tr["deneme"] or 0,
                     "note": tr["not_"] or "",
-                    "started_at": tr["baslangic"],
-                    "finished_at": tr["bitis"],
+                    "started_at": _epoch_float(tr["baslangic"]),
+                    "finished_at": _epoch_float(tr["bitis"]),
                     "duration_s": tr["sure_s"],
                     "priority": tr["oncelik"] or 0,
                     "order": tr["sira"] or 0,
