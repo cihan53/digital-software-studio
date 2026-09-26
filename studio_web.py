@@ -2,7 +2,7 @@
 """
 Digital Software Studio — Web Arayüzü (sıfır bağımlılık, saf stdlib)
 
-    python studio_web.py [--port 8080] [--host 127.0.0.1]
+    python studio_web.py [--port 8090] [--host 127.0.0.1]
     ./basla.sh --web
 
 Ekranlar:
@@ -16,7 +16,7 @@ workspace/.control/ bayrak mekanizmasına yazılır — motora dokunmaz.
 
 Ortam değişkenleri:
     STUDIO_WEB_HOST  (varsayılan 127.0.0.1 — IoT/LAN erişimi için 0.0.0.0)
-    STUDIO_WEB_PORT  (varsayılan 8080)
+    STUDIO_WEB_PORT  (varsayılan 8090)
 """
 
 import argparse
@@ -413,7 +413,7 @@ def main():
     import os
     ap.add_argument("--host", default=os.getenv("STUDIO_WEB_HOST", "127.0.0.1"))
     ap.add_argument("--port", type=int,
-                    default=int(os.getenv("STUDIO_WEB_PORT", "8080")))
+                    default=int(os.getenv("STUDIO_WEB_PORT", "8090")))
     args = ap.parse_args()
 
     srv = ThreadingHTTPServer((args.host, args.port), Handler)
