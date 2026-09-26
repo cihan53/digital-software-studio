@@ -79,6 +79,22 @@ def update_banner() -> list[str]:
             f"{DIM}(kurulu v{g['local']}) — python3 scripts/studio_updater.py --kontrol{RESET}"]
 
 
+def motor_banner() -> list[str]:
+    """Kota beklemesi sürüyorsa alternatif motor öneri satırı döndürür."""
+    try:
+        o = B.motor_oneri_oku()
+    except Exception:
+        o = None
+    if not o:
+        return []
+    alt = ", ".join(o.get("alternatifler") or [])
+    hedef = o.get("hedef") or "<görev>"
+    onerilen = (o.get("alternatifler") or ["claude"])[0]
+    return [f"{YELLOW}⚠ {o['backend']} kotası bekleniyor{RESET} "
+            f"{DIM}({hedef}) — alternatif: {alt or '—'}{RESET}",
+            f"  {CYAN}Devam etmek için: ./basla.sh --motor {hedef} {onerilen}{RESET}"]
+
+
 def cur_block(cur: dict, cols: int) -> list[str]:
     """'Şu anki çağrı' bloğu.
 
@@ -161,6 +177,7 @@ def render_design(cur: dict, cols: int) -> str:
          f"{len(done & {a['id'] for a in design})}/{len(design)} rol   "
          f"{DIM}{time.strftime('%H:%M:%S')}{RESET}"]
     L += update_banner()
+    L += motor_banner()
     L.append("─" * min(cols, 96))
 
     for a in design:
@@ -215,6 +232,7 @@ def render(msg: str = "") -> str:
              f"{p['sprints_done']}/{p['sprints_total']} sprint · "
              f"{p['done']}/{p['total']} görev{slip_s}   {DIM}{time.strftime('%H:%M:%S')}{RESET}")
     L += update_banner()
+    L += motor_banner()
     L.append("─" * min(cols, 96))
 
     for s in sorted(board["sprints"], key=lambda x: x["order"]):

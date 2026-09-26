@@ -86,7 +86,14 @@ def durum_ozeti() -> dict:
         "pano": None,
         "asama": "sprint",
         "studio_guncelleme": None,
+        "motor_oneri": None,
+        "motor_override": [],
     }
+    try:
+        out["motor_oneri"] = B.motor_oneri_oku()
+        out["motor_override"] = B.motor_list()
+    except Exception:
+        pass
     try:
         out["studio_guncelleme"] = B.framework_update_info()
     except Exception:
@@ -201,6 +208,20 @@ def kontrol(body: dict) -> dict:
         B.request("reload", kaynak="web")
         B.audit("web", "gorev_tekrar", detay={"adet": len(hedefler)})
         return {"ok": True, "mesaj": f"{len(hedefler)} görev tekrar sıraya alındı."}
+    if aks == "motor":
+        hedef = (body.get("hedef") or "").strip()
+        ok, msg = B.set_motor(hedef, body.get("backend") or None,
+                              body.get("model") or None,
+                              body.get("effort") or None)
+        if ok:
+            B.request("reload", kaynak="web")
+        return {"ok": ok, "mesaj": msg}
+    if aks == "motor_temizle":
+        hedef = (body.get("hedef") or "").strip()
+        ok, msg = B.clear_motor(hedef)
+        if ok:
+            B.request("reload", kaynak="web")
+        return {"ok": ok, "mesaj": msg}
     if aks == "onayla":
         g = body.get("gorev_kota")
         b = body.get("butce")
