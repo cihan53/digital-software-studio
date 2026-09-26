@@ -5,4 +5,5 @@
 # Böylece "sprint uzarsa sonraki başlamasın" kuralı zamanlayıcıya değil
 # durum makinesine bağlı kalır — cron sadece dürter, karar vermez.
 cd "$(dirname "$0")" || exit 1
-exec .venv/bin/python studio_engine.py --tick >> pipeline.log 2>&1
+mkdir -p workspace/logs
+exec .venv/bin/python studio_engine.py --tick >> workspace/logs/pipeline.log 2>&1

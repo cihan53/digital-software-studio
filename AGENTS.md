@@ -48,3 +48,29 @@ Kullanıcı **"bunu çöz"**, **"bu hatayı gider"**, **"bunu yap"** veya herhan
      gh pr create --title "<PR Başlığı>" --body "Closes #<issue_number>\n\n<Yapılan değişikliklerin özeti>" --base master
      ```
    * PR linki kullanıcıya sunulur.
+
+---
+
+## 📁 Çalışma Alanı (workspace/) Kuralı
+
+Studio ile bir proje geliştirilirken **projeye ait tüm üretilen dosyalar,
+geçici durum ve runtime artefaktları `workspace/` altında yaşar.** Repo
+kökü yalnızca framework dosyalarını ve kullanıcı dokümanlarını (AGENTS.md,
+README, proje_kapsami.md, org_chart.json vb.) barındırır.
+
+| Konum | İçerik |
+|---|---|
+| `workspace/studio.db` | Tek doğruluk kaynağı (pano, talepler, kota, audit) |
+| `workspace/logs/` | pipeline.log ve diğer süreç logları |
+| `workspace/.trace/` | Çağrı izleri (current.json, index.jsonl, NNNN.json) |
+| `workspace/.control/` | Kontrol bayrakları (pause/stop/skip/...) |
+| `workspace/docs/` | Üretilen dokümanlar, çözüm planları, talep raporları |
+| `workspace/src/` | Üretilen proje kaynak kodu |
+
+Kurallar:
+- Yeni runtime/geçici dosya eklerken köke değil `workspace/` (veya uygun alt
+  dizinine) yazın; `.gitignore` gerektirmemesi için kökte artefakt bırakmayın.
+- Kökte `studio.db` bulunursa `studio_board.db_conn()` ilk bağlantıda
+  otomatik olarak `workspace/` altına taşır (tek seferlik migrasyon).
+- `.studio-version` tek istisnadır: hangi framework sürümünün kurulu
+  olduğunu gösteren kökteki provensans dosyasıdır ve commit'lenir.

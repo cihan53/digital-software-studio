@@ -194,6 +194,7 @@ def cmd_kontrol():
         sys.exit(1)
 
     tracked = ds_ver.get("tracked_files", [])
+    korunan = set(ds_ver.get("protected_files", []))
 
     print(f"\n{BOLD}{CYAN}╔══════════════════════════════════════════════════╗")
     print(f"║  🔍  Framework Güncelleme Kontrol Raporu        ║")
@@ -224,8 +225,13 @@ def cmd_kontrol():
     if farklar:
         print(f"\n  {YELLOW}── Güncellenecek Dosyalar ────────────────────────{NC}")
         for f in farklar:
-            print(f"  {YELLOW}~{NC}  {f}")
+            kilit = f"  {RED}⚠ proje-özel — --force gerekir{NC}" if f in korunan else ""
+            print(f"  {YELLOW}~{NC}  {f}{kilit}")
+        korumali = [f for f in farklar if f in korunan]
         print(f"\n  {BOLD}{len(farklar)} dosya güncellenebilir.{NC}")
+        if korumali:
+            print(f"  {DIM}Korumalı (proje-özel) dosyalar --uygula'da atlanır; "
+                  f"zorlamak için --force: {', '.join(korumali)}{NC}")
         print(f"  {CYAN}Uygula: python3 scripts/studio_updater.py --uygula{NC}")
     elif not yeniler:
         print(f"\n  {GREEN}✅  Tüm dosyalar güncel!{NC}")
@@ -239,7 +245,7 @@ def cmd_kontrol():
     print()
 
 
-def cmd_uygula(otomatik_commit=False):
+def cmd_uygula(otomatik_commit=False, force=False):
     ds_path = ds_path_bul()
     ds_ver = ds_version_yukle(ds_path)
 
@@ -248,6 +254,7 @@ def cmd_uygula(otomatik_commit=False):
         sys.exit(1)
 
     tracked = ds_ver.get("tracked_files", [])
+    korunan = set(ds_ver.get("protected_files", []))
 
     print(f"\n{BOLD}{CYAN}╔══════════════════════════════════════════════════╗")
     print(f"║  🚀  Framework Güncelleme Uygulanıyor           ║")
@@ -258,6 +265,9 @@ def cmd_uygula(otomatik_commit=False):
 
     for rel_path in tracked:
         if rel_path == "studio.version":
+            continue
+        if rel_path in korunan and not force:
+            print(f"  {DIM}·{NC}  {rel_path}  {DIM}(proje-özel — atlandı, --force ile zorlanır){NC}")
             continue
         proje_dosya = ROOT / rel_path
         ds_dosya = ds_path / rel_path
@@ -309,7 +319,8 @@ def main():
 
   --durum           Mevcut versiyon bilgisi
   --kontrol         DS ile fark raporu (değişiklik yapmaz)
-  --uygula          Güncellemeleri projeye uygula
+  --uygula          Güncellemeleri projeye uygula (protected_files atlanır)
+  --uygula --force  Korumalı/proje-özel dosyaları da üzerine yaz
   --uygula --commit Uygula + otomatik git commit & push
 """)
         return
@@ -318,7 +329,7 @@ def main():
     elif "--kontrol" in args:
         cmd_kontrol()
     elif "--uygula" in args:
-        cmd_uygula(otomatik_commit="--commit" in args)
+        cmd_uygula(otomatik_commit="--commit" in args, force="--force" in args)
     else:
         print(f"{RED}Bilinmeyen komut.{NC}")
         sys.exit(1)

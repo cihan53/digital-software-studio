@@ -1,21 +1,54 @@
 {
-  "version": "1.0.2",
-  "released": "2026-09-20",
+  "version": "1.1.0",
+  "released": "2026-09-26",
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
     "scripts/musteri_talepleri.py",
+    "scripts/musteri_temsilcisi.py",
     "scripts/karar_verici_triage.py",
+    "scripts/github_issue_bridge.py",
     "scripts/migrate_to_sqlite.py",
     "scripts/recovery_sentinel.py",
     "scripts/studio_yetkilisi.py",
     "scripts/studio_updater.py",
+    "scripts/kalite_kapilari.py",
+    "scripts/smoke_checklist.example.json",
+    "scripts/uat_live_audit.mjs",
+    "scripts/tarayici_test_izle.mjs",
     "studio_board.py",
     "studio_engine.py",
     "studio_ctl.py",
+    "studio_web.py",
+    "studio_schedule.sh",
+    "studio.tick.plist",
     "basla.sh",
+    "musteri.sh",
+    "sync_studio.sh",
+    "web/index.html",
+    "web/panel.html",
+    "web/musteri.html",
+    "web/stil.css",
     "studio.version"
   ],
+  "protected_files": [
+    "studio_engine.py",
+    "basla.sh"
+  ],
   "changelog": [
+    {
+      "version": "1.1.0",
+      "date": "2026-09-26",
+      "changes": [
+        "Geçici ağ/TLS kopmaları (broken pipe, protocol version, EOF, timeout...) artık kota hatası gibi beklenip yeniden deneniyor — görev ölmüyor",
+        "Kesilen çağrılar ctl/--durum/web'de '✗ KESİLDİ' + sabit süre ile gösteriliyor; bayat started_at'ten sayan hayalet sayaç kaldırıldı",
+        "studio.tick.plist yolları proje dizinine göre düzeltildi — launchd tick koşucu çökünce otomatik diriltir",
+        "framework_update_info(): projeler DS sürümünü TTL önbelleğiyle otomatik denetler (yerel dizin → GitHub raw, ağsızken sessiz geçer)",
+        "Güncelleme bildirimi: studio_ctl başlığı, basla.sh --durum, koşu başlangıcı ve web panelinde '⚠ vX güncellemesi mevcut' bandı",
+        "protected_files: studio_engine.py ve basla.sh proje-özel sayılır — --uygula atlar, zorlamak için --force",
+        "tracked_files web arayüzü (studio_web.py, web/*) ve eksik framework dosyalarıyla genişletildi",
+        "studio.db git takibinden çıkarıldı — şema ilk çalıştırmada otomatik kurulur"
+      ]
+    },
     {
       "version": "1.0.2",
       "date": "2026-09-20",
