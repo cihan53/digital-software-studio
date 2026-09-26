@@ -172,7 +172,7 @@ async function panoYukle(){
 function panoCiz(){
   const kok=document.getElementById('pano');
   kok.innerHTML='';
-  const sprintler=[...(panoVeri.sprints||[])].sort((a,b)=>(a.order??0)-(b.order??0));
+  const sprintler=[...(panoVeri.sprints||[])].sort((a,b)=>(b.order??0)-(a.order??0));
   for(const s of sprintler){
     const div=document.createElement('div'); div.className='sprint';
     div.innerHTML=`<div class="sprint-bas"><b>${esc(s.id)}</b> ${esc(s.name||'')}
