@@ -508,12 +508,15 @@ else
   fi
 fi
 
-if [ ! -f proje_kapsami.md ]; then
-  red "✗ proje_kapsami.md yok"; HATA=1
-elif grep -q "BURAYI DOLDUR" proje_kapsami.md; then
+# Kapsam dokümanı workspace kuralıyla workspace/docs/ altında durabilir.
+KAPSAM="workspace/docs/proje_kapsami.md"
+[ -f "$KAPSAM" ] || KAPSAM="proje_kapsami.md"
+if [ ! -f "$KAPSAM" ]; then
+  red "✗ proje_kapsami.md yok (kökte ve workspace/docs/ altında bulunamadı)"; HATA=1
+elif grep -q "BURAYI DOLDUR" "$KAPSAM"; then
   ylw "! proje_kapsami.md'de doldurulmamış bölümler var — roller varsayım üretecek"
 else
-  grn "✓ Kapsam dokümanı hazır ($(wc -l < proje_kapsami.md | tr -d ' ') satır)"
+  grn "✓ Kapsam dokümanı hazır ($(wc -l < "$KAPSAM" | tr -d ' ') satır)"
 fi
 
 if calisiyor_mu; then
