@@ -964,6 +964,21 @@ Bu doküman en fazla ~{words} kelime olmalı. KARAR dokümanı yaz, ders kitabı
 Bu doküman aşağı akıştaki rollere GİRDİ olacak; şişkin doküman onların odağını dağıtır.
 """
 
+# Geliştirme görevlerinde koda eklenen regresyon-farkındalık kuralı.
+# Saha gözlemi: ajan bir dosyayı yeniden yazarken önceki sprintin yapısal
+# düzeltmesini (ve açıklayıcı TALEP/issue referansını) sessizce silebiliyor.
+REGRESSION_GUARD_RULE = """
+
+--- REGRESYON KORUMA KURALI (ZORUNLU) ---
+Mevcut bir dosyayı değiştirmeden/yeniden yazmadan ÖNCE `git log -p -- <dosya>`
+ile o dosyadaki geçmiş hata düzeltmelerini incele.
+- TALEP-XXX, 'closes #N', 'KORUNACAK', 'regresyon' gibi işaretli yorum satırlarını
+  ve onların koruduğu yapısal düzenlemeleri (ör. overflow dışına alınmış bir
+  dropdown) ASLA silme veya geri alma.
+- Bir düzeltmeyi bilinçli kaldırıyorsan yanına nedenini yaz; sessiz kaldırma YASAK.
+- Kodun yanına açıklama ekleme serbestliği yoktur; sadece mevcut koruma
+  işaretlerini koru, yenilerini ekleme zorunluluğun yok."""
+
 SCOPE_EDIT_RULE = """
 --- KAPSAM DOKÜMANI DÜZENLEME KURALI ---
 Bu doküman KULLANICININ dokümanıdır, senin değil. Mevcut bölüm yapısını ve
@@ -1338,6 +1353,70 @@ ROL ADLARI (yalnızca bu listeden seç, BİREBİR kopyala, yenisini UYDURMA):
 çıktı yollarından biri olmalı. Yeni yol icat etme."""
 
 
+# -------------------------------------------------------------
+# 5c. DETERMİNİSTİK KALİTE KAPILARI (scripts/kalite_kapilari.py)
+# -------------------------------------------------------------
+def _kalite_modulu():
+    """scripts/kalite_kapilari.py varsa import eder; yoksa None (eski projeler)."""
+    try:
+        scripts_dir = str(ROOT / "scripts")
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        import kalite_kapilari as KK
+        return KK
+    except Exception:
+        return None
+
+
+def _kalite_snapshot() -> set:
+    KK = _kalite_modulu()
+    return KK.porcelain_snapshot() if KK else set()
+
+
+def _kalite_kapilari_kostur(task: dict, pre_snapshot: set) -> list:
+    """Görev sonrası deterministik kapılar; pano notuna eklenecek metinler döner."""
+    KK = _kalite_modulu()
+    if not KK:
+        return []
+    try:
+        return KK.gorev_kapilari(task, pre_snapshot)
+    except Exception as e:
+        print(f"   [UYARI] kalite kapıları çalıştırılamadı: {e}", file=sys.stderr)
+        return []
+
+
+def _auto_talep_uat(task: dict, uat_cikti: str):
+    """Canlı UAT/smoke başarısızlığını müşteri talep havuzuna otomatik düşürür.
+
+    Mükerrer koruması: aynı görev id'siyle açık (çözülmemiş/iptal edilmemiş)
+    bir [UAT] talebi varsa yenisi açılmaz.
+    """
+    try:
+        scripts_dir = str(ROOT / "scripts")
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        import musteri_talepleri as MT
+        import importlib
+        importlib.reload(MT)
+
+        baslik = f"[UAT] {task['id']} canlı kabul denetimi başarısız: {task.get('title', '')[:80]}"
+        data = MT.load_data()
+        for t in data.get("talepler", []):
+            if (t.get("baslik") or "").startswith(f"[UAT] {task['id']}") \
+                    and t.get("durum") not in ("COZULDU", "IPTAL"):
+                print(f"   [i] Açık UAT talebi zaten var: {t['id']} — mükerrer kayıt açılmadı.")
+                return
+
+        aciklama = (
+            f"Canlı UAT denetimi (scripts/uat_live_audit.mjs) '{task['id']}' görevinde "
+            f"başarısız oldu.\n\nSon çıktı satırları:\n```\n{(uat_cikti or '').strip()[-900:]}\n```"
+        )
+        yeni = MT.yeni_talep("HATA", baslik, aciklama, oncelik="YUKSEK", sayfa_url="/")
+        print(f"   📥 [OTOMATİK TALEP] {yeni['id']} havuza eklendi: {baslik[:70]}")
+    except Exception as e:
+        print(f"   [UYARI] UAT talebi otomatik açılamadı: {e}", file=sys.stderr)
+
+
 def verify_task_execution(task: dict, sprint: dict, interactive: bool = False) -> str:
     """QA veya DevOps görevlerinde gerçek yerel ortam doğrulaması yapar veya talimat verir."""
     phase = task.get("phase", "")
@@ -1361,6 +1440,7 @@ def verify_task_execution(task: dict, sprint: dict, interactive: bool = False) -
                     if res.stdout:
                         print("      " + "\n      ".join(res.stdout.strip().splitlines()[-8:]))
                     note_parts.append("canlı UAT hata tespit edildi")
+                    _auto_talep_uat(task, res.stdout)
             except Exception as e:
                 print(f"   ⚠️  UAT çalıştırılamadı: {e}")
                 note_parts.append("uat çalıştırılamadı")
@@ -1584,6 +1664,12 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
         f"Faz: {task['phase']}\n"
         f"Yalnızca bu görevin kapsamındaki işi yap; sprint dışına taşma.\n"
     )
+    # Geliştirme görevlerinde geçmiş düzeltmelerin korunması zorunludur.
+    if task.get("phase") == "develop":
+        task_brief += REGRESSION_GUARD_RULE
+
+    # Kalite kapıları için görev öncesi çalışma ağacı anlığı
+    pre_task_git = _kalite_snapshot()
 
     for target in task["outputs"]:
         act = _pending_control(task["id"])
@@ -1665,6 +1751,15 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
 
     # Gerçek ortam doğrulaması / çalıştırma rehberi
     note = verify_task_execution(task, sprint, interactive=interactive)
+
+    # Deterministik kalite kapıları (regresyon taraması, fix+test, smoke)
+    gate_notes = _kalite_kapilari_kostur(task, pre_task_git)
+    if gate_notes:
+        note = "; ".join([n for n in [note] + gate_notes if n])
+        # Smoke kapısı başarısızsa bulguyu talep havuzuna düşür (mükerrer korumalı)
+        if any("smoke başarısız" in n for n in gate_notes):
+            _auto_talep_uat(task, "; ".join(gate_notes))
+
     B.mark(board, task["id"], B.DONE, note=note)
 
     # Müşteri talebi görevi ise durumu otomatik güncelle

@@ -1,0 +1,31 @@
+{
+  "_aciklama": "Deterministik smoke checklist — kalite_kapilari.py tarafından okunur. Projede 'workspace/smoke_checklist.json' olarak kopyalanıp proje uç noktalarına göre düzenlenir. LLM kullanılmaz.",
+  "checks": [
+    {
+      "name": "Web arayüzü SSR HTML sunumu",
+      "type": "http",
+      "url": "http://127.0.0.1:3000/",
+      "status": 200,
+      "contains": "<html"
+    },
+    {
+      "name": "Backend sağlık ucu (direkt)",
+      "type": "http",
+      "url": "http://127.0.0.1:3001/api/v1/health/sources",
+      "status": 200
+    },
+    {
+      "name": "API istekleri frontend origin üzerinden proxy'leniyor (dev/prod eşliği)",
+      "type": "http",
+      "url": "http://127.0.0.1:3000/api/v1/operators",
+      "status": 200,
+      "json_type": "list"
+    },
+    {
+      "name": "Örnek komut kontrolü",
+      "type": "cmd",
+      "command": "test -f workspace/src/backend/package.json",
+      "expect_code": 0
+    }
+  ]
+}
