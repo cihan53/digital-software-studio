@@ -605,6 +605,10 @@ def _run_cli(cmd: list, cwd: Path, timeout: int, name: str,
                 raise RuntimeError(f"{name} {timeout}s içinde yanıt vermedi.")
             time.sleep(0.5)
         out, err = proc.communicate()
+        # Yarış: süreç SIGTERM ile zaten ölüp döngüden çıkmış olabilir;
+        # yarım kalan çıktı parse hatasına dönüşmesin, CallAborted korunur.
+        if B.is_set("force"):
+            raise CallAborted(f"{name} çağrısı kullanıcı isteğiyle kesildi (--force).")
     finally:
         if proc.poll() is None:
             try:
