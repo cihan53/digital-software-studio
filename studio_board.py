@@ -789,6 +789,54 @@ def find_running(board: dict):
     return None, None
 
 
+def purge_talep_gorevleri(talep_id: str) -> dict:
+    """İptal edilen talebe bağlı pano görevlerini temizler ve panoyu yeniden sıralar.
+
+    Henüz çalışmamış görevler panodan silinir; diğer görevlerin silinenlere
+    olan bağımlılıkları düşülür, boşalan sprint'ler kaldırılır, durumlar ve
+    takvim yeniden hesaplanır. RUNNING görev silinmez — SKIPPED işaretlenip
+    skip bayrağıyla koşucuya devredilir (in-flight çağrı koşucu tarafından
+    kapatılır).
+    """
+    sonuc = {"silinen": [], "kosan": []}
+    board = db_load_board()
+    if not board:
+        return sonuc
+
+    degisti = False
+    for s in board.get("sprints", []):
+        for t in list(s.get("tasks", [])):
+            if t.get("talep_id") != talep_id:
+                continue
+            if t.get("status") == RUNNING:
+                t["status"] = SKIPPED
+                t["note"] = "talep iptal edildi"
+                sonuc["kosan"].append(t["id"])
+                request("skip", t["id"], kaynak="musteri")
+            else:
+                s["tasks"].remove(t)
+                sonuc["silinen"].append(t["id"])
+            degisti = True
+
+    if not degisti:
+        return sonuc
+
+    silinen = set(sonuc["silinen"])
+    for s, t in all_tasks(board):
+        deps = t.get("depends_on", [])
+        temiz = [d for d in deps if d not in silinen]
+        if len(temiz) != len(deps):
+            t["depends_on"] = temiz
+
+    board["sprints"] = [s for s in board["sprints"] if s.get("tasks")]
+    refresh(board)
+    schedule(board)
+    save(board)
+    audit("musteri", "pano_talep_temizlik", talep_id=talep_id,
+          detay={"silinen": sonuc["silinen"], "kosan": sonuc["kosan"]})
+    return sonuc
+
+
 # ---------------------------------------------------------------- öncelik/sıra
 # Bunlar doğrudan studio.db üzerinde çalışır; koşucu 'reload' bayrağını görünce
 # panoyu yeniden yükler. Böylece koşu sırasında bellekteki pano ezilmez.

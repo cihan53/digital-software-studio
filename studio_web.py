@@ -231,7 +231,12 @@ def kontrol(body: dict) -> dict:
             return {"ok": False, "mesaj": f"Talep modülü: {e}"}
         if t:
             B.request("reload", kaynak="web")
-            return {"ok": True, "mesaj": f"{tid} iptal edildi."}
+            pano = t.get("_pano") or {}
+            ek = (f" · {len(pano['silinen'])} pano görevi kaldırıldı"
+                  if pano.get("silinen") else "")
+            ek += (f" · {len(pano['kosan'])} koşan görev atlanıyor"
+                   if pano.get("kosan") else "")
+            return {"ok": True, "mesaj": f"{tid} iptal edildi.{ek}"}
         return {"ok": False, "mesaj": f"{tid} bulunamadı veya zaten kapalı."}
     if aks == "onayla":
         g = body.get("gorev_kota")
