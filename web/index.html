@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Digital Software Studio</title>
+<link rel="stylesheet" href="/web/stil.css">
+<style>
+  .hero { max-width: 860px; margin: 8vh auto; text-align: center; }
+  .hero h1 { font-size: 30px; margin-bottom: 6px; }
+  .kartlar { display: flex; gap: 20px; margin-top: 40px; }
+  .kartlar a {
+    flex: 1; display: block; padding: 30px 24px; border-radius: var(--r);
+    background: var(--panel); border: 1px solid var(--sinir); color: var(--metin);
+    transition: border-color .15s, transform .15s;
+  }
+  .kartlar a:hover { border-color: var(--vurgu); transform: translateY(-2px); }
+  .kartlar .ikon { font-size: 34px; }
+  .kartlar h2 { margin: 12px 0 6px; }
+  .kartlar p { color: var(--soluk); font-size: 13px; }
+  .ozet { margin-top: 40px; padding: 14px 20px; font-size: 13px; color: var(--soluk); }
+  .nokta { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
+  .n-yesil { background: var(--yesil); } .n-sari { background: var(--sari); } .n-gri { background: var(--soluk); }
+</style>
+</head>
+<body>
+<div class="hero">
+  <h1>⚡ Digital Software Studio</h1>
+  <p class="soluk">Otonom çok ajanlı yazılım stüdyosu — kontrol ve müşteri arabirimi</p>
+  <div class="kartlar">
+    <a href="/panel">
+      <div class="ikon">🖥️</div>
+      <h2>Stüdyo Paneli</h2>
+      <p>Sprint panosu, görev kontrolleri, audit ve işlem logları.</p>
+    </a>
+    <a href="/musteri">
+      <div class="ikon">💬</div>
+      <h2>Müşteri Odası</h2>
+      <p>Sohbet ederek hata bildirin veya yeni özellik isteyin.</p>
+    </a>
+  </div>
+  <div class="ozet kart" id="ozet">Sistem durumu yükleniyor…</div>
+</div>
+<script>
+const isaret = (ok, yari) => ok ? '<span class="nokta n-yesil"></span>' : (yari ? '<span class="nokta n-sari"></span>' : '<span class="nokta n-gri"></span>');
+async function ozetYukle() {
+  try {
+    const d = await (await fetch('/api/ozet')).json();
+    let durum;
+    if (d.durduruluyor) durum = isaret(false, true) + 'DURDURULUYOR';
+    else if (d.duraklatildi) durum = isaret(false, true) + 'DURAKLATILDI';
+    else if (d.kosucu) durum = isaret(true) + 'ÇALIŞIYOR';
+    else durum = isaret(false) + 'BOŞTA';
+    let icerik = `<b>Durum:</b> ${durum} &nbsp;·&nbsp; `;
+    if (d.asama === 'tasarim' && d.tasarim) {
+      icerik += `Tasarım aşaması: ${d.tasarim.biten}/${d.tasarim.toplam} rol`;
+    } else if (d.pano) {
+      icerik += `Sprint: ${d.pano.sprints_done}/${d.pano.sprints_total} · Görev: ${d.pano.done}/${d.pano.total}`;
+      if (d.pano.running) icerik += ` · ${d.pano.running} koşuyor`;
+      if (d.kayma_gun > 0) icerik += ` · kayma +${d.kayma_gun}g`;
+    }
+    if (d.aktif && d.aktif.role) icerik += `<br><b>Şu an:</b> ${d.aktif.role} → ${d.aktif.target || ''}`;
+    if (d.sira && !d.kosucu) icerik += `<br><span style="color:var(--sari)">Sırada bekleyen: ${d.sira.id} — koşucu çalışmıyor</span>`;
+    document.getElementById('ozet').innerHTML = icerik;
+  } catch (e) {
+    document.getElementById('ozet').textContent = 'Durum alınamadı: ' + e;
+  }
+}
+ozetYukle(); setInterval(ozetYukle, 4000);
+</script>
+</body>
+</html>
