@@ -96,6 +96,34 @@ Müşteri veya ürün denetçisi olarak çalışan sistemi incelerken yeni bir h
 
 ---
 
+## 🌐 Web Arayüzü (`./basla.sh --web`)
+
+Tarayıcıdan erişilen sıfır-bağımlılık web arayüzü (saf Python `http.server`;
+Windows/Linux/macOS ve IoT dahil tarayıcısı olan her cihazda çalışır):
+
+```bash
+./basla.sh --web                # http://127.0.0.1:8080
+STUDIO_WEB_HOST=0.0.0.0 ./basla.sh --web   # LAN/IoT erişimine aç
+```
+
+| Ekran | İçerik |
+| :--- | :--- |
+| **`/`** | Karşılama: sistem durumu + iki kapı (Panel / Müşteri Odası) |
+| **`/panel`** | Canlı sprint panosu, görev kontrolleri (duraklat/durdur/atla/geç/tekrar/kota onayı), öncelik **önerisi** için sürükle-bırak, Audit Log, İşlem Logları (her AI çağrısının rol/model/süre/maliyet/prompt-yanıt kaydı), Talepler, canlı çıktı akışı |
+| **`/musteri`** | Müşteri sohbet odası: müşteri temsilcisi ajanı diyalogla talebi netleştirir, taslak çıkarır; müşteri onaylayınca talep havuzuna düşer ve mevcut triage/planlama zinciri işler |
+
+Notlar:
+- Görev **sıralaması** dışarıdan doğrudan değiştirilemez; sürükle-bırak yalnızca
+  `oncelik` önerisi yazar. Son sırayı framework bağımlılık + faz + sprint
+  kurallarıyla belirler.
+- Tüm kontrol komutları `workspace/.control/` bayrak mekanizması üzerinden
+  gider — motor iki çağrı arasında uygular; `force` çağrıyı anında keser.
+- Müşteri talepleri artık yalnızca `studio.db`'de yaşar
+  (`musteri_talepleri.json` üretilmez; `musteri_talepleri.md` insan-okur
+  export olarak kalır).
+- Sohbet ajanı `STUDIO_SOHBET_AGENT=0` ile kapatılabilir (mesaj doğrudan
+  taslak talebe çevrilir, LLM çağrısı yapılmaz).
+
 ## 🖥️ Terminal TUI Kontrol Masası (`./basla.sh --izle`)
 
 Stüdyo çalışırken terminal üzerinden canlı olarak izlenebilir:
@@ -111,6 +139,7 @@ Stüdyo çalışırken terminal üzerinden canlı olarak izlenebilir:
 | Komut | Açıklama |
 | :--- | :--- |
 | **`./basla.sh`** | Stüdyoyu arka planda başlatır ve kontrol ekranını açar. |
+| **`./basla.sh --web`** | Web arayüzünü başlatır (panel + müşteri odası, :8080). |
 | **`./basla.sh --izle`** | Canlı TUI kontrol ekranını açar. |
 | **`./basla.sh --durum`** | Tek satırlık durum ve kota özeti basar. |
 | **`./basla.sh --kurtar`** | Kurtarma ajanını çalıştırır, yarım kalan işleri ve deployları tamamlar. |
