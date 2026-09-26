@@ -74,7 +74,7 @@ def db_conn():
         except Exception:
             pass
     import sqlite3
-    db_path = ROOT / "studio.db"
+    db_path = ROOT / "workspace" / "studio.db"
     if not db_path.exists():
         return None
     try:
