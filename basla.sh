@@ -6,7 +6,7 @@
 #   ./basla.sh --durdur     çalışan koşuyu nazikçe durdurur
 #   ./basla.sh --izle       sadece kontrol ekranını açar
 #   ./basla.sh --durum      tek satırlık durum özeti (ekran açmadan)
-#   ./basla.sh --web        web arayüzünü başlatır (panel + müşteri odası, :8080)
+#   ./basla.sh --web        web arayüzünü başlatır (panel + müşteri odası, :8090)
 #
 #   ./basla.sh --musteri    müşteri denetim masasını (istek/şikayet) açar
 #   ./basla.sh --onayla     günlük kota dolduğunda bir tur daha izin ver
@@ -610,7 +610,7 @@ fi
 grn "✓ Koşucu çalışıyor (pid $PID)"
 
 # Web arayüzü de kalksın — port doluysa ya da dosya yoksa atla.
-WEB_PORT="${STUDIO_WEB_PORT:-8080}"
+WEB_PORT="${STUDIO_WEB_PORT:-8090}"
 WEB_HOST="${STUDIO_WEB_HOST:-127.0.0.1}"
 if [ ! -f studio_web.py ]; then
   dim "studio_web.py yok — web paneli atlandı"
