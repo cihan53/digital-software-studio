@@ -196,10 +196,10 @@ def kontrol(body: dict) -> dict:
         board = B.load()
         tid = (body.get("gorev") or "").strip()
         hedefler = [t for _, t in B.all_tasks(board)
-                    if t["status"] in (B.FAILED, B.BLOCKED)
+                    if t["status"] in (B.FAILED, B.BLOCKED, B.SKIPPED)
                     and (not tid or t["id"] == tid)]
         if not hedefler:
-            return {"ok": False, "mesaj": "Başarısız/bloke görev yok."}
+            return {"ok": False, "mesaj": "Başarısız/bloke/atlanmış görev yok."}
         for t in hedefler:
             t["status"] = B.TODO
             t["note"] = ""
