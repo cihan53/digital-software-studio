@@ -26,6 +26,7 @@ yarn-error.log*
 *.log
 pipeline.log
 plan.log
+studio.db
 studio.db-shm
 studio.db-wal
 

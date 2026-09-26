@@ -29,7 +29,7 @@ cd "$(dirname "$0")" || exit 1
 
 PY=".venv/bin/python"
 [ -x "$PY" ] || PY="python3"
-LOG="pipeline.log"
+LOG="workspace/logs/pipeline.log"
 red()  { printf "\033[31m%s\033[0m\n" "$*"; }
 grn()  { printf "\033[32m%s\033[0m\n" "$*"; }
 ylw()  { printf "\033[33m%s\033[0m\n" "$*"; }
@@ -196,7 +196,9 @@ if cur.get("role"):
     print(f"  {CYAN}Token  {NC}: {cur.get('prompt_chars',0):,} karakter")
 
     # ── Pipeline log: 429 / hata durumu ──────────────────────────────────────
-    log_f = root / "pipeline.log"
+    log_f = root / "workspace/logs/pipeline.log"
+    if not log_f.exists():
+        log_f = root / "pipeline.log"  # eski sürümden kalan kök logu
     if log_f.exists():
         log_lines = log_f.read_text(errors="replace").splitlines()
         # Son 60 satırda quota/hata ara
@@ -321,6 +323,19 @@ try:
     kr = RED if doldu else (YELLOW if dolmak_uzere else GREEN)
     ds = "DOLDU — onay bekliyor" if doldu else ("Dolmak üzere" if dolmak_uzere else "açık")
     print(f"\n  {BOLD}Kota:{NC} {kr}bugün {d['gorev']}/{mg} görev  ${d['maliyet']:.2f}/${mb:.2f}  [{ds}]{NC}")
+except Exception:
+    pass
+
+# ── Framework Güncelleme Bildirimi ───────────────────────────────────────────
+try:
+    import studio_board as B
+    g = B.framework_update_info()
+    if g and g.get("update"):
+        print(f"\n  {YELLOW}⚠  Studio v{g['remote']} güncellemesi mevcut{NC} "
+              f"{DIM}(kurulu v{g['local']}){NC}")
+        for c in (g.get("changes") or [])[:4]:
+            print(f"     {DIM}• {c[:84]}{NC}")
+        print(f"  {CYAN}   İncele: python3 scripts/studio_updater.py --kontrol{NC}")
 except Exception:
     pass
 
@@ -558,6 +573,7 @@ echo
 export STUDIO_BACKEND="${STUDIO_BACKEND:-agy}"
 export STUDIO_AGY_BIN="${AGY_EXE:-$HOME/.local/bin/agy}"
 [ -n "${DEVIN_EXE:-}" ] && export STUDIO_DEVIN_BIN="$DEVIN_EXE"
+mkdir -p "$(dirname "$LOG")"
 nohup $PY studio_engine.py --full --yes ${STUDIO_BUTCE:+--max-cost $STUDIO_BUTCE} > "$LOG" 2>&1 &
 PID=$!
 sleep 2
