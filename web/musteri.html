@@ -84,8 +84,8 @@ function mesajCiz(m){
       Tür: ${esc(t.tur)} · Öncelik: ${esc(t.oncelik)} · Sayfa: ${esc(t.sayfa_url||'/')}<br>
       <b>${esc(t.baslik)}</b><br><span class="soluk">${esc(t.aciklama||'')}</span>
       <div class="aks">
-        <button class="birincil kucuk" onclick="onayla(${m.id})">✔ Onayla ve Gönder</button>
-        <button class="kucuk" onclick="reddet(${m.id})">✕ İptal</button>
+        <button class="birincil kucuk" onclick="onayla(${m.id},this)">✔ Onayla ve Gönder</button>
+        <button class="kucuk" onclick="reddet(${m.id},this)">✕ İptal</button>
       </div>`;
     d.appendChild(k);
   }
@@ -124,6 +124,8 @@ async function gonder(){
   const inp=$('girdi'); const metin=inp.value.trim();
   if(!metin)return;
   inp.value=''; inp.disabled=true; $('gonder').disabled=true;
+  yaziyorBasla=Date.now();
+  $('yaziyor').textContent='Temsilci yazıyor…';
   $('yaziyor').classList.remove('gizli');
   // Optimistik ekleme
   const kutu=$('mesajlar');
@@ -140,22 +142,38 @@ async function gonder(){
   inp.disabled=false; $('gonder').disabled=false; inp.focus();
   sonMesajSayisi=-1; yukle(true);
 }
-async function onayla(mid){
-  const d=await(await fetch('/api/sohbet/onay',{method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({oturum:oturum,mesaj_id:mid})})).json();
-  toast(d.ok?`Talep havuza alındı: ${d.talep_id}`:(d.mesaj||'Onaylanamadı'));
+let yaziyorBasla=0;
+async function onayla(mid,btn){
+  if(btn){btn.disabled=true;btn.textContent='⏳ İşleniyor…';
+    if(btn.nextElementSibling)btn.nextElementSibling.disabled=true;}
+  try{
+    const d=await(await fetch('/api/sohbet/onay',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({oturum:oturum,mesaj_id:mid})})).json();
+    toast(d.ok?`Talep havuza alındı: ${d.talep_id}`:(d.mesaj||'Onaylanamadı'));
+  }catch(e){toast('Onay gönderilemedi: '+e);}
   sonMesajSayisi=-1; yukle(true);
 }
-async function reddet(mid){
-  const d=await(await fetch('/api/sohbet/red',{method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({oturum:oturum,mesaj_id:mid})})).json();
-  toast(d.ok?'Taslak iptal edildi.':(d.mesaj||'İptal edilemedi'));
+async function reddet(mid,btn){
+  if(btn){btn.disabled=true;btn.textContent='⏳ İşleniyor…';
+    if(btn.previousElementSibling)btn.previousElementSibling.disabled=true;}
+  try{
+    const d=await(await fetch('/api/sohbet/red',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({oturum:oturum,mesaj_id:mid})})).json();
+    toast(d.ok?'Taslak iptal edildi.':(d.mesaj||'İptal edilemedi'));
+  }catch(e){toast('İptal gönderilemedi: '+e);}
   sonMesajSayisi=-1; yukle(true);
 }
 document.getElementById('girdi').addEventListener('keydown',e=>{if(e.key==='Enter')gonder();});
 yukle(true); setInterval(yukle,3000);
+// "Temsilci yazıyor" göstergesine geçen süre — uzun sürerse kota ipucu.
+setInterval(()=>{
+  const y=$('yaziyor');
+  if(!y||y.classList.contains('gizli')||!yaziyorBasla)return;
+  const s=Math.floor((Date.now()-yaziyorBasla)/1000);
+  y.textContent=`Temsilci yazıyor… ${s}sn`+(s>90?' — kota bekleniyor olabilir':'');
+},1000);
 </script>
 </body>
 </html>
