@@ -104,7 +104,10 @@ def durum_ozeti() -> dict:
         # Pano yoksa tasarım aşamasındadır
         out["asama"] = "tasarim"
         state = read_json(ROOT / "workspace" / ".state.json", {})
-        org = read_json(ROOT / "org_chart.json", {"hierarchy": []})
+        org_f = ROOT / "workspace" / "docs" / "org_chart.json"
+        if not org_f.exists():
+            org_f = ROOT / "org_chart.json"
+        org = read_json(org_f, {"hierarchy": []})
         design = [a for a in org["hierarchy"] if a.get("stage", "design") == "design"]
         done = set(state.get("completed_steps", []))
         out["tasarim"] = {
