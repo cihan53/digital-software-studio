@@ -1,0 +1,86 @@
+# Release otomasyonu — ana dala her push'ta (PR merge dahil) sürüm yükselt + tag at.
+#
+# Akış:
+#   1. Merge commit mesajına göre bump tipi seçilir:
+#        BREAKING / "!:"  → major
+#        "feat"/"feature" → minor
+#        diğerleri        → patch
+#   2. studio.version'daki sürüm son tag'den yeniyse (PR elle yükseltmişse)
+#      bump atlanır, mevcut sürüm tag'lenir; aksi halde release_bump.py
+#      sürümü yükseltir + changelog'a merge mesajını düşer.
+#   3. "chore(release): vX.Y.Z [skip ci]" commit'i ve vX.Y.Z tag'i push'lanır.
+#
+# Sonsuz döngü koruması: release commit'i hem [skip ci] işareti taşır hem de
+# job'un 'if' koşuluyla yeniden tetiklenmez; HEAD zaten tag'liyse job çıkar.
+name: Release & Tag
+
+on:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: "!contains(github.event.head_commit.message, 'chore(release)')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bump tipini belirle
+        id: bump
+        run: |
+          MSG="${{ github.event.head_commit.message }}"
+          if echo "$MSG" | grep -qiE 'BREAKING|!:'; then
+            echo "part=major" >> "$GITHUB_OUTPUT"
+          elif echo "$MSG" | grep -qiE '^(feat|feature)[(:]'; then
+            echo "part=minor" >> "$GITHUB_OUTPUT"
+          else
+            echo "part=patch" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sürümü belirle veya yükselt
+        id: ver
+        run: |
+          # HEAD zaten tag'liyse (tekrarlanan koşu) çık
+          if [ -n "$(git tag --points-at HEAD | head -1)" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CUR=$(python3 -c "import json;print(json.load(open('studio.version'))['version'])")
+          LAST=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+
+          if [ "$LAST" = "v$CUR" ]; then
+            # Sürüm son release'ten beri değişmedi → bu merge için yükselt
+            MSG="$(git log -1 --pretty=%s | head -c 140)"
+            CUR=$(python3 scripts/release_bump.py "${{ steps.bump.outputs.part }}" --msg "$MSG")
+            echo "bumped=true" >> "$GITHUB_OUTPUT"
+          else
+            # PR sürümü kendisi yükseltmiş veya ilk release → mevcudu tag'le
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Oluşacak tag zaten varsa işlem yapma
+          if git rev-parse -q --verify "refs/tags/v$CUR" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$CUR" >> "$GITHUB_OUTPUT"
+          echo "Sürüm: $CUR (önceki tag: ${LAST:-yok})"
+
+      - name: Tag oluştur ve push'la
+        if: steps.ver.outputs.skip != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ "${{ steps.ver.outputs.bumped }}" = "true" ]; then
+            git add studio.version
+            git commit -m "chore(release): v${{ steps.ver.outputs.version }} [skip ci]"
+            git push origin "HEAD:${{ github.ref_name }}"
+          fi
+          git tag -a "v${{ steps.ver.outputs.version }}" \
+            -m "Digital Software Studio v${{ steps.ver.outputs.version }}"
+          git push origin "v${{ steps.ver.outputs.version }}"
