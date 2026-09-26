@@ -729,8 +729,9 @@ def _call_devin(system_prompt: str, user_prompt: str, effort: str, model: str,
         cmd += ["--cloud"]
     if model:
         cmd += ["--model", model]
-    if tools:
-        cmd += ["--permission-mode", DEVIN_PERMISSION_MODE]
+    # devin etkileşimsiz kipte onay isteyemez; araçsız rollerde bile CLI kendi
+    # araçlarını deneyebilir → mod koşulsuz geçilir, yoksa çağrı boş döner.
+    cmd += ["--permission-mode", DEVIN_PERMISSION_MODE]
 
     run_cwd = ROOT if tools else SCRATCH_DIR
     rc, out, err = _run_cli(cmd, run_cwd, DEVIN_TIMEOUT + 60, "devin")
