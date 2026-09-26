@@ -47,6 +47,7 @@
   <a href="/"><button>⌂</button></a>
 </div>
 <div id="gunc-banner" class="gunc-banner gizli"></div>
+<div id="motor-banner" class="gunc-banner gizli"></div>
 <div class="sekmeler">
   <div class="sekme aktif" data-t="pano" onclick="sekmeAc('pano')">📋 Pano</div>
   <div class="sekme" data-t="canli" onclick="sekmeAc('canli')">📡 Canlı Çıktı</div>
@@ -150,6 +151,19 @@ async function ozetYukle(){
           ` <span class="soluk">· ${esc(g.changes[0])}${g.changes.length>1?' +'+(g.changes.length-1)+' değişiklik daha':''}</span>`:'');
       gb.classList.remove('gizli');
     }else gb.classList.add('gizli');
+    const mb=document.getElementById('motor-banner');
+    const mo=d.motor_oneri;
+    if(mo){
+      let btns='';
+      for(const b of (mo.alternatifler||[]))
+        btns+=` <button onclick="motorSec('${esc(mo.hedef||'')}','${b}')">`+
+              `${b}'ya geç</button>`;
+      mb.innerHTML=`⚠ <b>${esc(mo.backend)}</b> kotası bekleniyor `+
+        `<span class="soluk">(${esc(mo.hedef||'aktif görev')})</span> — `+
+        `devam etmek için motor değiştirin:${btns}`+
+        ` <span class="soluk">veya <code>./basla.sh --motor ${esc(mo.hedef||'&lt;görev&gt;')} &lt;backend&gt;</code></span>`;
+      mb.classList.remove('gizli');
+    }else mb.classList.add('gizli');
     const ak=document.getElementById('aktif');
     if(d.aktif&&d.aktif.role){
       ak.classList.remove('gizli');
@@ -222,6 +236,12 @@ async function kontrol(aks,gorev,force){
   if(aks==='durdur'&&!confirm('Koşucu durdurulsun mu?'))return;
   const d=await(await fetch('/api/kontrol',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({aksiyon:aks,gorev:gorev,force:!!force})})).json();
+  toast(d.mesaj); ozetYukle();
+}
+async function motorSec(hedef,backend){
+  if(!hedef){hedef=prompt('Hedef görev veya sprint (örn. S23-T1 veya S23):',''); if(!hedef)return;}
+  const d=await(await fetch('/api/kontrol',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({aksiyon:'motor',hedef:hedef,backend:backend})})).json();
   toast(d.mesaj); ozetYukle();
 }
 async function onayla(){

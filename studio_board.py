@@ -153,6 +153,16 @@ CREATE TABLE IF NOT EXISTS sohbet_mesajlari (
     taslak      TEXT,
     talep_id    TEXT
 );
+
+-- Görev/sprint bazlı motor geçersiz kılması. Ayrı tabloda durur çünkü
+-- db_save_board INSERT OR REPLACE yapar — kolon olsaydı her kayıtta silinirdi.
+CREATE TABLE IF NOT EXISTS motor_override (
+    hedef_id    TEXT PRIMARY KEY,   -- 'S23' (sprint) veya 'S23-T1' (görev)
+    backend     TEXT,
+    model       TEXT,
+    effort      TEXT,
+    zaman       TEXT
+);
 """
 
 _SCHEMA_INITIALIZED = False
@@ -215,6 +225,17 @@ def _db_migrate(conn: sqlite3.Connection):
         for col in ("cozum_plani", "faz_id", "efor", "triage_notu"):
             if col not in mevcut:
                 cur.execute(f"ALTER TABLE talepler ADD COLUMN {col} TEXT")
+    except Exception:
+        pass
+    try:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS motor_override (
+                hedef_id    TEXT PRIMARY KEY,
+                backend     TEXT,
+                model       TEXT,
+                effort      TEXT,
+                zaman       TEXT
+            )""")
     except Exception:
         pass
 
@@ -1000,6 +1021,123 @@ def control_state() -> dict:
     }
 
 
+# ------------------------------------------------------- motor override
+# Görev veya sprint bazında backend/model/effort geçersiz kılma.
+# Öncelik zinciri: görev override > sprint override > org_chart rolü > env.
+MOTOR_BACKENDS = ("agy", "devin", "claude")
+MOTOR_ONERI_DOSYA = CONTROL_DIR / "motor_oneri.json"
+
+
+def set_motor(hedef_id: str, backend: str = None, model: str = None,
+              effort: str = None) -> tuple[bool, str]:
+    """Sprint veya görev için motor geçersiz kılması kaydeder."""
+    hedef_id = (hedef_id or "").strip().upper()
+    if not hedef_id:
+        return False, "Hedef boş olamaz (örn. S23 veya S23-T1)."
+    if backend:
+        backend = backend.strip().lower()
+        if backend not in MOTOR_BACKENDS:
+            return False, (f"Geçersiz backend '{backend}'. "
+                           f"Geçerli: {', '.join(MOTOR_BACKENDS)}")
+    if not any([backend, model, effort]):
+        return False, "En az bir alan verin (backend/model/effort)."
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM sprintler WHERE id = ?", (hedef_id,))
+        if not cur.fetchone():
+            cur.execute("SELECT 1 FROM pano_gorevleri WHERE id = ?", (hedef_id,))
+            if not cur.fetchone():
+                return False, f"Hedef bulunamadı: {hedef_id}"
+        cur.execute("""
+            INSERT OR REPLACE INTO motor_override
+            (hedef_id, backend, model, effort, zaman) VALUES (?, ?, ?, ?, ?)
+        """, (hedef_id, backend, model, effort,
+              datetime.now().isoformat(timespec="seconds")))
+        conn.commit()
+    finally:
+        conn.close()
+    audit("kontrol", "motor_override",
+          gorev_id=hedef_id if "-T" in hedef_id else None,
+          detay={"hedef": hedef_id, "backend": backend,
+                 "model": model, "effort": effort})
+    return True, f"{hedef_id} → {backend or '-'} / {model or '-'} / {effort or '-'}"
+
+
+def clear_motor(hedef_id: str) -> tuple[bool, str]:
+    hedef_id = (hedef_id or "").strip().upper()
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM motor_override WHERE hedef_id = ?", (hedef_id,))
+        silindi = cur.rowcount > 0
+        conn.commit()
+    finally:
+        conn.close()
+    if silindi:
+        audit("kontrol", "motor_override_temizle", detay={"hedef": hedef_id})
+        return True, f"{hedef_id} override kaldırıldı."
+    return False, f"{hedef_id} için override yok."
+
+
+def motor_override(task_id: str) -> dict:
+    """Görevin geçerli motor override'ı: görev satırı, yoksa sprint satırı."""
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT sprint_id FROM pano_gorevleri WHERE id = ?",
+                    (task_id,))
+        row = cur.fetchone()
+        adaylar = [task_id, row["sprint_id"] if row else None]
+        for hedef in adaylar:
+            if not hedef:
+                continue
+            cur.execute("""SELECT backend, model, effort FROM motor_override
+                           WHERE hedef_id = ?""", (hedef,))
+            r = cur.fetchone()
+            if r:
+                return {"hedef": hedef, "backend": r["backend"],
+                        "model": r["model"], "effort": r["effort"]}
+    finally:
+        conn.close()
+    return {}
+
+
+def motor_list() -> list[dict]:
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM motor_override ORDER BY hedef_id")
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def motor_oneri_yaz(backend: str, model: str, hedef: str, reason: str,
+                    alternatifler: list):
+    """Kota beklemesi sürerken alternatif motor önerisini yayınlar."""
+    try:
+        CONTROL_DIR.mkdir(parents=True, exist_ok=True)
+        MOTOR_ONERI_DOSYA.write_text(json.dumps({
+            "backend": backend, "model": model, "hedef": hedef,
+            "reason": reason[:200], "alternatifler": alternatifler,
+            "zaman": datetime.now().isoformat(timespec="seconds"),
+        }, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def motor_oneri_oku() -> dict | None:
+    try:
+        return json.loads(MOTOR_ONERI_DOSYA.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def motor_oneri_temizle():
+    MOTOR_ONERI_DOSYA.unlink(missing_ok=True)
+
+
 # ---------------------------------------------------------------- günlük kota
 # Amaç: boru hattı bir günde kontrolsüz harcama yapmasın. Sınıra ulaşınca
 # DURUR ve kullanıcının açık onayını bekler; kendiliğinden devam etmez.
@@ -1213,3 +1351,46 @@ def framework_update_info(ttl: int = UPDATE_CHECK_TTL) -> dict | None:
     except OSError:
         pass
     return info
+
+
+# ------------------------------------------------------------------- CLI
+def _motor_cli(args) -> int:
+    if args.temizle:
+        if not args.hedef:
+            print("kullanım: studio_board.py motor --temizle <S23|S23-T1>")
+            return 1
+        ok, msg = clear_motor(args.hedef)
+    elif not args.hedef:
+        liste = motor_list()
+        if not liste:
+            print("Kayıtlı motor override yok.")
+        else:
+            for r in liste:
+                print(f"  {r['hedef_id']:10} {r['backend'] or '-'} / "
+                      f"{r['model'] or '-'} / {r['effort'] or '-'}")
+        oneri = motor_oneri_oku()
+        if oneri:
+            print(f"\n⚠ {oneri['backend']} kotası bekleniyor "
+                  f"({oneri.get('hedef', '?')}) — alternatifler: "
+                  f"{', '.join(oneri.get('alternatifler', []))}")
+        return 0
+    else:
+        ok, msg = set_motor(args.hedef, args.backend, args.model, args.effort)
+    print(("✓ " if ok else "✗ ") + msg)
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser(description="studio_board yardımcı komutları")
+    sub = ap.add_subparsers(dest="cmd")
+    m = sub.add_parser("motor", help="görev/sprint motor geçersiz kılma")
+    m.add_argument("hedef", nargs="?", help="S23 veya S23-T1 (boş: liste)")
+    m.add_argument("backend", nargs="?", help="agy / devin / claude")
+    m.add_argument("model", nargs="?", help="model adı (örn. sonnet, opus)")
+    m.add_argument("effort", nargs="?", help="low / medium / high")
+    m.add_argument("--temizle", action="store_true", help="override'ı kaldır")
+    args = ap.parse_args()
+    if args.cmd == "motor":
+        sys.exit(_motor_cli(args))
+    ap.print_help()

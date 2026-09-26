@@ -21,6 +21,12 @@
 #   ./basla.sh --atla [S1-T2]          görevi atla (id yoksa koşan/sıradaki)
 #   ./basla.sh --atla S1-T2 --force    çağrıyı anında kesip atla
 #
+#   Motor değiştirme (kota dolunca başka AI'a geçmek için):
+#   ./basla.sh --motor                          override listesi + kota önerisi
+#   ./basla.sh --motor S23-T1 claude [model]    görevin motorunu değiştir
+#   ./basla.sh --motor S23 devin                sprint'in tüm görevlerine uygulanır
+#   ./basla.sh --motor --temizle S23-T1         override'ı kaldır (role dön)
+#
 #   Günlük varsayılan: 3 görev / 2 USD. Değiştirmek için:
 #   STUDIO_GUNLUK_GOREV, STUDIO_GUNLUK_BUTCE
 #   ./basla.sh --sifirla    ilerlemeyi sıfırlar (üretilmiş dosyalar arşive gider)
@@ -339,6 +345,20 @@ try:
 except Exception:
     pass
 
+# ── Motor Önerisi (kota beklemesi) ───────────────────────────────────────────
+try:
+    import studio_board as B
+    o = B.motor_oneri_oku()
+    if o:
+        alt = ", ".join(o.get("alternatifler") or []) or "—"
+        print(f"\n  {YELLOW}⚠  {o['backend']} kotası bekleniyor{NC} "
+              f"{DIM}({o.get('hedef') or 'aktif görev'}){NC}")
+        print(f"     {DIM}{o.get('reason','')[:80]}{NC}")
+        print(f"  {CYAN}   Alternatif: {alt} → örn. ./basla.sh --motor "
+              f"{o.get('hedef') or '<görev>'} {(o.get('alternatifler') or ['claude'])[0]}{NC}")
+except Exception:
+    pass
+
 print(f"{BOLD}{'─'*62}{NC}")
 print()
 PYEOF
@@ -348,6 +368,10 @@ PYEOF
       $PY -c "import studio_board as B; B.request('stop', kaynak='cli')"
       grn "Durdurma istendi — çalışan çağrı bitince koşucu çıkacak."
       dim "Hemen kesmek için: pkill -f studio_engine.py  (devam eden çağrının parası gider)"
+      exit 0 ;;
+  --motor)
+      shift
+      $PY studio_board.py motor "$@"
       exit 0 ;;
   --oncelik|--sira|--sprint-sira|--gec|--atla)
       $PY - "$@" <<'PYEOF'
