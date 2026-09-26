@@ -59,6 +59,10 @@ CREATE TABLE IF NOT EXISTS talepler (
     studio_notu         TEXT,
     github_issue_number INTEGER,
     github_issue_url    TEXT,
+    cozum_plani         TEXT,
+    faz_id              TEXT,
+    efor                TEXT,
+    triage_notu         TEXT,
     gecmis              TEXT    -- JSON string olarak saklanır
 );
 
@@ -170,8 +174,9 @@ def talepler_aktar(conn):
         conn.execute("""
             INSERT OR REPLACE INTO talepler
             (id, tarih, tur, oncelik, baslik, aciklama, sayfa_url, durum,
-             gorevli_rol, studio_notu, github_issue_number, github_issue_url, gecmis)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+             gorevli_rol, studio_notu, github_issue_number, github_issue_url,
+             cozum_plani, faz_id, efor, triage_notu, gecmis)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             t.get("id"),
             t.get("tarih"),
@@ -185,6 +190,10 @@ def talepler_aktar(conn):
             t.get("studio_notu"),
             t.get("github_issue_number"),
             t.get("github_issue_url"),
+            t.get("cozum_plani"),
+            t.get("faz_id"),
+            t.get("efor"),
+            t.get("triage_notu"),
             gecmis,
         ))
         n += 1

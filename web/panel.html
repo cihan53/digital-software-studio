@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stüdyo Paneli — Digital Software Studio</title>
+<link rel="stylesheet" href="/web/stil.css">
+<style>
+  .durum-hat { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .sprint { margin-bottom: 18px; }
+  .sprint-bas { display: flex; gap: 12px; align-items: baseline; padding: 10px 12px;
+    background: var(--panel2); border: 1px solid var(--sinir); border-radius: 8px 8px 0 0; }
+  .gorevler { border: 1px solid var(--sinir); border-top: 0; border-radius: 0 0 8px 8px; overflow: hidden; }
+  .gorev {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+    border-bottom: 1px solid var(--sinir); background: var(--panel); cursor: grab;
+  }
+  .gorev:last-child { border-bottom: 0; }
+  .gorev.surukle { opacity: .4; }
+  .gorev .gid { font-family: monospace; color: var(--soluk); min-width: 72px; }
+  .gorev .gfaz { color: var(--soluk); font-size: 12px; min-width: 58px; }
+  .gorev .gad { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gorev .gnot { color: var(--kirmizi); font-size: 12px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gorev .gaks { display: flex; gap: 4px; }
+  .aktif-kart { margin-bottom: 14px; }
+  .filtre { display: flex; gap: 10px; margin-bottom: 12px; align-items: center; flex-wrap: wrap; }
+  .gizli { display: none; }
+  .mdl-sekme { display: flex; gap: 6px; margin: 10px 0; }
+  .ipucu { font-size: 12px; color: var(--soluk); margin: 6px 0 14px; }
+</style>
+</head>
+<body>
+<div class="ust">
+  <span class="logo">⚡ Stüdyo Paneli</span>
+  <span id="durum" class="rozet">…</span>
+  <span id="ilerleme" class="soluk"></span>
+  <span id="saat" class="soluk"></span>
+  <span class="bosluk"></span>
+  <button id="bDuraklat" onclick="kontrol('duraklat')">⏸ Duraklat</button>
+  <button id="bSurdur" class="gizli" onclick="kontrol('surdur')">▶ Sürdür</button>
+  <button onclick="onayla()">💰 Kota Onayla</button>
+  <button class="tehlike" onclick="kontrol('durdur')">⏹ Durdur</button>
+  <a href="/"><button>⌂</button></a>
+</div>
+<div class="sekmeler">
+  <div class="sekme aktif" data-t="pano" onclick="sekmeAc('pano')">📋 Pano</div>
+  <div class="sekme" data-t="canli" onclick="sekmeAc('canli')">📡 Canlı Çıktı</div>
+  <div class="sekme" data-t="audit" onclick="sekmeAc('audit')">🧾 Audit Log</div>
+  <div class="sekme" data-t="cagri" onclick="sekmeAc('cagri')">🧠 İşlem Logları</div>
+  <div class="sekme" data-t="talep" onclick="sekmeAc('talep')">📥 Talepler</div>
+</div>
+<div class="icerik">
+  <div id="aktif" class="kart aktif-kart gizli"></div>
+
+  <section id="s-pano">
+    <div class="ipucu">Görevleri sürükleyip bırakarak <b>öncelik önerisi</b> verirsiniz;
+      son sırayı framework bağımlılık ve faz kurallarıyla belirler.</div>
+    <div id="pano">Yükleniyor…</div>
+  </section>
+
+  <section id="s-canli" class="gizli">
+    <div id="canli-meta" class="durum-hat"></div>
+    <pre id="canli-out" style="min-height:320px"></pre>
+  </section>
+
+  <section id="s-audit" class="gizli">
+    <div class="filtre">
+      <select id="f-kaynak" onchange="auditYukle()">
+        <option value="">Kaynak (hepsi)</option>
+        <option>engine</option><option>web</option><option>ctl</option>
+        <option>musteri</option><option>sohbet</option><option>kontrol</option><option>sistem</option>
+      </select>
+      <input id="f-olay" placeholder="Olay filtresi (ör. gorev_durum)" onchange="auditYukle()">
+      <button onclick="auditYukle()">Yenile</button>
+    </div>
+    <table class="tablo"><thead><tr>
+      <th>Zaman</th><th>Kaynak</th><th>Olay</th><th>Görev</th><th>Talep</th><th>Detay</th>
+    </tr></thead><tbody id="audit"></tbody></table>
+  </section>
+
+  <section id="s-cagri" class="gizli">
+    <table class="tablo"><thead><tr>
+      <th>#</th><th>Rol</th><th>Hedef</th><th>Motor</th><th>Token</th><th>Süre</th><th>Maliyet</th>
+    </tr></thead><tbody id="cagri"></tbody></table>
+  </section>
+
+  <section id="s-talep" class="gizli">
+    <table class="tablo"><thead><tr>
+      <th>ID</th><th>Tür</th><th>Öncelik</th><th>Durum</th><th>Başlık</th><th>Sayfa</th><th>Faz</th><th>Issue</th>
+    </tr></thead><tbody id="talep"></tbody></table>
+  </section>
+</div>
+
+<div id="toast" class="bildirim gizli"></div>
+<div id="modal" class="modal-arka gizli" onclick="if(event.target===this)modalKapat()">
+  <div class="modal" id="modal-ic"></div>
+</div>
+
+<script>
+let panoVeri = null;
+const fmt = s => (s||'').toString();
+const esc = s => fmt(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const insan = s => { s=Math.round(s||0); const m=Math.floor(s/60); return m? m+'d'+(s%60)+'s' : s+'s'; };
+
+function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.remove('gizli');
+  clearTimeout(t._h); t._h=setTimeout(()=>t.classList.add('gizli'), 5000); }
+function modalKapat(){ document.getElementById('modal').classList.add('gizli'); }
+
+function sekmeAc(t){
+  document.querySelectorAll('.sekme').forEach(x=>x.classList.toggle('aktif', x.dataset.t===t));
+  for (const s of ['pano','canli','audit','cagri','talep'])
+    document.getElementById('s-'+s).classList.toggle('gizli', s!==t);
+  if(t==='audit') auditYukle(); if(t==='cagri') cagriYukle();
+  if(t==='talep') talepYukle(); if(t==='canli') canliYukle();
+}
+let aktifSekme='pano';
+
+// ---------- özet ----------
+async function ozetYukle(){
+  try{
+    const d = await (await fetch('/api/ozet')).json();
+    const el = document.getElementById('durum');
+    let durum, cls;
+    if(d.durduruluyor){durum='DURDURULUYOR';cls='r-FAILED';}
+    else if(d.duraklatildi){durum='DURAKLATILDI';cls='r-RUNNING';}
+    else if(d.kosucu){durum='ÇALIŞIYOR';cls='r-DONE';}
+    else{durum='BOŞTA';cls='r-TODO';}
+    el.textContent=durum; el.className='rozet '+cls;
+    document.getElementById('bDuraklat').classList.toggle('gizli', d.duraklatildi);
+    document.getElementById('bSurdur').classList.toggle('gizli', !d.duraklatildi);
+    let i='';
+    if(d.asama==='tasarim'&&d.tasarim) i=`Tasarım ${d.tasarim.biten}/${d.tasarim.toplam} rol`;
+    else if(d.pano) i=`Sprint ${d.pano.sprints_done}/${d.pano.sprints_total} · Görev ${d.pano.done}/${d.pano.total}` +
+      (d.pano.running?` · ${d.pano.running} koşuyor`:'') + (d.kayma_gun>0?` · kayma +${d.kayma_gun}g`:'');
+    i += ` · Kota ${d.kota.gorev}/${d.kota_sinir.gorev} görev · $${(d.kota.maliyet||0).toFixed(2)}/$${(d.kota_sinir.butce||0).toFixed(2)}`;
+    document.getElementById('ilerleme').textContent=i;
+    document.getElementById('saat').textContent=d.zaman;
+    const ak=document.getElementById('aktif');
+    if(d.aktif&&d.aktif.role){
+      ak.classList.remove('gizli');
+      const gecen=d.aktif.started_at? insan(Date.now()/1000-d.aktif.started_at):'';
+      ak.innerHTML=`▶ <b>${esc(d.aktif.role)}</b> → ${esc(d.aktif.target||'')} `+
+        `<span class="soluk">${esc(d.aktif.backend||'')}/${esc(d.aktif.model||'')} · giden ${(d.aktif.prompt_chars||0).toLocaleString('tr')} krk · geçen ${gecen}</span>`;
+    } else ak.classList.add('gizli');
+  }catch(e){}
+}
+
+// ---------- pano ----------
+async function panoYukle(){
+  try{
+    const d = await (await fetch('/api/pano')).json();
+    if(!d.ok){ document.getElementById('pano').innerHTML=
+      `<div class="kart soluk">${esc(d.mesaj||'Pano yok')} — tasarım aşamasındadır.</div>`; return; }
+    panoVeri=d.pano; panoCiz();
+  }catch(e){}
+}
+function panoCiz(){
+  const kok=document.getElementById('pano');
+  kok.innerHTML='';
+  const sprintler=[...(panoVeri.sprints||[])].sort((a,b)=>(a.order??0)-(b.order??0));
+  for(const s of sprintler){
+    const div=document.createElement('div'); div.className='sprint';
+    div.innerHTML=`<div class="sprint-bas"><b>${esc(s.id)}</b> ${esc(s.name||'')}
+      <span class="soluk">${esc(s.planned_start||'?')} → ${esc(s.planned_end||'?')}</span>
+      <span class="rozet r-${s.status}">${s.status}</span></div>`;
+    const g=document.createElement('div'); g.className='gorevler'; g.dataset.sprint=s.id;
+    for(const t of s.tasks||[]) g.appendChild(gorevSatir(t));
+    div.appendChild(g); kok.appendChild(div);
+  }
+}
+function gorevSatir(t){
+  const r=document.createElement('div');
+  r.className='gorev'; r.draggable=true; r.dataset.id=t.id;
+  const onc=t.priority?`<span class="rozet" title="öncelik">▲${t.priority}</span>`:'';
+  r.innerHTML=`<span class="gid">${esc(t.id)}</span><span class="rozet r-${t.status}">${t.status}</span>
+    <span class="gfaz">${esc(t.phase||'')}</span><span class="gad" title="${esc(t.description||'')}">${esc(t.title||'')}</span>
+    ${onc}${t.duration_s?`<span class="soluk">${insan(t.duration_s)}</span>`:''}
+    <span class="gnot">${esc(t.note||'')}</span>
+    <span class="gaks">
+      <button class="kucuk" title="Öncelik öner" onclick="oncelikOner('${t.id}',${(t.priority||0)+10})">▲</button>
+      <button class="kucuk" title="Bu göreve geç" onclick="kontrol('gec','${t.id}')">⇢</button>
+      <button class="kucuk" title="Atla" onclick="kontrol('atla','${t.id}')">⤼</button>
+      ${['FAILED','BLOCKED'].includes(t.status)?`<button class="kucuk" title="Tekrar dene" onclick="kontrol('tekrar','${t.id}')">↻</button>`:''}
+    </span>`;
+  r.addEventListener('dragstart',e=>{e.dataTransfer.setData('text',t.id);r.classList.add('surukle');});
+  r.addEventListener('dragend',()=>r.classList.remove('surukle'));
+  r.addEventListener('dragover',e=>e.preventDefault());
+  r.addEventListener('drop',async e=>{
+    e.preventDefault();
+    const kaynak=e.dataTransfer.getData('text');
+    const hedef=t.id;
+    if(!kaynak||kaynak===hedef)return;
+    // Öneri: hedefin üstüne bırakınca ondan yüksek öncelik, altına düşük.
+    const satirlar=[...r.parentElement.children].map(x=>x.dataset.id);
+    const yeni=satirlar.indexOf(hedef);
+    const onerilen=Math.max(0,(satirlar.length-yeni)*10);
+    oncelikOner(kaynak,onerilen);
+  });
+  return r;
+}
+async function oncelikOner(gid,deger){
+  const d=await(await fetch('/api/oncelik',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({gorev_id:gid,oncelik:deger})})).json();
+  toast(d.mesaj); panoYukle();
+}
+async function kontrol(aks,gorev,force){
+  if(aks==='durdur'&&!confirm('Koşucu durdurulsun mu?'))return;
+  const d=await(await fetch('/api/kontrol',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({aksiyon:aks,gorev:gorev,force:!!force})})).json();
+  toast(d.mesaj); ozetYukle();
+}
+async function onayla(){
+  const g=prompt('Ek görev kotası (boş = varsayılan tur):',''); if(g===null)return;
+  const d=await(await fetch('/api/kontrol',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({aksiyon:'onayla',gorev_kota:g?parseInt(g):null})})).json();
+  toast(d.mesaj); ozetYukle();
+}
+
+// ---------- canlı ----------
+async function canliYukle(){
+  try{
+    const d=await(await fetch('/api/canli')).json();
+    const m=d.meta||{};
+    document.getElementById('canli-meta').innerHTML = m.role?
+      `<b>${esc(m.role)}</b> <span class="soluk">${esc(m.backend||'')}/${esc(m.model||'')} → ${esc(m.target||'')}</span>`
+      : '<span class="soluk">Aktif çağrı yok.</span>';
+    document.getElementById('canli-out').textContent=d.out||'(çıktı yok)';
+  }catch(e){}
+}
+
+// ---------- audit ----------
+async function auditYukle(){
+  const k=document.getElementById('f-kaynak').value, o=document.getElementById('f-olay').value;
+  const d=await(await fetch(`/api/audit?limit=300${k?'&kaynak='+k:''}${o?'&olay='+o:''}`)).json();
+  document.getElementById('audit').innerHTML=(d.log||[]).map(r=>
+    `<tr><td class="soluk">${esc((r.zaman||'').replace('T',' '))}</td><td>${esc(r.kaynak)}</td>
+     <td>${esc(r.olay)}</td><td class="soluk">${esc(r.gorev_id||'')}</td>
+     <td class="soluk">${esc(r.talep_id||'')}</td>
+     <td class="soluk" style="max-width:420px;overflow:hidden;text-overflow:ellipsis">${esc(r.detay||'')}</td></tr>`
+  ).join('')||'<tr><td colspan="6" class="soluk">Kayıt yok.</td></tr>';
+}
+
+// ---------- işlem logları ----------
+async function cagriYukle(){
+  const d=await(await fetch('/api/cagri')).json();
+  document.getElementById('cagri').innerHTML=(d.cagrilar||[]).map(c=>
+    `<tr style="cursor:pointer" onclick="cagriDetay(${c.seq})">
+     <td>${c.seq}</td><td>${esc(c.role||'')}</td><td class="soluk">${esc(c.target||'')}</td>
+     <td class="soluk">${esc(c.backend||'')}/${esc(c.model||'')}</td>
+     <td class="soluk">${(c.tokens_total||0).toLocaleString('tr')}</td>
+     <td class="soluk">${insan(c.duration_s)}</td>
+     <td class="soluk">$${(c.cost_usd||0).toFixed(3)}</td></tr>`
+  ).join('')||'<tr><td colspan="7" class="soluk">Kayıt yok.</td></tr>';
+}
+let mdlSek='response';
+async function cagriDetay(seq){
+  const d=await(await fetch('/api/cagri/'+seq)).json();
+  if(!d.ok)return toast(d.mesaj||'açılamadı');
+  const c=d.cagri; mdlSek='response';
+  document.getElementById('modal-ic').innerHTML=
+    `<h3>#${c.seq} · ${esc(c.role||'')} <span class="soluk">${esc(c.backend||'')}/${esc(c.model||'')}</span></h3>
+     <div class="soluk">${esc(c.target||'')} · ${insan(c.duration_s)} · $${(c.cost_usd||0).toFixed(3)}</div>
+     <div class="mdl-sekme">
+       <button class="kucuk" onclick="mdlGoster('${c.seq}','response')">Yanıt</button>
+       <button class="kucuk" onclick="mdlGoster('${c.seq}','user_prompt')">İstek</button>
+       <button class="kucuk" onclick="mdlGoster('${c.seq}','system_prompt')">Rol Tanımı</button>
+       <span class="bosluk"></span><button class="kucuk" onclick="modalKapat()">✕ Kapat</button>
+     </div>
+     <pre id="mdl-pre">${esc(c.response||'')}</pre>`;
+  document.getElementById('modal').classList.remove('gizli');
+  window._mdl=c;
+}
+function mdlGoster(seq,alan){ const c=window._mdl; if(c) document.getElementById('mdl-pre').textContent=c[alan]||''; }
+
+// ---------- talepler ----------
+async function talepYukle(){
+  const d=await(await fetch('/api/talepler')).json();
+  document.getElementById('talep').innerHTML=(d.talepler||[]).slice().reverse().map(t=>
+    `<tr><td><b>${esc(t.id)}</b></td><td>${esc(t.tur||'')}</td><td>${esc(t.oncelik||'')}</td>
+     <td><span class="rozet r-${t.durum}">${esc(t.durum||'')}</span></td>
+     <td title="${esc(t.aciklama||'')}">${esc(t.baslik||'')}</td>
+     <td class="soluk">${esc(t.sayfa_url||'')}</td><td class="soluk">${esc(t.faz_id||'')}</td>
+     <td>${t.github_issue_url?`<a href="${esc(t.github_issue_url)}" target="_blank">#${t.github_issue_number}</a>`:'—'}</td></tr>`
+  ).join('')||'<tr><td colspan="8" class="soluk">Talep yok.</td></tr>';
+}
+
+// ---------- döngü ----------
+ozetYukle(); panoYukle();
+setInterval(ozetYukle,2500);
+setInterval(()=>{ if(aktifSekme==='pano')panoYukle(); if(aktifSekme==='canli')canliYukle();
+  if(aktifSekme==='audit')auditYukle(); },3000);
+document.querySelectorAll('.sekme').forEach(x=>x.addEventListener('click',()=>aktifSekme=x.dataset.t));
+</script>
+</body>
+</html>

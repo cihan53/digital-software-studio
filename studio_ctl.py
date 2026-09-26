@@ -239,10 +239,10 @@ def handle(key: str) -> str:
         if B.is_set("pause"):
             B.clear("pause")
             return "Sürdürüldü — koşucu bir sonraki görevi alacak."
-        B.request("pause")
+        B.request("pause", kaynak="ctl")
         return "Duraklatıldı — çalışan çağrı bitince yeni görev alınmayacak."
     if key == "s":
-        B.request("stop")
+        B.request("stop", kaynak="ctl")
         return "Durdurma istendi — mevcut çağrı bitince koşucu çıkacak."
     if key in ("k", "K"):
         # Önce panodaki RUNNING görev hedeflenir: current.json iki çağrı
@@ -263,9 +263,9 @@ def handle(key: str) -> str:
             tid = cur.get("task")
         if not tid:
             return "Atlanacak görev bulunamadı."
-        B.request("skip", tid)
+        B.request("skip", tid, kaynak="ctl")
         if key == "K":
-            B.request("force")
+            B.request("force", kaynak="ctl")
             return f"{tid} atlanacak — çalışan çağrı hemen kesiliyor."
         return f"{tid} atlanacak — mevcut çağrı bitince kalan çıktılar iptal."
     if key == "r":

@@ -89,6 +89,69 @@ CREATE TABLE IF NOT EXISTS maliyet_kayitlari (
     cost_usd    REAL,
     detay       TEXT
 );
+
+CREATE TABLE IF NOT EXISTS talepler (
+    id                  TEXT PRIMARY KEY,
+    tarih               TEXT,
+    tur                 TEXT,
+    oncelik             TEXT,
+    baslik              TEXT NOT NULL,
+    aciklama            TEXT,
+    sayfa_url           TEXT,
+    durum               TEXT,
+    gorevli_rol         TEXT,
+    studio_notu         TEXT,
+    github_issue_number INTEGER,
+    github_issue_url    TEXT,
+    cozum_plani         TEXT,
+    faz_id              TEXT,
+    efor                TEXT,
+    triage_notu         TEXT,
+    gecmis              TEXT
+);
+
+CREATE TABLE IF NOT EXISTS cozum_planlari (
+    talep_id    TEXT PRIMARY KEY REFERENCES talepler(id),
+    icerik      TEXT,
+    guncelleme  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS fazlar (
+    id              TEXT PRIMARY KEY,
+    ad              TEXT NOT NULL,
+    aciklama        TEXT,
+    durum           TEXT,
+    hedef_tarih     TEXT,
+    kilitli         INTEGER DEFAULT 0,
+    onkosul_faz     TEXT
+);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    zaman       TEXT,
+    kaynak      TEXT,
+    olay        TEXT,
+    gorev_id    TEXT,
+    talep_id    TEXT,
+    detay       TEXT
+);
+
+CREATE TABLE IF NOT EXISTS sohbet_oturumlari (
+    id              TEXT PRIMARY KEY,
+    olusturma       TEXT,
+    son_aktivite    TEXT,
+    durum           TEXT
+);
+
+CREATE TABLE IF NOT EXISTS sohbet_mesajlari (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    oturum_id   TEXT REFERENCES sohbet_oturumlari(id),
+    zaman       TEXT,
+    gonderen    TEXT,
+    icerik      TEXT,
+    taslak      TEXT,
+    talep_id    TEXT
+);
 """
 
 _SCHEMA_INITIALIZED = False
@@ -122,6 +185,15 @@ def _db_migrate(conn: sqlite3.Connection):
                          ("talep_id", "TEXT")):
             if col not in mevcut:
                 cur.execute(f"ALTER TABLE pano_gorevleri ADD COLUMN {col} {tip}")
+    except Exception:
+        pass
+    try:
+        cur.execute("PRAGMA table_info(talepler)")
+        mevcut = {r["name"] for r in cur.fetchall()}
+        # Triage/plan alanları eskiden yalnızca JSON'da yaşardı; DB'ye taşındı.
+        for col in ("cozum_plani", "faz_id", "efor", "triage_notu"):
+            if col not in mevcut:
+                cur.execute(f"ALTER TABLE talepler ADD COLUMN {col} TEXT")
     except Exception:
         pass
 
@@ -376,6 +448,53 @@ def board_reset():
         print(f"  [UYARI] studio.db pano sıfırlanamadı: {e}", file=sys.stderr)
 
 
+# ---------------------------------------------------------------- audit log
+# Sistemin 'kim ne yaptı, ne zaman' günlüğü. Motor, kontrol ekranı, web paneli
+# ve müşteri kanalları aynı tabloya yazar; paneldeki Audit sekmesi okur.
+def audit(kaynak: str, olay: str, gorev_id: str = None,
+          talep_id: str = None, detay=None):
+    try:
+        conn = db_conn()
+        try:
+            conn.execute(
+                "INSERT INTO audit_log (zaman, kaynak, olay, gorev_id, talep_id, detay) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    datetime.now().isoformat(timespec="seconds"),
+                    kaynak, olay, gorev_id, talep_id,
+                    json.dumps(detay, ensure_ascii=False) if detay is not None else None,
+                ))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+
+def audit_list(limit: int = 200, kaynak: str = None, olay: str = None) -> list[dict]:
+    try:
+        conn = db_conn()
+        try:
+            sql = "SELECT * FROM audit_log"
+            where, params = [], []
+            if kaynak:
+                where.append("kaynak = ?")
+                params.append(kaynak)
+            if olay:
+                where.append("olay = ?")
+                params.append(olay)
+            if where:
+                sql += " WHERE " + " AND ".join(where)
+            sql += " ORDER BY id DESC LIMIT ?"
+            params.append(int(limit))
+            rows = conn.execute(sql, params).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+    except Exception:
+        return []
+
+
 def all_tasks(board: dict):
     for s in board["sprints"]:
         for t in s["tasks"]:
@@ -628,6 +747,9 @@ def set_priority(task_id: str, value: int) -> bool:
                     (int(value), task_id))
         ok = cur.rowcount > 0
         conn.commit()
+        if ok:
+            audit("kontrol", "oncelik_onerisi", gorev_id=task_id,
+                  detay={"oncelik": int(value)})
         return ok
     finally:
         conn.close()
@@ -654,6 +776,8 @@ def reorder_task(task_id: str, new_pos: int) -> bool:
         for i, tid in enumerate(ids):
             cur.execute("UPDATE pano_gorevleri SET sira = ? WHERE id = ?", (i, tid))
         conn.commit()
+        audit("kontrol", "gorev_sirala", gorev_id=task_id,
+              detay={"sprint": sid, "pozisyon": pos})
         return True
     finally:
         conn.close()
@@ -674,6 +798,7 @@ def reorder_sprint(sprint_id: str, new_pos: int) -> bool:
         for i, sid in enumerate(ids):
             cur.execute("UPDATE sprintler SET sira = ? WHERE id = ?", (i, sid))
         conn.commit()
+        audit("kontrol", "sprint_sirala", detay={"sprint": sprint_id, "pozisyon": pos})
         return True
     finally:
         conn.close()
@@ -739,6 +864,9 @@ def mark(board: dict, task_id: str, status: str, note: str = ""):
     except Exception:
         pass
 
+    audit("engine", "gorev_durum", gorev_id=task_id,
+          detay={"durum": status, "sprint": s["id"],
+                 "deneme": t.get("attempts", 0), "not": (note or "")[:200]})
     return t
 
 
@@ -796,9 +924,10 @@ def _flag(name: str) -> Path:
     return CONTROL_DIR / name
 
 
-def request(name: str, value: str = "1"):
+def request(name: str, value: str = "1", kaynak: str = "sistem"):
     CONTROL_DIR.mkdir(parents=True, exist_ok=True)
     _flag(name).write_text(value, encoding="utf-8")
+    audit(kaynak, "kontrol_istek", detay={"flag": name, "deger": value})
 
 
 def clear(name: str):
@@ -917,6 +1046,7 @@ def ledger_approve(gorev: int = None, butce: float = None):
     d["ek_gorev"] = d.get("ek_gorev", 0) + (GUNLUK_GOREV if gorev is None else gorev)
     d["ek_butce"] = round(d.get("ek_butce", 0.0) + (GUNLUK_BUTCE if butce is None else butce), 4)
     ledger_write(d)
+    audit("kontrol", "kota_onay", detay={"ek_gorev": d["ek_gorev"], "ek_butce": d["ek_butce"]})
     return d
 
 
