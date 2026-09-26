@@ -46,12 +46,35 @@ RESPECT_CALENDAR = os.getenv("STUDIO_RESPECT_CALENDAR", "0") == "1"
 # Uzak/mutlak yol yazımını engellemek için tüm çıktılar bu köklerin altında olmalı.
 ALLOWED_OUTPUT_ROOTS = (WORKSPACE,)
 # Tek istisna: kullanıcının elle düzenlediği, rollerin zenginleştirdiği canlı
-# kapsam dokümanı proje kökünde durur.
+# kapsam dokümanı proje kökünde durabilir (geriye dönük uyumluluk).
 ALLOWED_OUTPUT_FILES = {ROOT / "proje_kapsami.md"}
+DOC_DIR = WORKSPACE / "docs"
+# Proje dokümanları workspace kuralı gereği workspace/docs/ altında yaşar;
+# kökte bulunanlar geriye dönük olarak desteklenir.
+WORKSPACE_DOCS = {BRIEF_NAME, "org_chart.json"}
+
+
+def resolve_doc(name: str) -> Path:
+    """Proje dokümanı okuma çözümü: workspace/docs/ öncelikli, kök geri dönüşümlü."""
+    p = Path(name)
+    if p.is_absolute():
+        return p
+    alt = DOC_DIR / name
+    if alt.exists():
+        return alt
+    return ROOT / name
 
 
 def resolve_path(path_str: str) -> Path:
-    """org_chart'taki göreli yolu proje köküne göre çözer."""
+    """org_chart'taki göreli yolu proje köküne göre çözer.
+
+    Proje dokümanları (proje_kapsami.md, org_chart.json) workspace/docs
+    altına yazılır; kökte var olanlar geriye dönük olarak oraya gider.
+    """
+    p = Path(path_str)
+    if not p.is_absolute() and path_str in WORKSPACE_DOCS:
+        if (DOC_DIR / path_str).exists() or not (ROOT / path_str).exists():
+            return (DOC_DIR / path_str).resolve()
     return (ROOT / path_str).resolve()
 
 
@@ -2330,15 +2353,17 @@ def main():
     global BACKEND
     BACKEND = (args.backend or os.getenv("STUDIO_BACKEND", "agy")).lower()
 
-    org_path = ROOT / args.org
+    org_path = resolve_doc(args.org)
     if not org_path.exists():
-        sys.exit(f"[HATA] Org şeması bulunamadı: {args.org}")
+        sys.exit(f"[HATA] Org şeması bulunamadı: {args.org} "
+                 f"(kökte ve workspace/docs/ altında yok)")
     org = json.loads(org_path.read_text(encoding="utf-8"))
     org = load_and_merge_dynamic_roles(org)
 
-    brief_path = ROOT / args.brief
+    brief_path = resolve_doc(args.brief)
     if not brief_path.exists():
-        sys.exit(f"[HATA] Proje özeti bulunamadı: {args.brief}")
+        sys.exit(f"[HATA] Proje özeti bulunamadı: {args.brief} "
+                 f"(kökte ve workspace/docs/ altında yok)")
     brief = brief_path.read_text(encoding="utf-8")
 
     if args.review:

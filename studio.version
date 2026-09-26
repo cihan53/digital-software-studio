@@ -30,10 +30,7 @@
     "web/stil.css",
     "studio.version"
   ],
-  "protected_files": [
-    "studio_engine.py",
-    "basla.sh"
-  ],
+  "protected_files": [],
   "changelog": [
     {
       "version": "1.2.0",
