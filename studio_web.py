@@ -177,6 +177,9 @@ def kontrol(body: dict) -> dict:
     if aks == "durdur":
         B.request("stop", kaynak="web")
         return {"ok": True, "mesaj": "Durdurma istendi — mevcut çağrı bitince koşucu çıkar."}
+    if aks == "acil_durdur":
+        ok, msg = B.hard_stop()
+        return {"ok": ok, "mesaj": msg}
     if aks in ("atla", "gec"):
         tid = (body.get("gorev") or "").strip()
         if not tid:
