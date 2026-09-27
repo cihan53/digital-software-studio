@@ -90,3 +90,19 @@ yükseltir, changelog'a merge mesajını düşer ve `vX.Y.Z` tag'i atar:
 - Projelerdeki `framework_update_info()` bu sürüm değişimini görüp kullanıcıya
   güncelleme bildirimi gösterir — tag/sürüm disiplini bildirim sisteminin
   tetikleyicisidir, elle `studio.version` düzenlenmesi gerekmez.
+
+## 🚫 Framework → Proje Elle Kopyalama Yasağı
+
+Bu repoda (framework'te) yapılan değişiklikleri **aksi açıkça belirtilmedikçe
+proje repolarına (örn. elektriklioto-gemini) elle kopyalamayın** (`cp` ile
+üzerine yazmak dahil). Projeler güncellemeleri kendi bildirim/upgrade
+mekanizması üzerinden alır:
+
+- `framework_update_info()` yeni `vX.Y.Z` tag'ini görüp kullanıcıya güncelleme
+  uyarısı gösterir; kullanıcı `scripts/studio_updater.py` / `sync_studio.sh`
+  ile değişiklikleri çeker.
+- Elle kopyalama projede versiyon sapmasına ve `STUDIO:CUSTOM` bloklarının
+  korunmasını riske atar.
+
+İstenen tek şey framework PR'ının merge edilmesidir; proje tarafındaki
+güncelleme bildirimi ve sync akışı gerisini halleder.
