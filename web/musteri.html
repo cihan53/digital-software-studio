@@ -30,14 +30,13 @@
   <span class="soluk">Talebini anlat, birlikte netleştirelim; onayladığında havuza alınır.</span>
   <span class="bosluk"></span>
   <span class="soluk" id="motor-rozet" title="Sohbet temsilcisinin kullandığı motor"></span>
-  <select id="motor-backend" onchange="motorDegis()" title="Motor backend">
+  <select id="motor-backend" onchange="motorBackendDegis()" title="Motor backend">
     <option value="">Otomatik</option>
-    <option value="agy">AGY</option>
-    <option value="devin">Devin</option>
-    <option value="claude">Claude</option>
+    <option value="agy">agy</option>
+    <option value="claude">claude</option>
+    <option value="devin">devin</option>
   </select>
-  <input id="motor-model" placeholder="model (ops.)" style="width:150px;padding:6px 8px"
-         onchange="motorDegis()" title="Boş bırakılırsa backend varsayılanı kullanılır">
+  <select id="motor-model" onchange="motorDegis()" title="Model" style="max-width:220px"></select>
   <button onclick="yeniOturum()">🗑 Yeni Oturum</button>
   <a href="/"><button>⌂</button></a>
 </div>
@@ -175,7 +174,27 @@ async function reddet(mid,btn){
   }catch(e){toast('İptal gönderilemedi: '+e);}
   sonMesajSayisi=-1; yukle(true);
 }
+// Bilinen model listeleri — panel.html ile aynı kaynak. '✏ Özel…' serbest girişe düşer.
+const MODELLER={
+  agy:['gemini-3.8-flash-high','gemini-3.8-flash-medium','gemini-3.8-flash-low',
+       'gemini-3.7-flash-high','gemini-3.7-flash-medium','gemini-3.7-flash-low',
+       'gemini-3.1-pro-high','gemini-3.1-pro-low',
+       'claude-sonnet-4-6','claude-opus-4-6-thinking','gpt-oss-120b-medium'],
+  claude:['sonnet','opus','haiku','fable'],
+  devin:['swe-2','swe-2-high','opus','codex'],
+};
 let motorKuruldu=false;
+function modelDoldur(backend,secili){
+  const sel=$('motor-model'); sel.innerHTML='';
+  const liste=MODELLER[backend]||[];
+  sel.innerHTML='<option value="">— varsayılan —</option>'+
+    liste.map(m=>`<option value="${m}">${m}</option>`).join('')+
+    '<option value="__ozel">✏ Özel (elle yaz)…</option>';
+  if(secili){
+    if(liste.includes(secili)) sel.value=secili;
+    else { sel.innerHTML+=`<option value="${esc(secili)}">${esc(secili)}</option>`; sel.value=secili; }
+  }
+}
 function motorGoster(m){
   const rz=$('motor-rozet');
   rz.textContent='⚙ '+(m.backend||'?')+(m.model?'/'+m.model:'');
@@ -184,13 +203,19 @@ function motorGoster(m){
   if(!motorKuruldu){
     motorKuruldu=true;
     // Yalnızca ilk yüklemeyi kontrollere yansıt; kullanıcı yazıyorsa ezme.
-    if(m.override&&m.backend) $('motor-backend').value=m.backend;
-    if(m.override&&m.model) $('motor-model').value=m.model;
+    const b=m.override&&m.backend?m.backend:'';
+    $('motor-backend').value=b;
+    modelDoldur(b||m.backend, m.override?m.model:'');
   }
+}
+function motorBackendDegis(){
+  modelDoldur($('motor-backend').value,'');
+  motorDegis();
 }
 async function motorDegis(){
   const backend=$('motor-backend').value;
-  const model=$('motor-model').value.trim();
+  let model=$('motor-model').value;
+  if(model==='__ozel'){model=prompt('Model adı:',''); if(model===null)return;}
   try{
     const d=await(await fetch('/api/sohbet/motor',{method:'POST',
       headers:{'Content-Type':'application/json'},
