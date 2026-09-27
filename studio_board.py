@@ -1105,6 +1105,9 @@ def control_state() -> dict:
 # Öncelik zinciri: görev override > sprint override > org_chart rolü > env.
 MOTOR_BACKENDS = ("agy", "devin", "claude")
 MOTOR_ONERI_DOSYA = CONTROL_DIR / "motor_oneri.json"
+# Sprint/görev tablolarında satır aranmadan kabul edilen rezerve hedefler.
+# SOHBET: müşteri sohbet odası temsilcisi (scripts/musteri_temsilcisi.py).
+MOTOR_OZEL_HEDEFLER = ("SOHBET",)
 
 
 def set_motor(hedef_id: str, backend: str = None, model: str = None,
@@ -1126,7 +1129,7 @@ def set_motor(hedef_id: str, backend: str = None, model: str = None,
         cur.execute("SELECT 1 FROM sprintler WHERE id = ?", (hedef_id,))
         if not cur.fetchone():
             cur.execute("SELECT 1 FROM pano_gorevleri WHERE id = ?", (hedef_id,))
-            if not cur.fetchone():
+            if not cur.fetchone() and hedef_id not in MOTOR_OZEL_HEDEFLER:
                 return False, f"Hedef bulunamadı: {hedef_id}"
         cur.execute("""
             INSERT OR REPLACE INTO motor_override
@@ -1177,6 +1180,28 @@ def motor_override(task_id: str) -> dict:
             if r:
                 return {"hedef": hedef, "backend": r["backend"],
                         "model": r["model"], "effort": r["effort"]}
+    finally:
+        conn.close()
+    return {}
+
+
+def motor_override_hedef(hedef_id: str) -> dict:
+    """Verilen hedef için kayıtlı motor override satırını döndürür (varsa).
+
+    motor_override() görev→sprint zinciri izler; bu sürüm doğrudan hedef
+    kimliğiyle bakar — rezerve hedefler (SOHBET gibi) için kullanılır.
+    """
+    hedef = (hedef_id or "").strip().upper()
+    if not hedef:
+        return {}
+    conn = db_conn()
+    try:
+        row = conn.execute(
+            "SELECT backend, model, effort FROM motor_override "
+            "WHERE hedef_id = ?", (hedef,)).fetchone()
+        if row:
+            return {"hedef": hedef, "backend": row["backend"],
+                    "model": row["model"], "effort": row["effort"]}
     finally:
         conn.close()
     return {}

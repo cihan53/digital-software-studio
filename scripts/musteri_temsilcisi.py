@@ -11,10 +11,17 @@ değişmeden işler.
 Veriler studio.db'de tutulur: sohbet_oturumlari + sohbet_mesajlari.
 
 Çevre değişkenleri:
-  STUDIO_SOHBET_AGENT=0  → LLM devre dışı; mesaj doğrudan taslak talebe çevrilir.
+  STUDIO_SOHBET_AGENT=0    → LLM devre dışı; mesaj doğrudan taslak talebe çevrilir.
+  STUDIO_SOHBET_BACKEND    → temsilci motoru (agy|devin|claude); panel override'ı üstün gelir.
+  STUDIO_SOHBET_MODEL      → temsilci modeli (örn. gemini-3.8-flash-high, swe-2, opus).
+  STUDIO_SOHBET_EFFORT     → effort düzeyi.
+
+Motor seçimi öncelik zinciri: panel override (motor_override 'SOHBET')
+> STUDIO_SOHBET_* env > org_chart rolü > global varsayılan.
 """
 
 import json
+import os
 import re
 import sys
 import uuid
@@ -31,7 +38,8 @@ import studio_board as B
 import musteri_talepleri as MT
 
 ROL_ID = "musteri_temsilcisi"
-SOHBET_AGENT = __import__("os").getenv("STUDIO_SOHBET_AGENT", "1") != "0"
+SOHBET_AGENT = os.getenv("STUDIO_SOHBET_AGENT", "1") != "0"
+SOHBET_HEDEF = "SOHBET"  # motor_override tablosundaki rezerve hedef kimliği
 
 VARSAYILAN_AGENT = {
     "id": ROL_ID,
@@ -144,12 +152,39 @@ def _gecmis_promptu(oid: str, sinir: int = 24) -> str:
     return "\n".join(satirlar)
 
 
+def _motor_override() -> dict:
+    """Panelden SOHBET hedefine kaydedilmiş motor override'ı + env vars.
+
+    Öncelik: panel seçimi (motor_override tablosu) > STUDIO_SOHBET_* env.
+    """
+    ov = {k: v for k, v in {
+        "backend": os.getenv("STUDIO_SOHBET_BACKEND"),
+        "model": os.getenv("STUDIO_SOHBET_MODEL"),
+        "effort": os.getenv("STUDIO_SOHBET_EFFORT"),
+    }.items() if v}
+    ov.update({k: v for k, v in B.motor_override_hedef(SOHBET_HEDEF).items()
+               if k != "hedef" and v})
+    return ov
+
+
+def aktif_motor() -> dict:
+    """Temsilcinin çözümlenen backend/model/effort değerleri (UI rozeti için)."""
+    try:
+        import studio_engine as E
+        ov = _motor_override()
+        backend, model, effort, _ = E.resolve_engine(_agent(), ov)
+        return {"backend": backend, "model": model, "effort": effort,
+                "override": bool(ov)}
+    except Exception:
+        return {"backend": "", "model": "", "effort": "", "override": False}
+
+
 def _ajan_cagri(oid: str) -> dict:
     """LLM temsilcisini çağırır; {yanit, taslak} döner."""
     agent = _agent()
     try:
         import studio_engine as E
-        backend, model, effort, tools = E.resolve_engine(agent)
+        backend, model, effort, tools = E.resolve_engine(agent, _motor_override())
         user = (
             "===== SOHBET GEÇMİŞİ =====\n"
             f"{_gecmis_promptu(oid)}\n\n"
