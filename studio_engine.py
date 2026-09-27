@@ -845,6 +845,9 @@ LIMIT_PATTERNS = (
     "gateway timeout", "econnreset", "econnrefused", "etimedout", "eai_again",
     "enotfound", "request failed", "streamgeneratecontent",
     "yanıt vermedi", "empty reply", "server disconnected",
+    # --- boş sonuç (izin reddi döngüsü / tur tükenmesi): ölümcül değil,
+    # taze oturumla yeniden denenmeli ---
+    "metin üretmedi", "boş sonuç", "boş metin",
 )
 MAX_WAIT = int(os.getenv("STUDIO_MAX_WAIT", "18000"))   # varsayılan 5 saat
 WAIT_STEP = 20
@@ -1233,10 +1236,40 @@ Dosya uzantılarını mimari dokümanda seçilen dile/framework'e göre belirle.
 
 CODE_HINT = "\nBu bir kaynak kod dosyası: markdown kod çiti kullanma, sadece ham kodu yaz."
 
+# Saha gözlemi: Write/Edit aracı olmayan araçlı roller (ör. uat_auditor),
+# prompt'ta hedef dosya adını görünce raporu kendileri yazmaya çalışıyor.
+# Headless -p kipinde onay veren olmadığından tüm denemeler reddediliyor;
+# ajan turlarını bu döngüde harcayıp boş sonuçla bitiriyor.
+NO_WRITE_RULE = """
+
+--- DOSYA YAZMA YETKİSİ YOK (ZORUNLU) ---
+Bu rolde dosya yazma aracın (Write/Edit) bulunmuyor.
+- Dosya oluşturmaya veya güncellemeye ÇALIŞMA; Write/Edit ve geçici probe
+  dosyası denemeleri reddedilir ve turlarını boşa harcar.
+- Cevabın metin olarak doğrudan hedef dosyaya yazılacak — sen yalnızca
+  nihai içeriği çıktı metni olarak döndürürsün."""
+
+WRITE_TOOL_NAMES = ("Write", "Edit", "MultiEdit", "NotebookEdit")
+
+
+def _yazma_yetkisi(tools: list | None) -> bool:
+    """Rolün dosya yazabilecek bir aracı var mı? Kısıtlı Bash(x:*)
+    yazma sayılmaz; yalnızca serbest Bash veya Bash(*) sayılır."""
+    for t in tools or []:
+        t = str(t).strip()
+        if t.split("(", 1)[0] in WRITE_TOOL_NAMES:
+            return True
+        if t in ("Bash", "Bash(*)"):
+            return True
+    return False
+
 
 def build_prompts(agent: dict, target: str, siblings: list[str], brief: str,
-                  inputs_text: str, revision_note: str = "") -> tuple[str, str]:
+                  inputs_text: str, revision_note: str = "",
+                  tools: list | None = None) -> tuple[str, str]:
     system = agent["system_prompt"] + SYSTEM_SUFFIX
+    if not _yazma_yetkisi(tools):
+        system += NO_WRITE_RULE
 
     is_dir = target.endswith("/")
     # Uzunluk disiplini: kapsam dokümanının kendine özel kuralı var, diğer
@@ -1307,7 +1340,7 @@ def run_agent(agent: dict, brief: str, state: dict, force: bool = False,
 
         siblings = [o for o in agent["outputs"] if o != target]
         system, user = build_prompts(agent, target, siblings, agent_brief,
-                                     inputs_text, revision_note)
+                                     inputs_text, revision_note, tools)
 
         if dry_run:
             print(f"    [dry-run] {target}  ({backend}/{model or 'varsayılan'}, effort={effort}, "
@@ -1937,7 +1970,8 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
                 )
 
         system, user = build_prompts(agent, target, siblings, brief,
-                                     inputs_text + task_brief + existing_code_block)
+                                     inputs_text + task_brief + existing_code_block,
+                                     tools=tools)
         meta = {"seq": _trace_seq(), "role": task["role"], "title": agent["title"],
                 "target": target, "backend": backend, "model": model,
                 "tools": tools, "task": task["id"], "sprint": sprint["id"]}
