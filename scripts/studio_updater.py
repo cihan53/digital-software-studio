@@ -12,7 +12,8 @@ Kullanım:
   python3 scripts/studio_updater.py --durum       # Mevcut versiyon bilgisi
   python3 scripts/studio_updater.py --kontrol     # DS ile fark raporu (yazmaz)
   python3 scripts/studio_updater.py --uygula      # Güncellemeleri uygula
-  python3 scripts/studio_updater.py --uygula --commit  # + otomatik git commit
+  python3 scripts/studio_updater.py --uygula --commit   # + otomatik git commit
+  python3 scripts/studio_updater.py --uygula --restart  # + web panelini yeniden başlat
 
 Güncelleme Kuralları:
   - STUDIO:CUSTOM:BEGIN / STUDIO:CUSTOM:END blokları KORUNUR
@@ -24,6 +25,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -38,7 +40,8 @@ LOCAL_VERSION_FILE = ROOT / ".studio-version"
 DS_VERSION_FILE = "studio.version"
 
 GREEN  = "\033[32m"; YELLOW = "\033[33m"; CYAN   = "\033[36m"
-RED    = "\033[31m"; BOLD   = "\033[1m";  NC     = "\033[0m"
+RED    = "\033[31m"; BOLD   = "\033[1m";  DIM    = "\033[2m"
+NC     = "\033[0m"
 
 
 def ds_path_bul():
@@ -245,7 +248,84 @@ def cmd_kontrol():
     print()
 
 
-def cmd_uygula(otomatik_commit=False, force=False):
+def _pgrep(pattern):
+    try:
+        r = subprocess.run(["pgrep", "-f", pattern],
+                           capture_output=True, text=True)
+        return [int(x) for x in r.stdout.split() if x.strip().isdigit()]
+    except Exception:
+        return []
+
+
+def _kosucu_pid():
+    kilit = ROOT / "workspace" / ".lock"
+    try:
+        pid = int(kilit.read_text(encoding="utf-8").strip())
+        os.kill(pid, 0)
+        return pid
+    except (OSError, ValueError):
+        return None
+
+
+def _web_yeniden_baslat():
+    """Koşan studio_web süreçlerini öldürüp basla.sh ile aynı şekilde
+    nohup ile yeniden başlatır; port yanıt verene dek sağlık kontrolü yapar."""
+    pidler = _pgrep("studio_web.py")
+    for pid in pidler:
+        try:
+            os.kill(pid, 15)
+        except OSError:
+            pass
+    if pidler:
+        time.sleep(1)
+        for pid in pidler:
+            try:
+                os.kill(pid, 9)
+            except OSError:
+                pass
+    log = ROOT / "workspace" / "logs" / "web.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    lf = log.open("ab")
+    subprocess.Popen([sys.executable, str(ROOT / "studio_web.py")],
+                     cwd=str(ROOT), stdout=lf, stderr=subprocess.STDOUT,
+                     start_new_session=True)
+    port = int(os.getenv("STUDIO_WEB_PORT", "8090"))
+    import socket
+    for _ in range(30):
+        try:
+            socket.create_connection(("127.0.0.1", port), 0.5).close()
+            return True
+        except OSError:
+            time.sleep(0.2)
+    return False
+
+
+def _kosan_surec_uyarisi(restart=False):
+    """Güncelleme sonrası bellekte eski kod taşıyan süreçleri bildirir/
+    web panelini istenirse yeniden başlatır."""
+    web_pidler = _pgrep("studio_web.py")
+    kosucu = _kosucu_pid()
+    if not web_pidler and not kosucu:
+        return
+    print(f"  {YELLOW}⚠  Koşan süreçler eski kodla devam ediyor:{NC}")
+    if web_pidler:
+        if restart:
+            if _web_yeniden_baslat():
+                print(f"  {GREEN}✓{NC}  Web paneli yeniden başlatıldı "
+                      f"(kapatılan pid: {', '.join(map(str, web_pidler))})")
+            else:
+                print(f"  {RED}✗{NC}  Web paneli açılamadı — workspace/logs/web.log")
+        else:
+            print(f"      • studio_web (pid {', '.join(map(str, web_pidler))}) "
+                  f"→ yeni API/panel için {CYAN}--restart{NC} ekleyin veya "
+                  f"'pkill -f studio_web.py && ./basla.sh --web'")
+    if kosucu:
+        print(f"      • koşucu (pid {kosucu}) → görev yarıda kalmasın diye "
+              f"dokunulmadı; güncel kod için görev bitince "
+              f"'./basla.sh --durdur && ./basla.sh'")
+
+
+def cmd_uygula(otomatik_commit=False, force=False, restart=False):
     ds_path = ds_path_bul()
     ds_ver = ds_version_yukle(ds_path)
 
@@ -309,6 +389,8 @@ def cmd_uygula(otomatik_commit=False, force=False):
                 print(f"  {GREEN}✓{NC}  Commit + push tamamlandı.")
         except Exception as e:
             print(f"  {YELLOW}⚠{NC}  Git hatası: {e}")
+    if toplam > 0:
+        _kosan_surec_uyarisi(restart=restart)
     print()
 
 
@@ -319,9 +401,10 @@ def main():
 
   --durum           Mevcut versiyon bilgisi
   --kontrol         DS ile fark raporu (değişiklik yapmaz)
-  --uygula          Güncellemeleri projeye uygula (protected_files atlanır)
-  --uygula --force  Korumalı/proje-özel dosyaları da üzerine yaz
-  --uygula --commit Uygula + otomatik git commit & push
+  --uygula           Güncellemeleri projeye uygula (protected_files atlanır)
+  --uygula --force   Korumalı/proje-özel dosyaları da üzerine yaz
+  --uygula --commit  Uygula + otomatik git commit & push
+  --uygula --restart Uygula + web panelini yeniden başlat (koşucuya dokunmaz)
 """)
         return
     if "--durum" in args:
@@ -329,7 +412,8 @@ def main():
     elif "--kontrol" in args:
         cmd_kontrol()
     elif "--uygula" in args:
-        cmd_uygula(otomatik_commit="--commit" in args, force="--force" in args)
+        cmd_uygula(otomatik_commit="--commit" in args, force="--force" in args,
+                   restart="--restart" in args)
     else:
         print(f"{RED}Bilinmeyen komut.{NC}")
         sys.exit(1)
