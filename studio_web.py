@@ -74,6 +74,12 @@ def durum_ozeti() -> dict:
         yas = time.time() - (cur.get("started_at") or 0)
         if yas > 600:
             cur = {}
+    if cur.get("role"):
+        out_f = TRACE / "current.out"
+        try:
+            cur["son_aktivite"] = out_f.stat().st_mtime
+        except OSError:
+            pass
     out = {
         "zaman": time.strftime("%H:%M:%S"),
         "kosucu": kosucu,
@@ -127,13 +133,17 @@ def durum_ozeti() -> dict:
 def canli() -> dict:
     meta = read_json(TRACE / "current.json", {})
     txt = ""
+    son_aktivite = None
     f = TRACE / "current.out"
     if f.exists():
         try:
+            # current.out her canlı satırda güncellenir; mtime'ı çağrının
+            # son aktivite damgasıdır (sessizlik = model düşünüyor/takıldı).
+            son_aktivite = f.stat().st_mtime
             txt = f.read_text(encoding="utf-8", errors="replace")[-12000:]
         except Exception:
             pass
-    return {"meta": meta, "out": txt}
+    return {"meta": meta, "out": txt, "son_aktivite": son_aktivite}
 
 
 def cagri_listesi() -> list:

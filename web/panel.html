@@ -209,8 +209,15 @@ async function ozetYukle(){
           `<div class="hata-mtn" style="margin-top:4px">${esc(d.aktif.error||'')}</div>`;
       }else{
         const gecen=d.aktif.started_at? insan(Date.now()/1000-d.aktif.started_at):'';
+        let aktivite='';
+        if(d.aktif.son_aktivite){
+          const suskun=Date.now()/1000-d.aktif.son_aktivite;
+          aktivite=suskun>300?
+            ` <span class="hata-mtn">⚠ ${insan(suskun)} sessiz</span>`
+            :` <span class="soluk">· son aktivite ${insan(suskun)} önce</span>`;
+        }
         ak.innerHTML=`▶ <b>${esc(d.aktif.role)}</b> → ${esc(d.aktif.target||'')} `+
-          `<span class="soluk">${esc(d.aktif.backend||'')}/${esc(d.aktif.model||'')} · giden ${(d.aktif.prompt_chars||0).toLocaleString('tr')} krk · geçen ${gecen}</span>`;
+          `<span class="soluk">${esc(d.aktif.backend||'')}/${esc(d.aktif.model||'')} · giden ${(d.aktif.prompt_chars||0).toLocaleString('tr')} krk · geçen ${gecen}</span>${aktivite}`;
       }
     } else ak.classList.add('gizli');
   }catch(e){}
@@ -346,8 +353,15 @@ async function canliYukle(){
   try{
     const d=await(await fetch('/api/canli')).json();
     const m=d.meta||{};
+    let aktivite='';
+    if(d.son_aktivite){
+      const suskun=Date.now()/1000-d.son_aktivite;
+      aktivite=suskun>300?
+        ` <span class="hata-mtn">⚠ ${insan(suskun)} sessiz — takılmış olabilir</span>`
+        :` <span class="soluk">· son aktivite ${insan(suskun)} önce</span>`;
+    }
     document.getElementById('canli-meta').innerHTML = m.role?
-      `<b>${esc(m.role)}</b> <span class="soluk">${esc(m.backend||'')}/${esc(m.model||'')} → ${esc(m.target||'')}</span>`
+      `<b>${esc(m.role)}</b> <span class="soluk">${esc(m.backend||'')}/${esc(m.model||'')} → ${esc(m.target||'')}</span>${aktivite}`
       : '<span class="soluk">Aktif çağrı yok.</span>';
     document.getElementById('canli-out').textContent=d.out||'(çıktı yok)';
   }catch(e){}

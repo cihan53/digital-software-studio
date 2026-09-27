@@ -804,6 +804,10 @@ def _call_devin(system_prompt: str, user_prompt: str, effort: str, model: str,
     sess_db = Path.home() / ".local/share/devin/cli/sessions.db"
     run_cwd = ROOT if tools else SCRATCH_DIR
     live = TRACE_DIR / "current.out"
+    try:
+        live.write_text("", encoding="utf-8")
+    except OSError:
+        pass
     izle_dur = threading.Event()
 
     def _devin_izle():
@@ -812,6 +816,7 @@ def _call_devin(system_prompt: str, user_prompt: str, effort: str, model: str,
         # Aynı message_id birden fazla düğüm olarak kaydedilir (kısmi → tam);
         # kimliğe göre tutup yenisiyle ezeceğiz — sıra ilk görülme sırası.
         mesajlar = {}
+        son_metin = [""]
         while not izle_dur.is_set():
             try:
                 if sess_db.exists():
@@ -856,9 +861,13 @@ def _call_devin(system_prompt: str, user_prompt: str, effort: str, model: str,
                             if mesajlar:
                                 duz = [s for l in mesajlar.values()
                                        for s in l]
-                                live.write_text(
-                                    "\n".join(duz)[-12000:],
-                                    encoding="utf-8")
+                                metin = "\n".join(duz)[-12000:]
+                                # Değişiklik yoksa yazma — dosyanın mtime'ı
+                                # "son aktivite" göstergesi olarak kullanılıyor.
+                                if metin != son_metin[0]:
+                                    son_metin[0] = metin
+                                    live.write_text(
+                                        metin, encoding="utf-8")
                     finally:
                         conn.close()
             except (OSError, sqlite3.Error):
