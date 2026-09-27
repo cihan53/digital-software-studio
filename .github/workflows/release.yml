@@ -2,9 +2,10 @@
 #
 # Akış:
 #   1. Merge commit mesajına göre bump tipi seçilir:
-#        BREAKING / "!:"  → major
-#        "feat"/"feature" → minor
-#        diğerleri        → patch
+#        BREAKING / "!:" / "major:" → major
+#        "minor:" veya "[minor]"    → minor (bilinçli orta sürüm)
+#        diğerleri (feat dahil)     → patch — küçük düzenlemeler
+#                                     son haneyi artırır (1.x.Y)
 #   2. studio.version'daki sürüm son tag'den yeniyse (PR elle yükseltmişse)
 #      bump atlanır, mevcut sürüm tag'lenir; aksi halde release_bump.py
 #      sürümü yükseltir + changelog'a merge mesajını düşer.
@@ -34,9 +35,9 @@ jobs:
         id: bump
         run: |
           MSG="${{ github.event.head_commit.message }}"
-          if echo "$MSG" | grep -qiE 'BREAKING|!:'; then
+          if echo "$MSG" | grep -qiE 'BREAKING|!:|^major[:(]'; then
             echo "part=major" >> "$GITHUB_OUTPUT"
-          elif echo "$MSG" | grep -qiE '^(feat|feature)[(:]'; then
+          elif echo "$MSG" | grep -qiE '^minor[:(]|\[minor\]'; then
             echo "part=minor" >> "$GITHUB_OUTPUT"
           else
             echo "part=patch" >> "$GITHUB_OUTPUT"

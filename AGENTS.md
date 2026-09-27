@@ -83,8 +83,10 @@ Ana dala (`main`/`master`) yapılan her merge'de GitHub Actions
 (`.github/workflows/release.yml`) otomatik olarak `studio.version` sürümünü
 yükseltir, changelog'a merge mesajını düşer ve `vX.Y.Z` tag'i atar:
 
-- `feat:`/`feature:` önekli merge → **minor**, `BREAKING`/`!:` → **major**,
-  diğerleri → **patch**
+- `BREAKING`/`!:`/`major:` önekli merge → **major**, `minor:`/`[minor]`
+  işaretli merge → **minor**, diğerleri (küçük düzenlemeler ve `feat:`
+  dahil) → **patch** — rutin değişiklikler son haneyi artırır (1.x.Y);
+  orta hane yalnızca bilinçli `minor` etiketli sürümlerde atlar.
 - Release commit'i `chore(release): vX.Y.Z [skip ci]` ile atılır ve yeniden
   tetiklenmez (döngü koruması)
 - Projelerdeki `framework_update_info()` bu sürüm değişimini görüp kullanıcıya
