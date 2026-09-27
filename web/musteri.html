@@ -29,6 +29,15 @@
   <span class="logo">💬 Müşteri Odası</span>
   <span class="soluk">Talebini anlat, birlikte netleştirelim; onayladığında havuza alınır.</span>
   <span class="bosluk"></span>
+  <span class="soluk" id="motor-rozet" title="Sohbet temsilcisinin kullandığı motor"></span>
+  <select id="motor-backend" onchange="motorDegis()" title="Motor backend">
+    <option value="">Otomatik</option>
+    <option value="agy">AGY</option>
+    <option value="devin">Devin</option>
+    <option value="claude">Claude</option>
+  </select>
+  <input id="motor-model" placeholder="model (ops.)" style="width:150px;padding:6px 8px"
+         onchange="motorDegis()" title="Boş bırakılırsa backend varsayılanı kullanılır">
   <button onclick="yeniOturum()">🗑 Yeni Oturum</button>
   <a href="/"><button>⌂</button></a>
 </div>
@@ -112,6 +121,7 @@ async function yukle(zorla){
       for(const m of d.mesajlar) kutu.appendChild(mesajCiz(m));
       kutu.scrollTop=kutu.scrollHeight;
     }
+    if(d.motor) motorGoster(d.motor);
     $('talepler').innerHTML=(d.talepler||[]).map(t=>
       `<div class="kart talep-kart" style="margin-bottom:8px">
         <span class="tid">${esc(t.id)}</span> <span class="rozet r-${t.durum}">${esc(t.durum||'')}</span><br>
@@ -164,6 +174,31 @@ async function reddet(mid,btn){
     toast(d.ok?'Taslak iptal edildi.':(d.mesaj||'İptal edilemedi'));
   }catch(e){toast('İptal gönderilemedi: '+e);}
   sonMesajSayisi=-1; yukle(true);
+}
+let motorKuruldu=false;
+function motorGoster(m){
+  const rz=$('motor-rozet');
+  rz.textContent='⚙ '+(m.backend||'?')+(m.model?'/'+m.model:'');
+  rz.title='Aktif motor: '+(m.backend||'?')+(m.model?' / '+m.model:'')+
+    (m.override?' (panel override)':' (varsayılan)');
+  if(!motorKuruldu){
+    motorKuruldu=true;
+    // Yalnızca ilk yüklemeyi kontrollere yansıt; kullanıcı yazıyorsa ezme.
+    if(m.override&&m.backend) $('motor-backend').value=m.backend;
+    if(m.override&&m.model) $('motor-model').value=m.model;
+  }
+}
+async function motorDegis(){
+  const backend=$('motor-backend').value;
+  const model=$('motor-model').value.trim();
+  try{
+    const d=await(await fetch('/api/sohbet/motor',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(backend?{backend:backend,model:model}:{temizle:true})})).json();
+    toast(d.ok?('Motor: '+(d.motor.backend||'?')+(d.motor.model?'/'+d.motor.model:'')):
+      (d.mesaj||'Motor ayarlanamadı'));
+    if(d.motor) motorGoster(d.motor);
+  }catch(e){toast('Motor ayarlanamadı: '+e);}
 }
 document.getElementById('girdi').addEventListener('keydown',e=>{if(e.key==='Enter')gonder();});
 yukle(true); setInterval(yukle,3000);
