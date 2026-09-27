@@ -2225,6 +2225,12 @@ def run_board(org: dict, brief: str, once: bool = False,
               max_tasks: int = 0, max_cost: float = 0.0,
               interactive: bool = False) -> int:
     """Panoyu ilerletir. once=True ise yalnızca bir görev yürütür (tick)."""
+    # Acil durdurma sonrası bırakılan bayrak: tick koşucuyu diriltmesin diye
+    # her şeyden önce kontrol edilir; ./basla.sh başlatması bayrağı temizler.
+    if B.is_set("devre_disi"):
+        print("[i] Koşucu 'acil durdur' ile devre dışı. "
+              "Yeniden başlatmak için: ./basla.sh")
+        return 0
     # 0. Süreç, Kurtarma ve Dağıtım Nöbetçisi Ajanı (Failover & Deploy Recovery)
     try:
         sys.path.insert(0, str(ROOT / "scripts"))

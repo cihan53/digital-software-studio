@@ -55,6 +55,7 @@
   <button id="bSurdur" class="gizli" onclick="kontrol('surdur')">▶ Sürdür</button>
   <button onclick="onayla()">💰 Kota Onayla</button>
   <button class="tehlike" onclick="kontrol('durdur')">⏹ Durdur</button>
+  <button class="tehlike" onclick="kontrol('acil_durdur')" title="Koşucuyu ve aktif çağrıyı anında öldürür (SIGKILL)">🛑 Acil Durdur</button>
   <a href="/"><button>⌂</button></a>
 </div>
 <div id="gunc-banner" class="gunc-banner gizli"></div>
@@ -271,6 +272,7 @@ async function oncelikOner(gid,deger){
 }
 async function kontrol(aks,gorev,force){
   if(aks==='durdur'&&!confirm('Koşucu durdurulsun mu?'))return;
+  if(aks==='acil_durdur'&&!confirm('Koşucu ve çalışan çağrı ANINDA öldürülecek (yarım iş kalabilir).\nDevam?'))return;
   const d=await(await fetch('/api/kontrol',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({aksiyon:aks,gorev:gorev,force:!!force})})).json();
   toast(d.mesaj); ozetYukle();
