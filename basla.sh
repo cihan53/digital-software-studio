@@ -4,6 +4,7 @@
 #   ./basla.sh              her şeyi sırayla çalıştırır ve kontrol ekranını açar
 #   ./basla.sh --kontrol    hiçbir şey çalıştırmaz, sadece ön koşulları denetler
 #   ./basla.sh --durdur     çalışan koşuyu nazikçe durdurur
+#   ./basla.sh --oldur      koşucuyu ve aktif çağrıyı ANINDA öldürür (hard stop)
 #   ./basla.sh --izle       sadece kontrol ekranını açar
 #   ./basla.sh --durum      tek satırlık durum özeti (ekran açmadan)
 #   ./basla.sh --web        web arayüzünü başlatır (panel + müşteri odası, :8090)
@@ -367,7 +368,14 @@ PYEOF
       if ! calisiyor_mu; then ylw "Çalışan koşu yok."; exit 0; fi
       $PY -c "import studio_board as B; B.request('stop', kaynak='cli')"
       grn "Durdurma istendi — çalışan çağrı bitince koşucu çıkacak."
-      dim "Hemen kesmek için: pkill -f studio_engine.py  (devam eden çağrının parası gider)"
+      dim "Hemen kesmek için: ./basla.sh --oldur"
+      exit 0 ;;
+  --oldur|--hard-stop)
+      ok_msg=$($PY -c "import studio_board as B; ok, m = B.hard_stop(); print(('OK|' if ok else 'NO|') + m)")
+      case "$ok_msg" in
+        OK\|*)  grn "${ok_msg#OK|}" ;;
+        *)      ylw "${ok_msg#NO|}" ;;
+      esac
       exit 0 ;;
   --motor)
       shift
@@ -595,6 +603,10 @@ $PY studio_engine.py --dry-run 2>&1 | grep -E "^\[i\] (Motor|[0-9]+ rol)" | sed 
 echo
 dim "Log: $LOG    Durdurmak için kontrol ekranında 's'"
 echo
+
+# Bilinçli başlatma: 'acil durdur' (devre_disi) bayrağı kalmışsa temizle,
+# yoksa koşucu ilk döngüde hiçbir şey yapmadan çıkar.
+$PY -c "import studio_board as B; B.clear('devre_disi')" 2>/dev/null || true
 
 # Arka plan sürecine mutlak komut yollarını ve backend ayarlarını geçir
 export STUDIO_BACKEND="${STUDIO_BACKEND:-agy}"

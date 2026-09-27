@@ -288,8 +288,8 @@ def render(msg: str = "") -> str:
             L.append(f"  {DIM}Başlatmak için ayrı bir terminalde: ./basla.sh{RESET}")
             L.append("─" * min(cols, 96))
     L.append(f"{BOLD}p{RESET} duraklat/sürdür  {BOLD}s{RESET} durdur  "
-             f"{BOLD}k{RESET} atla  {BOLD}K{RESET} kesip atla  {BOLD}r{RESET} tekrar dene  "
-             f"{BOLD}o{RESET} çıktı klasörü  {BOLD}q{RESET} çık")
+             f"{BOLD}x{RESET} acil durdur  {BOLD}k{RESET} atla  {BOLD}K{RESET} kesip atla  "
+             f"{BOLD}r{RESET} tekrar dene  {BOLD}o{RESET} çıktı klasörü  {BOLD}q{RESET} çık")
     if msg:
         L.append(f"{CYAN}{msg}{RESET}")
     return "\n".join(L)
@@ -311,6 +311,9 @@ def handle(key: str) -> str:
     if key == "s":
         B.request("stop", kaynak="ctl")
         return "Durdurma istendi — mevcut çağrı bitince koşucu çıkacak."
+    if key == "x":
+        ok, msg = B.hard_stop()
+        return msg
     if key in ("k", "K"):
         # Önce panodaki RUNNING görev hedeflenir: current.json iki çağrı
         # arasında boşalır, oraya güvenmek yanlış görevi atlatırdı.
