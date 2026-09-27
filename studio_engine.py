@@ -795,8 +795,40 @@ def _call_devin(system_prompt: str, user_prompt: str, effort: str, model: str,
     # araçlarını deneyebilir → mod koşulsuz geçilir, yoksa çağrı boş döner.
     cmd += ["--permission-mode", DEVIN_PERMISSION_MODE]
 
+    # devin -p ara çıktı üretmez ama --export her tur sonunda konuşmayı
+    # dosyaya yazar — dosya izlenip kuyruğu Canlı Çıktı'ya (current.out)
+    # yansıtılır; panelde çağrı boyunca tur/araç ilerlemesi görünür.
+    export_yol = TRACE_DIR / "devin_live.md"
+    try:
+        export_yol.unlink(missing_ok=True)
+    except OSError:
+        pass
+    cmd += ["--export", str(export_yol)]
+    live = TRACE_DIR / "current.out"
+    izle_dur = threading.Event()
+
+    def _devin_izle():
+        son_boyut = -1
+        while not izle_dur.is_set():
+            try:
+                if export_yol.exists():
+                    icerik = export_yol.read_text(
+                        encoding="utf-8", errors="replace")
+                    if len(icerik) != son_boyut:
+                        son_boyut = len(icerik)
+                        live.write_text(icerik[-12000:], encoding="utf-8")
+            except OSError:
+                pass
+            izle_dur.wait(2.0)
+
+    izleyici = threading.Thread(target=_devin_izle, daemon=True)
+    izleyici.start()
+
     run_cwd = ROOT if tools else SCRATCH_DIR
-    rc, out, err = _run_cli(cmd, run_cwd, DEVIN_TIMEOUT + 60, "devin")
+    try:
+        rc, out, err = _run_cli(cmd, run_cwd, DEVIN_TIMEOUT + 60, "devin")
+    finally:
+        izle_dur.set()
 
     if rc != 0:
         detail = (err or out or "").strip()[:500]
