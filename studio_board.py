@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import socket
 import sqlite3
+import subprocess
 import sys
 import time
 from datetime import date, datetime, timedelta
@@ -713,6 +715,57 @@ def is_runner_active() -> bool:
         return True
     except (ValueError, OSError):
         return False
+
+
+def runner_pid() -> int | None:
+    """Kilit dosyasındaki koşucu PID'si; süreç yaşamıyorsa None."""
+    lock_file = WORKSPACE / ".lock"
+    try:
+        pid = int(lock_file.read_text(encoding="utf-8").strip())
+        if pid == os.getpid():
+            return None
+        os.kill(pid, 0)
+        return pid
+    except (ValueError, OSError):
+        return None
+
+
+def hard_stop() -> tuple[bool, str]:
+    """Koşucuyu ve aktif çağrı süreçlerini ANINDA öldürür (nazik 'stop' beklemez).
+
+    - 'stop' bayrağı yerine 'devre_disi' bırakır: launchd tick'i koşucuyu
+      yeniden diriltmesin; bilinçli ./basla.sh başlatması bayrağı temizler.
+    - Çağrı alt süreçleri start_new_session ile kendi süreç gruplarında
+      açılır; önce çocukların grup lideri PID'lerine killpg, sonra koşucuya
+      SIGKILL uygulanır.
+    """
+    pid = runner_pid()
+    if not pid:
+        return False, "Koşucu çalışmıyor — öldürülecek süreç yok."
+    try:
+        children = subprocess.run(
+            ["pgrep", "-P", str(pid)], capture_output=True, text=True,
+            timeout=5).stdout.split()
+    except Exception:
+        children = []
+    for c in children:
+        try:
+            os.killpg(int(c), signal.SIGKILL)
+        except (OSError, ValueError):
+            try:
+                os.kill(int(c), signal.SIGKILL)
+            except OSError:
+                pass
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except OSError:
+        pass
+    request("devre_disi", kaynak="hard_stop")
+    (WORKSPACE / ".lock").unlink(missing_ok=True)
+    audit("kontrol", "hard_stop",
+          detay={"pid": pid, "oldurulen_alt_surec": len(children)})
+    return True, (f"Koşucu (pid {pid}) ve {len(children)} alt süreç anında "
+                  "durduruldu. Koşucu 'devre_disi' — tekrar açmak için ./basla.sh")
 
 
 def recover_orphans(board: dict) -> bool:
