@@ -586,7 +586,8 @@ class CallAborted(Exception):
 
 
 def _run_cli(cmd: list, cwd: Path, timeout: int, name: str,
-             stdin_text: str | None = None):
+             stdin_text: str | None = None,
+             on_stdout_line=None):
     """CLI'yi kesilebilir şekilde çalıştırır.
 
     Normal akışta subprocess.run ile aynıdır. Farkı: her yarım saniyede
@@ -594,6 +595,8 @@ def _run_cli(cmd: list, cwd: Path, timeout: int, name: str,
     SIGTERM ile öldürülür ve CallAborted fırlatılır (--gec/--atla --force).
     `stdin_text` verilirse ayrı bir yazıcı iş parçacığıyla sürecin
     stdin'ine beslenir (uzun prompt'lar argv sınırını aşar).
+    `on_stdout_line` verilirse stdout satır satır okuyucu iş parçacığıyla
+    tüketilir ve her satır geri çağrıya iletilir (canlı akış için).
     """
     proc = subprocess.Popen(
         cmd, stdin=subprocess.PIPE if stdin_text is not None else None,
@@ -608,6 +611,33 @@ def _run_cli(cmd: list, cwd: Path, timeout: int, name: str,
             except (OSError, BrokenPipeError):
                 pass
         threading.Thread(target=_besle, daemon=True).start()
+    okuyucular = []
+    if on_stdout_line is not None:
+        # stdout'u satır satır tüket: hem topla hem canlı geri çağrıya ver.
+        # stderr de ayrı tüketilmeli — aksi hâlde boru dolunca süreç kilitlenir.
+        out_parca, err_parca = [], []
+
+        def _oku_out():
+            try:
+                for satir in proc.stdout:
+                    out_parca.append(satir)
+                    try:
+                        on_stdout_line(satir)
+                    except Exception:
+                        pass
+            except (OSError, ValueError):
+                pass
+
+        def _oku_err():
+            try:
+                err_parca.append(proc.stderr.read() or "")
+            except (OSError, ValueError):
+                pass
+
+        for hedef in (_oku_out, _oku_err):
+            t = threading.Thread(target=hedef, daemon=True)
+            t.start()
+            okuyucular.append(t)
     deadline = time.time() + timeout
     try:
         while proc.poll() is None:
@@ -628,7 +658,12 @@ def _run_cli(cmd: list, cwd: Path, timeout: int, name: str,
                     pass
                 raise RuntimeError(f"{name} {timeout}s içinde yanıt vermedi.")
             time.sleep(0.5)
-        out, err = proc.communicate()
+        if okuyucular:
+            for t in okuyucular:
+                t.join(timeout=10)
+            out, err = "".join(out_parca), "".join(err_parca)
+        else:
+            out, err = proc.communicate()
         # Yarış: süreç SIGTERM ile zaten ölüp döngüden çıkmış olabilir;
         # yarım kalan çıktı parse hatasına dönüşmesin, CallAborted korunur.
         if B.is_set("force"):
@@ -791,7 +826,47 @@ def _call_claude(system_prompt: str, user_prompt: str, effort: str, model: str,
         raise RuntimeError("'claude' bulunamadı. Claude Code CLI kurulu olmalı "
                            "(npm i -g @anthropic-ai/claude-code).")
 
-    cmd = [exe, "-p", "--output-format", "json"]
+    # stream-json + verbose: ajanın assistant/tool olayları satır satır akar;
+    # her satır Canlı Çıktı'ya (current.out) akıtılır ki panelde çağrı boyunca
+    # "çıktı yok" yerine ajanın ne yaptığı görünsün.
+    live = TRACE_DIR / "current.out"
+    try:
+        live.write_text("", encoding="utf-8")
+    except OSError:
+        pass
+    canli_kilit = threading.Lock()
+
+    def _canli_yaz(satir: str):
+        try:
+            with canli_kilit, live.open("a", encoding="utf-8") as f:
+                f.write(satir.rstrip() + "\n")
+        except OSError:
+            pass
+
+    def _canli_satir(ham: str):
+        try:
+            ev = json.loads(ham)
+        except (json.JSONDecodeError, ValueError):
+            return
+        tur = ev.get("type")
+        if tur == "assistant":
+            for b in (ev.get("message", {}).get("content") or []):
+                if not isinstance(b, dict):
+                    continue
+                if b.get("type") == "text" and (b.get("text") or "").strip():
+                    _canli_yaz(b["text"])
+                elif b.get("type") == "tool_use":
+                    ozet = json.dumps(b.get("input") or {}, ensure_ascii=False)
+                    _canli_yaz(f"⚙ {b.get('name', '?')} {ozet[:140]}")
+        elif tur == "user":
+            for b in (ev.get("message", {}).get("content") or []):
+                if isinstance(b, dict) and b.get("type") == "tool_result":
+                    c = b.get("content")
+                    s = c if isinstance(c, str) else json.dumps(
+                        c, ensure_ascii=False)
+                    _canli_yaz(f"  ↩ {str(s).strip()[:200]}")
+
+    cmd = [exe, "-p", "--output-format", "stream-json", "--verbose"]
     if model:
         cmd += ["--model", model]
     if system_prompt:
@@ -801,21 +876,35 @@ def _call_claude(system_prompt: str, user_prompt: str, effort: str, model: str,
 
     run_cwd = ROOT if tools else SCRATCH_DIR
     rc, out, err = _run_cli(cmd, run_cwd, CLAUDE_TIMEOUT + 60, "claude",
-                            stdin_text=user_prompt)
+                            stdin_text=user_prompt,
+                            on_stdout_line=_canli_satir)
 
     if rc != 0:
         detail = (err or out or "").strip()[:500]
         raise RuntimeError(f"claude hata koduyla çıktı ({rc}): {detail}")
 
-    try:
-        data = json.loads((out or "").strip(), strict=False)
-    except json.JSONDecodeError:
-        data = _json_kurtar(out)
+    # NDJSON akışının son 'result' olayı nihai yanıtı taşır; akış yoksa/
+    # bozuksa eski tek-JSON formatına geri düşülür.
+    data = None
+    for satir in reversed((out or "").strip().splitlines()):
+        try:
+            ev = json.loads(satir.strip(), strict=False)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(ev, dict) and ev.get("type") == "result":
+            data = ev
+            break
+    if data is None:
+        try:
+            data = json.loads((out or "").strip(), strict=False)
+        except json.JSONDecodeError:
+            data = _json_kurtar(out)
     if not isinstance(data, dict):
         raise RuntimeError(f"claude JSON döndürmedi: {(out or '').strip()[:300]}"
                            f" ...son: {(out or '').strip()[-150:]}")
     if data.get("is_error"):
-        raise RuntimeError(f"claude hata bildirdi: {str(data.get('result'))[:300]}")
+        detail = str(data.get("result") or data.get("subtype") or "")
+        raise RuntimeError(f"claude hata bildirdi: {detail[:300]}")
 
     text = (data.get("result") or "").strip()
     if not text:
