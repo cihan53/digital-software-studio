@@ -19,6 +19,7 @@ import os
 import re
 import shutil
 import signal
+import sqlite3
 import time
 import subprocess
 import sys
@@ -795,36 +796,78 @@ def _call_devin(system_prompt: str, user_prompt: str, effort: str, model: str,
     # araçlarını deneyebilir → mod koşulsuz geçilir, yoksa çağrı boş döner.
     cmd += ["--permission-mode", DEVIN_PERMISSION_MODE]
 
-    # devin -p ara çıktı üretmez ama --export her tur sonunda konuşmayı
-    # dosyaya yazar — dosya izlenip kuyruğu Canlı Çıktı'ya (current.out)
-    # yansıtılır; panelde çağrı boyunca tur/araç ilerlemesi görünür.
-    export_yol = TRACE_DIR / "devin_live.md"
-    try:
-        export_yol.unlink(missing_ok=True)
-    except OSError:
-        pass
-    cmd += ["--export", str(export_yol)]
+    # devin -p ara çıktı üretmez ve --export -p modunda dosyayı ancak çağrı
+    # sonunda yazar (tek tur). Canlı akış için devin CLI'nin anlık mesaj
+    # düğümlerini tuttuğu sessions.db sorgulanır: bu çağrının oturumu
+    # working_directory + created_at ile bulunur, message_nodes node_id
+    # sırasıyla okunup current.out'a render edilir.
+    sess_db = Path.home() / ".local/share/devin/cli/sessions.db"
+    run_cwd = ROOT if tools else SCRATCH_DIR
     live = TRACE_DIR / "current.out"
     izle_dur = threading.Event()
 
     def _devin_izle():
-        son_boyut = -1
+        baslangic = int(time.time())
+        oturum = None
+        # Aynı message_id birden fazla düğüm olarak kaydedilir (kısmi → tam);
+        # kimliğe göre tutup yenisiyle ezeceğiz — sıra ilk görülme sırası.
+        mesajlar = {}
         while not izle_dur.is_set():
             try:
-                if export_yol.exists():
-                    icerik = export_yol.read_text(
-                        encoding="utf-8", errors="replace")
-                    if len(icerik) != son_boyut:
-                        son_boyut = len(icerik)
-                        live.write_text(icerik[-12000:], encoding="utf-8")
-            except OSError:
+                if sess_db.exists():
+                    conn = sqlite3.connect(
+                        f"file:{sess_db}?mode=ro", uri=True, timeout=1)
+                    try:
+                        if oturum is None:
+                            row = conn.execute(
+                                "SELECT id FROM sessions WHERE"
+                                " working_directory=? AND created_at>=?"
+                                " ORDER BY created_at DESC LIMIT 1",
+                                (str(run_cwd), baslangic - 10)).fetchone()
+                            oturum = row[0] if row else None
+                        if oturum:
+                            dugumler = conn.execute(
+                                "SELECT chat_message FROM message_nodes"
+                                " WHERE session_id=? ORDER BY node_id",
+                                (oturum,)).fetchall()
+                            for mesaj in dugumler:
+                                try:
+                                    m = json.loads(mesaj[0])
+                                except (ValueError, TypeError):
+                                    continue
+                                rol = m.get("role")
+                                satirlar = []
+                                if rol == "assistant":
+                                    icerik = (m.get("content") or "").strip()
+                                    if icerik:
+                                        satirlar.append(icerik)
+                                    for tc in m.get("tool_calls") or []:
+                                        ad = tc.get("name", "?")
+                                        arg = json.dumps(
+                                            tc.get("arguments") or {},
+                                            ensure_ascii=False)[:200]
+                                        satirlar.append(f"⚙ {ad} {arg}")
+                                elif rol == "tool":
+                                    oz = (m.get("content") or "").strip()
+                                    satirlar.append(f"↩ {oz[:200]}")
+                                if satirlar:
+                                    mesajlar[m.get("message_id") or
+                                             len(mesajlar)] = satirlar
+                            if mesajlar:
+                                duz = [s for l in mesajlar.values()
+                                       for s in l]
+                                live.write_text(
+                                    "\n".join(duz)[-12000:],
+                                    encoding="utf-8")
+                    finally:
+                        conn.close()
+            except (OSError, sqlite3.Error):
                 pass
             izle_dur.wait(2.0)
 
     izleyici = threading.Thread(target=_devin_izle, daemon=True)
     izleyici.start()
 
-    run_cwd = ROOT if tools else SCRATCH_DIR
     try:
         rc, out, err = _run_cli(cmd, run_cwd, DEVIN_TIMEOUT + 60, "devin")
     finally:
