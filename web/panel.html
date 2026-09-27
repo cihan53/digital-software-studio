@@ -31,6 +31,10 @@
     font-size: 13px; color: #f0c948; }
   .gunc-banner code { background: rgba(0,0,0,.35); padding: 1px 6px; border-radius: 4px;
     font-size: 12px; }
+  .hata-mtn { color: var(--kirmizi); font-size: 12px; }
+  .hata-band { margin: 8px 0; padding: 8px 10px; border-left: 3px solid var(--kirmizi);
+    background: rgba(255,80,80,.08); color: var(--kirmizi); font-size: 12px;
+    border-radius: 0 6px 6px 0; white-space: pre-wrap; word-break: break-word; }
   .motor-rozet { background: #3a2f0b; color: #f0c948; padding: 0 7px; border-radius: 8px;
     font-size: 11px; cursor: pointer; }
   .motor-modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 50;
@@ -115,7 +119,7 @@
 
   <section id="s-cagri" class="gizli">
     <table class="tablo"><thead><tr>
-      <th>#</th><th>Rol</th><th>Hedef</th><th>Motor</th><th>Token</th><th>Süre</th><th>Maliyet</th>
+      <th>#</th><th>Rol</th><th>Hedef</th><th>Motor</th><th>Durum</th><th>Token</th><th>Süre</th><th>Maliyet</th>
     </tr></thead><tbody id="cagri"></tbody></table>
   </section>
 
@@ -199,9 +203,15 @@ async function ozetYukle(){
     const ak=document.getElementById('aktif');
     if(d.aktif&&d.aktif.role){
       ak.classList.remove('gizli');
-      const gecen=d.aktif.started_at? insan(Date.now()/1000-d.aktif.started_at):'';
-      ak.innerHTML=`▶ <b>${esc(d.aktif.role)}</b> → ${esc(d.aktif.target||'')} `+
-        `<span class="soluk">${esc(d.aktif.backend||'')}/${esc(d.aktif.model||'')} · giden ${(d.aktif.prompt_chars||0).toLocaleString('tr')} krk · geçen ${gecen}</span>`;
+      if(d.aktif.error||d.aktif.ended_at){
+        ak.innerHTML=`✗ <b>Son çağrı kesildi:</b> ${esc(d.aktif.role)} → ${esc(d.aktif.target||'')} `+
+          `<span class="soluk">${esc(d.aktif.backend||'')}/${esc(d.aktif.model||'')} · ${insan(d.aktif.duration_s)}</span>`+
+          `<div class="hata-mtn" style="margin-top:4px">${esc(d.aktif.error||'')}</div>`;
+      }else{
+        const gecen=d.aktif.started_at? insan(Date.now()/1000-d.aktif.started_at):'';
+        ak.innerHTML=`▶ <b>${esc(d.aktif.role)}</b> → ${esc(d.aktif.target||'')} `+
+          `<span class="soluk">${esc(d.aktif.backend||'')}/${esc(d.aktif.model||'')} · giden ${(d.aktif.prompt_chars||0).toLocaleString('tr')} krk · geçen ${gecen}</span>`;
+      }
     } else ak.classList.add('gizli');
   }catch(e){}
 }
@@ -358,14 +368,20 @@ async function auditYukle(){
 // ---------- işlem logları ----------
 async function cagriYukle(){
   const d=await(await fetch('/api/cagri')).json();
-  document.getElementById('cagri').innerHTML=(d.cagrilar||[]).map(c=>
-    `<tr style="cursor:pointer" onclick="cagriDetay(${c.seq})">
+  document.getElementById('cagri').innerHTML=(d.cagrilar||[]).map(c=>{
+    const hata=c.error||'';
+    const ks= hata.length>70 ? hata.slice(0,70)+'…' : hata;
+    const durum= hata
+      ? `<td class="hata-mtn" title="${esc(hata)}">✗ ${esc(ks)}</td>`
+      : `<td class="soluk">✓</td>`;
+    return `<tr style="cursor:pointer" onclick="cagriDetay(${c.seq})">
      <td>${c.seq}</td><td>${esc(c.role||'')}</td><td class="soluk">${esc(c.target||'')}</td>
      <td class="soluk">${esc(c.backend||'')}/${esc(c.model||'')}</td>
+     ${durum}
      <td class="soluk">${(c.tokens_total||0).toLocaleString('tr')}</td>
      <td class="soluk">${insan(c.duration_s)}</td>
-     <td class="soluk">$${(c.cost_usd||0).toFixed(3)}</td></tr>`
-  ).join('')||'<tr><td colspan="7" class="soluk">Kayıt yok.</td></tr>';
+     <td class="soluk">$${(c.cost_usd||0).toFixed(3)}</td></tr>`;
+  }).join('')||'<tr><td colspan="8" class="soluk">Kayıt yok.</td></tr>';
 }
 let mdlSek='response';
 async function cagriDetay(seq){
@@ -375,6 +391,7 @@ async function cagriDetay(seq){
   document.getElementById('modal-ic').innerHTML=
     `<h3>#${c.seq} · ${esc(c.role||'')} <span class="soluk">${esc(c.backend||'')}/${esc(c.model||'')}</span></h3>
      <div class="soluk">${esc(c.target||'')} · ${insan(c.duration_s)} · $${(c.cost_usd||0).toFixed(3)}</div>
+     ${c.error?`<div class="hata-band">✗ Çağrı kesildi: ${esc(c.error)}</div>`:''}
      <div class="mdl-sekme">
        <button class="kucuk" onclick="mdlGoster('${c.seq}','response')">Yanıt</button>
        <button class="kucuk" onclick="mdlGoster('${c.seq}','user_prompt')">İstek</button>
