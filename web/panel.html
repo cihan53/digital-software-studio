@@ -99,7 +99,7 @@
 
   <section id="s-canli" class="gizli">
     <div id="canli-meta" class="durum-hat"></div>
-    <pre id="canli-out" style="min-height:320px"></pre>
+    <pre id="canli-out" style="min-height:320px;max-height:60vh;overflow-y:auto"></pre>
   </section>
 
   <section id="s-audit" class="gizli">
@@ -363,7 +363,13 @@ async function canliYukle(){
     document.getElementById('canli-meta').innerHTML = m.role?
       `<b>${esc(m.role)}</b> <span class="soluk">${esc(m.backend||'')}/${esc(m.model||'')} → ${esc(m.target||'')}</span>${aktivite}`
       : '<span class="soluk">Aktif çağrı yok.</span>';
-    document.getElementById('canli-out').textContent=d.out||'(çıktı yok)';
+    const out=document.getElementById('canli-out');
+    // Kullanıcı en alttaysa akışı takip et; yukarı kaydırdıysa konumu koru —
+    // tekrar en alta indiğinde takip kendiliğinden devam eder.
+    const alttaydi=out.scrollTop+out.clientHeight>=out.scrollHeight-30;
+    const eskiTop=out.scrollTop;
+    out.textContent=d.out||'(çıktı yok)';
+    out.scrollTop=alttaydi? out.scrollHeight : eskiTop;
   }catch(e){}
 }
 
