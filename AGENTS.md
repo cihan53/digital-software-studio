@@ -77,6 +77,22 @@ Kurallar:
 
 ---
 
+## ✅ Kalite Kapıları (scripts/kalite_kapilari.py)
+
+Her görev kapanmadan önce deterministik (LLM'siz) denetimler koşar:
+regresyon taraması, fix+test eşleştirmesi, smoke checklist
+(`workspace/smoke_checklist.json`) ve **derleme/import kapısı**:
+
+- `workspace/src/` altında değişen `.ts/.vue/.js` dosyalarındaki relative
+  import'lar diskte çözülüyor mu? Çözülemeyen import (`Cannot find module`)
+  görev notuna düşer ve `[BUILD] <task>` müşteri talebi açılır.
+- `workspace/build_checklist.json` (opt-in) ile projeye özel derleme
+  komutları koşturulabilir:
+  `{"checks": [{"name": "...", "command": "npx vue-tsc --noEmit",
+   "cwd": "workspace/src/frontend", "timeout_s": 180}]}`
+
+---
+
 ## 🏷️ Versiyonlama & Release
 
 Ana dala (`main`/`master`) yapılan her merge'de GitHub Actions
