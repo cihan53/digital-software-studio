@@ -199,13 +199,41 @@ def kontrol(body: dict) -> dict:
         return {"ok": ok, "mesaj": msg}
     if aks in ("atla", "gec"):
         tid = (body.get("gorev") or "").strip()
+        board = B.load()
         if not tid:
-            board = B.load()
             _, run = B.find_running(board)
             _, nxt = B.next_ready(board)
             tid = (run or nxt or {}).get("id") if (run or nxt) else None
         if not tid:
             return {"ok": False, "mesaj": "Hedef görev bulunamadı."}
+
+        # Sprint id verildiyse (örn. "S33") toplu işlem uygula
+        spr = next((s for s in board.get("sprints", [])
+                    if s.get("id") == tid), None)
+        if spr is not None:
+            acik = [t for t in spr.get("tasks", [])
+                    if t.get("status") not in B.TERMINAL]
+            if not acik:
+                return {"ok": False, "mesaj": f"{tid} zaten tamamen kapalı."}
+            if aks == "atla":
+                for t in acik:
+                    if t["status"] == B.RUNNING:
+                        B.request("skip", t["id"], kaynak="web")
+                    else:
+                        t["status"] = B.SKIPPED
+                        t["note"] = "kullanıcı sprinti atladı"
+                B.refresh(board)
+                B.save(board)
+                if body.get("force"):
+                    B.request("force", kaynak="web")
+                B.audit("web", "sprint_atla",
+                        detay={"sprint": tid, "adet": len(acik)})
+                ek = " (çağrı anında kesiliyor)" if body.get("force") else ""
+                return {"ok": True,
+                        "mesaj": f"{tid}: {len(acik)} görev atlandı{ek}."}
+            # gec: sprintin ilk açık görevini hedefle
+            tid = acik[0]["id"]
+
         flag = "skip" if aks == "atla" else "goto"
         B.request(flag, tid, kaynak="web")
         if body.get("force"):
