@@ -2552,11 +2552,21 @@ def run_board(org: dict, brief: str, once: bool = False,
             if not izin:
                 d = B.ledger_read()
                 mg, mb = B.ledger_limits()
+                # Panelde görünsün: bayrak 'onayla' aksiyonuyla temizlenir.
+                B.request("onay_bekliyor", json.dumps({
+                    "sebep": sebep, "gorev": d["gorev"], "sinir_gorev": mg,
+                    "maliyet": d["maliyet"], "sinir_butce": mb,
+                    "sonraki": task["id"], "sonraki_baslik": task["title"],
+                    "tahmin": tahmin,
+                }), kaynak="engine")
                 print(f"\n[ONAY BEKLENİYOR] {sebep}")
                 print(f"  Bugün: {d['gorev']}/{mg} görev, ${d['maliyet']:.2f}/${mb:.2f}")
                 print(f"  Sıradaki: {task['id']} · {task['title'][:50]} (~${tahmin:.2f})")
                 print("  Devam etmek için:  ./basla.sh --onayla")
                 break
+            # Kota açıldıysa (onay/gece sıfırlanması) bayat bayrağı temizle
+            if B.is_set("onay_bekliyor"):
+                B.clear("onay_bekliyor")
 
         if task is not None and RESPECT_CALENDAR and sprint.get("planned_start"):
             from datetime import date

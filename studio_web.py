@@ -94,7 +94,14 @@ def durum_ozeti() -> dict:
         "studio_guncelleme": None,
         "motor_oneri": None,
         "motor_override": [],
+        "onay_bekliyor": None,
     }
+    try:
+        ob = B.value_of("onay_bekliyor")
+        if ob:
+            out["onay_bekliyor"] = json.loads(ob)
+    except Exception:
+        pass
     try:
         out["motor_oneri"] = B.motor_oneri_oku()
         out["motor_override"] = B.motor_list()
@@ -256,6 +263,7 @@ def kontrol(body: dict) -> dict:
         b = body.get("butce")
         d = B.ledger_approve(gorev=int(g) if g else None,
                              butce=float(b) if b else None)
+        B.clear("onay_bekliyor")
         return {"ok": True,
                 "mesaj": f"Ek kota tanındı: {d['gorev']} görev, ${d['maliyet']:.2f} harcandı."}
     return {"ok": False, "mesaj": f"Bilinmeyen aksiyon: {aks}"}
