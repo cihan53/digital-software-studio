@@ -21,6 +21,7 @@ Engine entegrasyonu (studio_engine.py):
 
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.request
@@ -244,6 +245,98 @@ def smoke_checklist() -> tuple[int, int, list[str]]:
 
 
 # ---------------------------------------------------------------------------
+# Kapı 4: Derleme/import doğrulaması — develop çıktısı gerçekten çalışıyor mu?
+# ---------------------------------------------------------------------------
+# 'Cannot find module ./geoSearch' sınıfı hatalar UAT'a kadar görünmez kalıyordu.
+# Bu kapı görev kapanmadan önce deterministik olarak iki şeyi denetler:
+#   a) Değişen kaynak dosyalardaki relative import/require yolları diskte
+#      gerçekten bir dosyaya çözülüyor mu?
+#   b) workspace/build_checklist.json tanımlıysa oradaki komutlar
+#      (vue-tsc, tsc --noEmit, npm run build, flutter analyze ...) geçiyor mu?
+
+BUILD_CHECKLIST_FILE = WORKSPACE / "build_checklist.json"
+
+IMPORT_SPEC_RE = re.compile(
+    r"""(?:from|import|require)\s*\(?\s*['"](\.[^'"]+)['"]""")
+
+RESOLVE_EXTS = ("", ".ts", ".tsx", ".js", ".jsx", ".vue", ".mjs",
+                ".json", ".css", ".scss", ".sass", ".less")
+INDEX_FILES = tuple(f"index{e}" for e in
+                    (".ts", ".tsx", ".js", ".jsx", ".vue"))
+
+SRC_FILE_EXTS = (".ts", ".tsx", ".js", ".jsx", ".vue", ".mjs")
+
+
+def _import_cozulur_mu(dosya_dir: Path, spec: str) -> bool:
+    """'./geoSearch' gibi relative import'u dosya sisteminde çözmeyi dener."""
+    base = dosya_dir / spec
+    for ext in RESOLVE_EXTS:
+        if Path(str(base) + ext).is_file():
+            return True
+    if base.is_dir() and any((base / idx).is_file() for idx in INDEX_FILES):
+        return True
+    return False
+
+
+def import_cozumleme_hatalari(files: list[str]) -> list[str]:
+    """Değişen src dosyalarındaki çözülemeyen relative import'ları döner."""
+    hatalar = []
+    for f in files:
+        rel = f.replace("\\", "/")
+        if not rel.endswith(SRC_FILE_EXTS):
+            continue
+        p = ROOT / rel
+        if not p.is_file():
+            continue
+        try:
+            metin = p.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+        for spec in set(IMPORT_SPEC_RE.findall(metin)):
+            if not _import_cozulur_mu(p.parent, spec):
+                hatalar.append(f"{rel}: '{spec}' çözülemedi")
+    return hatalar
+
+
+def build_checklist() -> tuple[int, int, list[str]]:
+    """workspace/build_checklist.json'daki derleme/doğrulama komutlarını koşturur.
+
+    Şema:
+    {"checks": [{"name": "frontend typecheck",
+                 "command": "npx vue-tsc --noEmit",
+                 "cwd": "workspace/src/frontend", "timeout_s": 180}]}
+    """
+    if not BUILD_CHECKLIST_FILE.exists():
+        return (0, 0, [])
+    try:
+        checks = json.loads(BUILD_CHECKLIST_FILE.read_text(
+            encoding="utf-8")).get("checks", [])
+    except Exception as e:
+        return (0, 1, [f"build_checklist.json okunamadı: {e}"])
+
+    passed, failed, failures = 0, 0, []
+    for chk in checks:
+        name = chk.get("name", chk.get("command") or "?")
+        cwd = ROOT / chk.get("cwd", ".")
+        try:
+            res = subprocess.run(chk.get("command", "true"), shell=True,
+                                 cwd=cwd, capture_output=True, text=True,
+                                 timeout=int(chk.get("timeout_s", 180)))
+        except Exception as e:
+            failed += 1
+            failures.append(f"{name}: çalıştırılamadı ({e})")
+            continue
+        if res.returncode == 0:
+            passed += 1
+        else:
+            failed += 1
+            tail = (res.stdout + "\n" + res.stderr).strip().splitlines()
+            failures.append(f"{name}: exit {res.returncode} — "
+                            + " | ".join(tail[-4:])[:200])
+    return (passed, failed, failures)
+
+
+# ---------------------------------------------------------------------------
 # Birleşik görev kapısı — engine bunu çağırır
 # ---------------------------------------------------------------------------
 
@@ -288,6 +381,30 @@ def gorev_kapilari(task: dict, pre_snapshot: set[str]) -> list[str]:
             for f_ in failures[:6]:
                 print(f"             - {f_}")
             notes.append(f"smoke başarısız ({failed})")
+
+    # 4) Develop çıktısı doğrulaması — kaynak dosya değiştiyse kod çalışmalı
+    src_files = [f for f in files
+                 if f.replace("\\", "/").startswith("workspace/src/")]
+    if src_files:
+        imp = import_cozumleme_hatalari(src_files)
+        if imp:
+            print(f"   ⚠️  [İMPORT KAPISI] {len(imp)} çözülemeyen import:")
+            for f_ in imp[:6]:
+                print(f"         - {f_}")
+            uyarilari_dosyaya_yaz(task.get("id", "?"), imp)
+            notes.append(f"derleme başarısız (import {len(imp)})")
+
+        bp, bf, bfail = build_checklist()
+        if bp + bf > 0:
+            if bf == 0:
+                print(f"         ✅ Build checklist geçti ({bp}/{bp})")
+                notes.append(f"derleme {bp}/{bp}")
+            else:
+                print(f"         ⚠️  Build checklist başarısız ({bf} hata):")
+                for f_ in bfail[:6]:
+                    print(f"             - {f_}")
+                uyarilari_dosyaya_yaz(task.get("id", "?"), bfail)
+                notes.append(f"derleme başarısız ({bf})")
     return notes
 
 
