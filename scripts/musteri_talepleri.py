@@ -79,8 +79,9 @@ def _talep_to_db(cur: sqlite3.Cursor, t: dict):
         INSERT INTO talepler
             (id, tarih, tur, oncelik, baslik, aciklama, sayfa_url,
              durum, gorevli_rol, studio_notu, github_issue_number,
-             github_issue_url, cozum_plani, faz_id, efor, triage_notu, gecmis)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             github_issue_url, cozum_plani, faz_id, efor, triage_notu,
+             telafi_zincir, kaynak_gorev, gecmis)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET
             tarih               = excluded.tarih,
             tur                 = excluded.tur,
@@ -97,6 +98,8 @@ def _talep_to_db(cur: sqlite3.Cursor, t: dict):
             faz_id              = excluded.faz_id,
             efor                = excluded.efor,
             triage_notu         = excluded.triage_notu,
+            telafi_zincir       = excluded.telafi_zincir,
+            kaynak_gorev        = excluded.kaynak_gorev,
             gecmis              = excluded.gecmis
     """, (
         t.get("id"), t.get("tarih"), t.get("tur"), t.get("oncelik"),
@@ -104,7 +107,8 @@ def _talep_to_db(cur: sqlite3.Cursor, t: dict):
         t.get("durum"), t.get("gorevli_rol"), t.get("studio_notu"),
         t.get("github_issue_number"), t.get("github_issue_url"),
         t.get("cozum_plani"), t.get("faz_id"), t.get("efor"),
-        t.get("triage_notu"), gecmis_json
+        t.get("triage_notu"), t.get("telafi_zincir"),
+        t.get("kaynak_gorev"), gecmis_json
     ))
 
 
