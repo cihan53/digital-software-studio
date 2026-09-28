@@ -1405,7 +1405,16 @@ Her dosyayı tam olarak şu formatta ayır (dizine göre GÖRELİ yol kullan):
 <...>
 
 Dosya uzantılarını mimari dokümanda seçilen dile/framework'e göre belirle.
-İşaretleyici satırları dışında hiçbir açıklama metni yazma."""
+İşaretleyici satırları dışında hiçbir açıklama metni yazma.
+
+KENDİ KENDİNE DOĞRULAMA (ZORUNLU):
+- Yazdığın her import/require yolunun gerçekten var olan bir dosyaya veya
+  kurulu bir pakete işaret ettiğinden emin ol. Var olmayan modül
+  ('Cannot find module') üretme; referans vereceğin yardımcı dosya yoksa
+  önce onu da üret.
+- Görevi bitirmeden önce ürettiğin kodun derlendiğini/projeyle tutarlı
+  olduğunu doğrula; görev sonrası deterministik derleme kapısı bu
+  dosyaları kontrol eder ve hata bulursa otomatik düzeltme talebi açılır."""
 
 CODE_HINT = "\nBu bir kaynak kod dosyası: markdown kod çiti kullanma, sadece ham kodu yaz."
 
@@ -1817,11 +1826,12 @@ def _kalite_kapilari_kostur(task: dict, pre_snapshot: set) -> list:
         return []
 
 
-def _auto_talep_uat(task: dict, uat_cikti: str):
-    """Canlı UAT/smoke başarısızlığını müşteri talep havuzuna otomatik düşürür.
+def _auto_talep_uat(task: dict, uat_cikti: str, kaynak: str = "UAT",
+                    neden: str = "canlı kabul denetimi"):
+    """Canlı UAT/smoke/derleme başarısızlığını müşteri talep havuzuna düşürür.
 
-    Mükerrer koruması: aynı görev id'siyle açık (çözülmemiş/iptal edilmemiş)
-    bir [UAT] talebi varsa yenisi açılmaz.
+    Mükerrer koruması: aynı görev id'si ve kaynak etiketiyle açık
+    (çözülmemiş/iptal edilmemiş) bir talep varsa yenisi açılmaz.
     """
     try:
         scripts_dir = str(ROOT / "scripts")
@@ -1831,17 +1841,17 @@ def _auto_talep_uat(task: dict, uat_cikti: str):
         import importlib
         importlib.reload(MT)
 
-        baslik = f"[UAT] {task['id']} canlı kabul denetimi başarısız: {task.get('title', '')[:80]}"
+        baslik = f"[{kaynak}] {task['id']} {neden} başarısız: {task.get('title', '')[:80]}"
         data = MT.load_data()
         for t in data.get("talepler", []):
-            if (t.get("baslik") or "").startswith(f"[UAT] {task['id']}") \
+            if (t.get("baslik") or "").startswith(f"[{kaynak}] {task['id']}") \
                     and t.get("durum") not in ("COZULDU", "IPTAL"):
-                print(f"   [i] Açık UAT talebi zaten var: {t['id']} — mükerrer kayıt açılmadı.")
+                print(f"   [i] Açık {kaynak} talebi zaten var: {t['id']} — mükerrer kayıt açılmadı.")
                 return
 
         aciklama = (
-            f"Canlı UAT denetimi (scripts/uat_live_audit.mjs) '{task['id']}' görevinde "
-            f"başarısız oldu.\n\nSon çıktı satırları:\n```\n{(uat_cikti or '').strip()[-900:]}\n```"
+            f"Deterministik kalite kapısı '{task['id']}' görevinde "
+            f"{neden} başarısızlığı tespit etti.\n\nSon çıktı satırları:\n```\n{(uat_cikti or '').strip()[-900:]}\n```"
         )
         yeni = MT.yeni_talep("HATA", baslik, aciklama, oncelik="YUKSEK", sayfa_url="/")
         print(f"   📥 [OTOMATİK TALEP] {yeni['id']} havuza eklendi: {baslik[:70]}")
@@ -2194,8 +2204,11 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
     if gate_notes:
         note = "; ".join([n for n in [note] + gate_notes if n])
         # Smoke kapısı başarısızsa bulguyu talep havuzuna düşür (mükerrer korumalı)
-        if any("smoke başarısız" in n for n in gate_notes):
+        if any(n.startswith("smoke başarısız") for n in gate_notes):
             _auto_talep_uat(task, "; ".join(gate_notes))
+        if any(n.startswith("derleme başarısız") for n in gate_notes):
+            _auto_talep_uat(task, "; ".join(gate_notes),
+                            kaynak="BUILD", neden="derleme/import doğrulaması")
 
     B.mark(board, task["id"], B.DONE, note=note)
 
