@@ -2263,19 +2263,36 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
     else:
         B.mark(board, task["id"], B.DONE, note=note)
 
-    # Müşteri talebi görevi ise durumu otomatik güncelle
+    # Müşteri talebi görevi ise durumu otomatik güncelle.
+    # UAT telafiye devredildiyse (uat_devri) talep çözülmüş sayılmaz.
+    # Başarılı test görevi de talebi doğrudan COZULDU yapmaz: kapanış
+    # müşteri onayına bağlıdır (ONAY_BEKLIYOR → müşteri odasında onay).
     if task.get("talep_id"):
         try:
             sys.path.insert(0, str(ROOT / "scripts"))
             import musteri_talepleri as MT
             import importlib
             importlib.reload(MT)
-            if task.get("phase") == "test":
-                MT.guncelle(task["talep_id"], durum="COZULDU",
-                            studio_notu=f"Görev {task['id']} başarıyla tamamlandı ve UAT testinden geçti.")
+            if task.get("phase") == "test" and not uat_devri:
+                MT.guncelle(task["talep_id"], durum="ONAY_BEKLIYOR",
+                            studio_notu=f"Görev {task['id']} tamamlandı ve UAT testinden geçti — "
+                                        "kapanış için müşteri onayı bekleniyor.")
         except Exception:
             pass
     return True
+
+
+def _talep_beklemeye_al(task: dict) -> None:
+    """Kullanıcı tarafından atlanan görevin talebini kuyruğa geri alır."""
+    if not task.get("talep_id"):
+        return
+    try:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import musteri_talepleri as MT
+        if MT.talep_beklemeye_al(task["talep_id"], task["id"]):
+            print(f"   ↩ {task['talep_id']} BEKLEMEDE'ye alındı (görev atlandı).")
+    except Exception:
+        pass
 
 
 def state_of(board: dict) -> dict:
@@ -2577,6 +2594,7 @@ def run_board(org: dict, brief: str, once: bool = False,
             _, t = B.find_task(board, tid)
             if t:
                 B.mark(board, tid, B.SKIPPED, "kullanıcı atladı")
+                _talep_beklemeye_al(t)
                 print(f"\n[ATLANDI] {tid}")
             B.clear("skip")
             B.refresh(board); B.save(board)
@@ -2721,6 +2739,7 @@ def run_board(org: dict, brief: str, once: bool = False,
             print(f"\n[KESİLDİ] {e}")
             if B.value_of("skip") == task["id"]:
                 B.mark(board, task["id"], B.SKIPPED, "kullanıcı atladı")
+                _talep_beklemeye_al(task)
                 B.clear("skip")
             else:
                 B.mark(board, task["id"], B.READY, "kesildi — kuyruğa geri alındı")

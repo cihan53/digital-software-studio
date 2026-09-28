@@ -52,6 +52,7 @@ input, select {
 .r-GELISTIRILIYOR, .r-TESTTE { color: var(--sari); border-color: var(--sari); }
 .r-BEKLEMEDE, .r-DEGERLENDIRMEDE, .r-PLANLANDI, .r-FAZ_BEKLIYOR { color: var(--vurgu); border-color: var(--vurgu); }
 .r-IPTAL { color: var(--soluk); }
+.r-ONAY_BEKLIYOR { color: var(--sari); border-color: var(--sari); }
 
 .tablo { width: 100%; border-collapse: collapse; font-size: 13px; }
 .tablo th, .tablo td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--sinir); }
