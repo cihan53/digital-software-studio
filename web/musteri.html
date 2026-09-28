@@ -52,6 +52,10 @@
       </div>
     </div>
     <div class="yan-panel">
+      <div class="kart gizli" id="onay-bildirim"
+           style="border-color:var(--sari);font-size:13px">
+        🔔 Tamamlanan talebiniz var — kapatmak için onayınız gerekiyor.
+      </div>
       <div class="kart"><b>📥 Taleplerim</b><div id="talepler" style="margin-top:8px"></div></div>
       <div class="kart soluk" style="font-size:12px">
         Onaylanan talepler stüdyo havuzuna düşer; triage ve planlama otomatik yürütülür.
@@ -122,10 +126,20 @@ async function yukle(zorla){
       kutu.scrollTop=kutu.scrollHeight;
     }
     if(d.motor) motorGoster(d.motor);
+    const bekleyen=(d.talepler||[]).filter(t=>t.durum==='ONAY_BEKLIYOR');
+    $('onay-bildirim').classList.toggle('gizli',!bekleyen.length);
+    if(bekleyen.length){
+      $('onay-bildirim').innerHTML='🔔 '+bekleyen.length+' talebiniz tamamlandı — '+
+        'kapatmak için onayınız gerekiyor: <b>'+esc(bekleyen.map(t=>t.id).join(', '))+'</b>';
+    }
     $('talepler').innerHTML=(d.talepler||[]).map(t=>
-      `<div class="kart talep-kart" style="margin-bottom:8px">
+      `<div class="kart talep-kart" style="margin-bottom:8px${t.durum==='ONAY_BEKLIYOR'?';border-color:var(--sari)':''}">
         <span class="tid">${esc(t.id)}</span> <span class="rozet r-${t.durum}">${esc(t.durum||'')}</span><br>
-        ${esc(t.baslik||'')}<br><span class="soluk">${esc(t.studio_notu||'')}</span></div>`
+        ${esc(t.baslik||'')}<br><span class="soluk">${esc(t.studio_notu||'')}</span>
+        ${t.durum==='ONAY_BEKLIYOR'?`<div style="margin-top:8px;display:flex;gap:6px">
+          <button class="birincil kucuk" onclick="cozumOnay('${esc(t.id)}',true)">✔ Çözüldü, kapat</button>
+          <button class="kucuk" onclick="cozumOnay('${esc(t.id)}',false)">✕ Sorun devam ediyor</button></div>`:''}
+      </div>`
     ).join('')||'<span class="soluk">Henüz onaylanmış talep yok.</span>';
   }catch(e){}
 }
@@ -174,6 +188,16 @@ async function reddet(mid,btn){
     toast(d.ok?'Taslak iptal edildi.':(d.mesaj||'İptal edilemedi'));
   }catch(e){toast('İptal gönderilemedi: '+e);}
   sonMesajSayisi=-1; yukle(true);
+}
+async function cozumOnay(tid,onay){
+  try{
+    const d=await(await fetch('/api/kontrol',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({aksiyon:'talep_cozum',talep_id:tid,
+        sonuc:onay?'onayla':'reddet'})})).json();
+    toast(d.mesaj||(d.ok?'İşlendi':'İşlenemedi'));
+  }catch(e){toast('İstek gönderilemedi: '+e);}
+  yukle(true);
 }
 let motorKuruldu=false;
 function motorGoster(m){

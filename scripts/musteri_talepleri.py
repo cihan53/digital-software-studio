@@ -353,6 +353,26 @@ def talep_iptal(talep_id: str, sebep: str = "") -> dict | None:
     return None
 
 
+def talep_beklemeye_al(talep_id: str, neden: str = "") -> bool:
+    """Kullanıcı tarafından atlanan görevin talebini BEKLEMEDE'ye çeker.
+
+    Yalnızca aktif işlemdeki talepler (GELISTIRILIYOR/TESTTE/PLANLANDI)
+    kuyruğa geri alınır; COZULDU/IPTAL/ONAY_BEKLIYOR gibi durumlara
+    dokunulmaz. Senkronizasyon bir sonraki turda talebi yeniden sprinte
+    üretebilir.
+    """
+    t = getir(talep_id)
+    if not t or t.get("durum") not in ("GELISTIRILIYOR", "TESTTE", "PLANLANDI"):
+        return False
+    not_ = f"Bağlı görev atlandı — talep kuyruğa geri alındı ({neden})" \
+        if neden else "Bağlı görev atlandı — talep kuyruğa geri alındı"
+    ok = guncelle(talep_id, "BEKLEMEDE", studio_notu=not_)
+    if ok:
+        B.audit("musteri", "talep_beklemeye_alindi", talep_id=talep_id,
+                detay={"neden": neden})
+    return ok
+
+
 def yeni_talep(tur: str, baslik: str, aciklama: str, oncelik: str = "NORMAL", sayfa_url: str = "/") -> dict:
     # Mükerrer koruması: aynı başlıklı açık talep varsa yenisini açma.
     var = acik_talep_bul(baslik)

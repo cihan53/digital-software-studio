@@ -529,7 +529,7 @@ def otomatik_musteri_talepleri_senkronize_et() -> int:
         faz_id = t.get("faz_id") or aktif_faz
 
         if durum in ("COZULDU", "IPTAL", "DEGERLENDIRMEDE", "FAZ_BEKLIYOR",
-                     "INSAN_GEREKLI"):
+                     "INSAN_GEREKLI", "ONAY_BEKLIYOR"):
             continue
         if tid in mevcut_talep_idler:
             continue

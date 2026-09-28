@@ -216,12 +216,16 @@ def kontrol(body: dict) -> dict:
             if not acik:
                 return {"ok": False, "mesaj": f"{tid} zaten tamamen kapalı."}
             if aks == "atla":
+                sys.path.insert(0, str(ROOT / "scripts"))
+                import musteri_talepleri as MT
                 for t in acik:
                     if t["status"] == B.RUNNING:
                         B.request("skip", t["id"], kaynak="web")
                     else:
                         t["status"] = B.SKIPPED
                         t["note"] = "kullanıcı sprinti atladı"
+                        if t.get("talep_id"):
+                            MT.talep_beklemeye_al(t["talep_id"], t["id"])
                 B.refresh(board)
                 B.save(board)
                 if body.get("force"):
@@ -318,6 +322,36 @@ def kontrol(body: dict) -> dict:
             ek = "yeniden devreye alındı" if eski == "IPTAL" else "sprint onayı alındı"
             return {"ok": True,
                     "mesaj": f"{tid} {ek} ({faz}); sonraki boş turda panoya eklenecek."}
+        except Exception as e:
+            return {"ok": False, "mesaj": f"Talep modülü: {e}"}
+    if aks == "talep_cozum":
+        # ONAY_BEKLIYOR talebi için müşteri kararı:
+        #   sonuc=onayla → COZULDU (GitHub issue otomatik kapanır)
+        #   sonuc=reddet → BEKLEMEDE (kuyruğa geri döner, yeniden sprinte girer)
+        tid = (body.get("talep_id") or "").strip()
+        sonuc = (body.get("sonuc") or "").strip()
+        try:
+            sys.path.insert(0, str(ROOT / "scripts"))
+            import musteri_talepleri as MT
+            t = MT.getir(tid)
+            if not t:
+                return {"ok": False, "mesaj": f"{tid} bulunamadı."}
+            if t.get("durum") != "ONAY_BEKLIYOR":
+                return {"ok": False,
+                        "mesaj": f"{tid} onay beklemiyor ({t.get('durum')})."}
+            if sonuc == "onayla":
+                MT.guncelle(tid, durum="COZULDU",
+                            studio_notu="Müşteri onayı ile kapatıldı.")
+                B.request("reload", kaynak="web")
+                B.audit("web", "talep_cozum_onay", talep_id=tid)
+                return {"ok": True, "mesaj": f"{tid} çözüldü olarak kapatıldı."}
+            if sonuc == "reddet":
+                MT.guncelle(tid, durum="BEKLEMEDE",
+                            studio_notu="Müşteri: sorun devam ediyor — talep kuyruğa geri alındı.")
+                B.request("reload", kaynak="web")
+                B.audit("web", "talep_cozum_red", talep_id=tid)
+                return {"ok": True, "mesaj": f"{tid} tekrar kuyruğa alındı."}
+            return {"ok": False, "mesaj": "sonuc 'onayla' veya 'reddet' olmalı."}
         except Exception as e:
             return {"ok": False, "mesaj": f"Talep modülü: {e}"}
     if aks == "onayla":
