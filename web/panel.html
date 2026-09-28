@@ -445,9 +445,17 @@ async function talepYukle(){
      <td title="${esc(t.aciklama||'')}">${esc(t.baslik||'')}</td>
      <td class="soluk">${esc(t.sayfa_url||'')}</td><td class="soluk">${esc(t.faz_id||'')}</td>
      <td>${t.github_issue_url?`<a href="${esc(t.github_issue_url)}" target="_blank">#${t.github_issue_number}</a>`:'—'}</td>
-     <td>${!['COZULDU','IPTAL'].includes(t.durum)?
+     <td>${['DEGERLENDIRMEDE','FAZ_BEKLIYOR','BEKLEMEDE'].includes(t.durum)?
+       `<button class="kucuk" title="Sprint'e al (aktif faz kapsamında planla)" onclick="talepOnayla('${t.id}')">▶ Al</button>`:''}
+       ${!['COZULDU','IPTAL'].includes(t.durum)?
        `<button class="kucuk" title="Talebi iptal et" onclick="talepIptal('${t.id}')">🗑</button>`:''}</td></tr>`
   ).join('')||'<tr><td colspan="9" class="soluk">Talep yok.</td></tr>';
+}
+async function talepOnayla(tid){
+  if(!confirm(`${tid} aktif faz kapsamında planlanıp sprint panosuna eklensin mi?`))return;
+  const d=await(await fetch('/api/kontrol',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({aksiyon:'talep_onayla',talep_id:tid})})).json();
+  toast(d.mesaj); talepYukle();
 }
 async function talepIptal(tid){
   const sebep=prompt(`${tid} iptal edilsin mi? İsteğe bağlı sebep:`,'');
