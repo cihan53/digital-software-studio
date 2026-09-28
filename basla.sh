@@ -101,6 +101,7 @@ PYEOF
 import sys, studio_board as B
 gorev = int(sys.argv[2]) if len(sys.argv) > 2 else None
 d = B.ledger_approve(gorev=gorev)
+B.clear("onay_bekliyor")
 mg, mb = B.ledger_limits()
 print(f"✓ Onay verildi. Bugünkü kota: {d['gorev']}/{mg} görev, "
       f"${d['maliyet']:.2f}/${mb:.2f}")
