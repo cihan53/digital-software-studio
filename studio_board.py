@@ -110,6 +110,8 @@ CREATE TABLE IF NOT EXISTS talepler (
     faz_id              TEXT,
     efor                TEXT,
     triage_notu         TEXT,
+    telafi_zincir       TEXT,
+    kaynak_gorev        TEXT,
     gecmis              TEXT
 );
 
@@ -224,7 +226,8 @@ def _db_migrate(conn: sqlite3.Connection):
         cur.execute("PRAGMA table_info(talepler)")
         mevcut = {r["name"] for r in cur.fetchall()}
         # Triage/plan alanları eskiden yalnızca JSON'da yaşardı; DB'ye taşındı.
-        for col in ("cozum_plani", "faz_id", "efor", "triage_notu"):
+        for col in ("cozum_plani", "faz_id", "efor", "triage_notu",
+                    "telafi_zincir", "kaynak_gorev"):
             if col not in mevcut:
                 cur.execute(f"ALTER TABLE talepler ADD COLUMN {col} TEXT")
     except Exception:
