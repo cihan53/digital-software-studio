@@ -258,6 +258,33 @@ def kontrol(body: dict) -> dict:
                    if pano.get("kosan") else "")
             return {"ok": True, "mesaj": f"{tid} iptal edildi.{ek}"}
         return {"ok": False, "mesaj": f"{tid} bulunamadı veya zaten kapalı."}
+    if aks == "talep_onayla":
+        # DEGERLENDIRMEDE/FAZ_BEKLIYOR talebi aktif faz kapsamında PLANLANDI'ya
+        # çeker; bir sonraki pano senkronunda sprint görevi olarak eklenir.
+        tid = (body.get("talep_id") or "").strip()
+        try:
+            import musteri_talepleri as MT
+            t = MT.getir(tid)
+            if not t:
+                return {"ok": False, "mesaj": f"{tid} bulunamadı."}
+            if t.get("durum") not in ("DEGERLENDIRMEDE", "FAZ_BEKLIYOR",
+                                      "BEKLEMEDE"):
+                return {"ok": False,
+                        "mesaj": f"{tid} zaten {t.get('durum')} durumda."}
+            try:
+                sys.path.insert(0, str(ROOT / "scripts"))
+                import karar_verici_triage as KVT
+                faz = KVT.aktif_faz_getir().get("id", "FAZ-1")
+            except Exception:
+                faz = "FAZ-1"
+            MT.guncelle(tid, durum="PLANLANDI",
+                        studio_notu=f"Panelden sprint onayı verildi ({faz}).")
+            B.request("reload", kaynak="web")
+            B.audit("web", "talep_onay", talep_id=tid, detay={"faz": faz})
+            return {"ok": True,
+                    "mesaj": f"{tid} sprint onayı alındı ({faz}); sonraki boş turda panoya eklenecek."}
+        except Exception as e:
+            return {"ok": False, "mesaj": f"Talep modülü: {e}"}
     if aks == "onayla":
         g = body.get("gorev_kota")
         b = body.get("butce")
