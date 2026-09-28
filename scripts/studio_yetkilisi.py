@@ -523,7 +523,8 @@ def otomatik_musteri_talepleri_senkronize_et() -> int:
         tur = t.get("tur", "HATA").upper()
         faz_id = t.get("faz_id", "FAZ-1")
 
-        if durum in ("COZULDU", "IPTAL", "DEGERLENDIRMEDE", "FAZ_BEKLIYOR"):
+        if durum in ("COZULDU", "IPTAL", "DEGERLENDIRMEDE", "FAZ_BEKLIYOR",
+                     "INSAN_GEREKLI"):
             continue
         if tid in mevcut_talep_idler:
             continue

@@ -1817,11 +1817,21 @@ def _kalite_kapilari_kostur(task: dict, pre_snapshot: set) -> list:
         return []
 
 
-def _auto_talep_uat(task: dict, uat_cikti: str):
+# Sınırsız [UAT] telafi zinciri sprintleri kilitlemesin diye üst sınır
+UAT_MAX_REMEDIATION = int(os.getenv("STUDIO_UAT_MAX_REMEDIATION", "2"))
+
+
+def _auto_talep_uat(task: dict, uat_cikti: str) -> str | None:
     """Canlı UAT/smoke başarısızlığını müşteri talep havuzuna otomatik düşürür.
 
     Mükerrer koruması: aynı görev id'siyle açık (çözülmemiş/iptal edilmemiş)
     bir [UAT] talebi varsa yenisi açılmaz.
+
+    Sınırlı telafi zinciri: bu görev kendisi bir telafi talebinden
+    doğduysa zincir derinliği artar; STUDIO_UAT_MAX_REMEDIATION aşılınca
+    kaynak talep INSAN_GEREKLI yapılır ve yeni otomatik telafi açılmaz.
+
+    Açılan talep id'sini döner; açılmadıysa/limitteyse None.
     """
     try:
         scripts_dir = str(ROOT / "scripts")
@@ -1837,16 +1847,42 @@ def _auto_talep_uat(task: dict, uat_cikti: str):
             if (t.get("baslik") or "").startswith(f"[UAT] {task['id']}") \
                     and t.get("durum") not in ("COZULDU", "IPTAL"):
                 print(f"   [i] Açık UAT talebi zaten var: {t['id']} — mükerrer kayıt açılmadı.")
-                return
+                return t["id"]
+
+        # Sınırlı telafi zinciri: görev bir telafi talebinden mi geldi?
+        zincir = 0
+        kaynak_tid = task.get("talep_id")
+        if kaynak_tid:
+            kaynak = MT.getir(kaynak_tid) or {}
+            zincir = int(kaynak.get("telafi_zincir") or 0) + 1
+            if zincir > UAT_MAX_REMEDIATION:
+                MT.guncelle(
+                    kaynak_tid, durum="INSAN_GEREKLI",
+                    studio_notu=(
+                        f"Otomatik UAT telafi sınırı aşıldı "
+                        f"({UAT_MAX_REMEDIATION} deneme). {task['id']} görevi "
+                        f"yine başarısız oldu; insan müdahalesi gerekiyor."))
+                print(f"   ⛔ [TELAFİ SINIRI] {kaynak_tid} → INSAN_GEREKLI "
+                      f"(zincir {zincir} > {UAT_MAX_REMEDIATION}).")
+                return None
 
         aciklama = (
             f"Canlı UAT denetimi (scripts/uat_live_audit.mjs) '{task['id']}' görevinde "
             f"başarısız oldu.\n\nSon çıktı satırları:\n```\n{(uat_cikti or '').strip()[-900:]}\n```"
         )
         yeni = MT.yeni_talep("HATA", baslik, aciklama, oncelik="YUKSEK", sayfa_url="/")
-        print(f"   📥 [OTOMATİK TALEP] {yeni['id']} havuza eklendi: {baslik[:70]}")
+        # Zincir derinliği ve kaynak görev talebin üzerinde taşınır
+        data2 = MT.load_data()
+        for t in data2.get("talepler", []):
+            if t["id"] == yeni["id"]:
+                t["telafi_zincir"] = zincir
+                t["kaynak_gorev"] = task["id"]
+        MT.save_data(data2)
+        print(f"   📥 [OTOMATİK TALEP] {yeni['id']} havuza eklendi (zincir {zincir}/{UAT_MAX_REMEDIATION}): {baslik[:70]}")
+        return yeni["id"]
     except Exception as e:
         print(f"   [UYARI] UAT talebi otomatik açılamadı: {e}", file=sys.stderr)
+        return None
 
 
 def verify_task_execution(task: dict, sprint: dict, interactive: bool = False) -> str:
@@ -1872,7 +1908,9 @@ def verify_task_execution(task: dict, sprint: dict, interactive: bool = False) -
                     if res.stdout:
                         print("      " + "\n      ".join(res.stdout.strip().splitlines()[-8:]))
                     note_parts.append("canlı UAT hata tespit edildi")
-                    _auto_talep_uat(task, res.stdout)
+                    telafi_tid = _auto_talep_uat(task, res.stdout)
+                    if telafi_tid:
+                        note_parts.append(f"telafi {telafi_tid} talebine devredildi")
             except Exception as e:
                 print(f"   ⚠️  UAT çalıştırılamadı: {e}")
                 note_parts.append("uat çalıştırılamadı")
@@ -2194,10 +2232,21 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
     if gate_notes:
         note = "; ".join([n for n in [note] + gate_notes if n])
         # Smoke kapısı başarısızsa bulguyu talep havuzuna düşür (mükerrer korumalı)
+        # Smoke kapısı başarısızsa bulguyu talep havuzuna düşür (mükerrer korumalı)
         if any("smoke başarısız" in n for n in gate_notes):
-            _auto_talep_uat(task, "; ".join(gate_notes))
+            telafi_tid = _auto_talep_uat(task, "; ".join(gate_notes))
+            if telafi_tid:
+                note = (note + "; " if note else "") + f"telafi {telafi_tid} talebine devredildi"
 
-    B.mark(board, task["id"], B.DONE, note=note)
+    # Doğrulama başarısızlığı telafi talebine devredildiyse görevi
+    # SKIPPED ile kapat: sprint bloklanmaz, telafi sprinti koşabilir.
+    uat_devri = ("canlı UAT hata tespit edildi" in note
+                 or any(n.startswith("smoke başarısız") for n in gate_notes))
+    if uat_devri:
+        B.mark(board, task["id"], B.SKIPPED, note=note)
+        print(f"   ⏭️  [TELAFİYE DEVİR] {task['id']} SKIPPED — düzeltme telafi talebi sprintinde yapılacak.")
+    else:
+        B.mark(board, task["id"], B.DONE, note=note)
 
     # Müşteri talebi görevi ise durumu otomatik güncelle
     if task.get("talep_id"):
@@ -2626,13 +2675,25 @@ def run_board(org: dict, brief: str, once: bool = False,
             board = B.load()
             continue
 
-        # UAT/canlı test görevi canlı ortam gerektirir; kapalıysa ekrana uyar.
+        # UAT/canlı test görevi canlı ortam gerektirir. Kapalıysa görevi
+        # koşturma (garanti-fail + talep spam'i): READY'de beklet.
         if B.needs_live(task) and not B.live_up():
             kapali = [str(p) for p, ok in B.live_status().items() if not ok]
-            print(f"\n[⚠ UYARI] {task['id']} canlı sistem gerektiriyor ama "
-                  f"port {', '.join(kapali)} kapalı (canli.sh çalışmıyor).")
-            print("          UAT doğrulaması başarısız olabilir. "
-                  "Başlatmak için: ./basla.sh --canli")
+            if once:
+                print(f"\n[⚠ UYARI] {task['id']} canlı sistem gerektiriyor ama "
+                      f"port {', '.join(kapali)} kapalı. Görev bekletildi; "
+                      f"başlatmak için: ./basla.sh --canli")
+                break
+            # ~2 dk'da bir hatırlat; görev READY kalır, live açılınca koşar.
+            if getattr(run_board, "_live_warn", 0) % 24 == 0:
+                print(f"\n[⏸ CANLI BEKLENİYOR] {task['id']} için port "
+                      f"{', '.join(kapali)} kapalı — görev READY'de bekliyor. "
+                      f"(./basla.sh --canli)")
+            run_board._live_warn = getattr(run_board, "_live_warn", 0) + 1
+            time.sleep(5)
+            board = B.load()
+            continue
+        run_board._live_warn = 0
 
         B.mark(board, task["id"], B.RUNNING)
         B.save(board)
