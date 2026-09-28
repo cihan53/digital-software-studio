@@ -64,6 +64,7 @@
 </div>
 <div id="gunc-banner" class="gunc-banner gizli"></div>
 <div id="motor-banner" class="gunc-banner gizli"></div>
+<div id="kota-banner" class="gunc-banner gizli"></div>
 <div id="motorModal" class="motor-modal gizli">
   <div class="motor-kutu">
     <div class="baslik">⚙ Motor değiştir — <span id="mmHedef"></span></div>
@@ -197,6 +198,17 @@ async function ozetYukle(){
         ` <span class="soluk">veya <code>./basla.sh --motor ${esc(mo.hedef||'&lt;görev&gt;')} &lt;backend&gt;</code></span>`;
       mb.classList.remove('gizli');
     }else mb.classList.add('gizli');
+    const kb=document.getElementById('kota-banner');
+    const ob=d.onay_bekliyor;
+    if(ob){
+      kb.innerHTML=`⚠ <b>Günlük kota doldu</b> — koşucu onay bekliyor `+
+        `<span class="soluk">(${ob.gorev}/${ob.sinir_gorev} görev · `+
+        `$${(ob.maliyet||0).toFixed(2)}/$${(ob.sinir_butce||0).toFixed(2)} · `+
+        `sıradaki ${esc(ob.sonraki||'?')} ~$${(ob.tahmin||0).toFixed(2)})</span>`+
+        ` <button onclick="onayla()">Kota Onayla</button>`+
+        ` <span class="soluk">veya <code>./basla.sh --onayla</code></span>`;
+      kb.classList.remove('gizli');
+    }else kb.classList.add('gizli');
     motorOverrides={};
     for(const o of (d.motor_override||[])) motorOverrides[o.hedef_id]=o;
     if(typeof panoVeri!=='undefined'&&panoVeri) panoCiz();
