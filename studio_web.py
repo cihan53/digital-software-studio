@@ -287,30 +287,37 @@ def kontrol(body: dict) -> dict:
             return {"ok": True, "mesaj": f"{tid} iptal edildi.{ek}"}
         return {"ok": False, "mesaj": f"{tid} bulunamadı veya zaten kapalı."}
     if aks == "talep_onayla":
-        # DEGERLENDIRMEDE/FAZ_BEKLIYOR talebi aktif faz kapsamında PLANLANDI'ya
-        # çeker; bir sonraki pano senkronunda sprint görevi olarak eklenir.
+        # DEGERLENDIRMEDE/FAZ_BEKLIYOR/IPTAL talebi aktif faz kapsamında
+        # PLANLANDI'ya çeker; bir sonraki pano senkronunda sprint görevi
+        # olarak eklenir. IPTAL → yeniden devreye alma anlamı taşır.
         tid = (body.get("talep_id") or "").strip()
         try:
             import musteri_talepleri as MT
             t = MT.getir(tid)
             if not t:
                 return {"ok": False, "mesaj": f"{tid} bulunamadı."}
-            if t.get("durum") not in ("DEGERLENDIRMEDE", "FAZ_BEKLIYOR",
-                                      "BEKLEMEDE"):
+            eski = t.get("durum")
+            if eski not in ("DEGERLENDIRMEDE", "FAZ_BEKLIYOR",
+                            "BEKLEMEDE", "IPTAL"):
                 return {"ok": False,
-                        "mesaj": f"{tid} zaten {t.get('durum')} durumda."}
+                        "mesaj": f"{tid} zaten {eski} durumda."}
             try:
                 sys.path.insert(0, str(ROOT / "scripts"))
                 import karar_verici_triage as KVT
                 faz = KVT.aktif_faz_getir().get("id", "FAZ-1")
             except Exception:
                 faz = "FAZ-1"
-            MT.guncelle(tid, durum="PLANLANDI",
-                        studio_notu=f"Panelden sprint onayı verildi ({faz}).")
+            MT.guncelle(
+                tid, durum="PLANLANDI",
+                studio_notu=("Panelden yeniden devreye alındı" if eski == "IPTAL"
+                             else "Panelden sprint onayı verildi")
+                + f" ({faz}).")
             B.request("reload", kaynak="web")
-            B.audit("web", "talep_onay", talep_id=tid, detay={"faz": faz})
+            B.audit("web", "talep_onay", talep_id=tid,
+                    detay={"faz": faz, "onceki_durum": eski})
+            ek = "yeniden devreye alındı" if eski == "IPTAL" else "sprint onayı alındı"
             return {"ok": True,
-                    "mesaj": f"{tid} sprint onayı alındı ({faz}); sonraki boş turda panoya eklenecek."}
+                    "mesaj": f"{tid} {ek} ({faz}); sonraki boş turda panoya eklenecek."}
         except Exception as e:
             return {"ok": False, "mesaj": f"Talep modülü: {e}"}
     if aks == "onayla":
