@@ -98,6 +98,7 @@ case "${1:-}" in
     echo "  ./musteri.sh --triage                Karar verici triage ve fazlama denetimini çalıştırır"
     echo "  ./musteri.sh --fazlar                Yol haritası fazlarını ve durumlarını listeler"
     echo "  ./musteri.sh --ata [ID] [FAZ]        Talebi belirtilen faza aktarır (örn: --ata TALEP-012 FAZ-2)"
+    echo "  ./musteri.sh --faz-ilerlet           Aktif fazı tamamla, sonraki fazı aktif et"
     exit 0
     ;;
   --triage|--karar)
@@ -106,6 +107,10 @@ case "${1:-}" in
     ;;
   --fazlar)
     $PY scripts/karar_verici_triage.py --liste
+    exit 0
+    ;;
+  --faz-ilerlet)
+    $PY scripts/karar_verici_triage.py --faz-ilerlet
     exit 0
     ;;
   --ata)

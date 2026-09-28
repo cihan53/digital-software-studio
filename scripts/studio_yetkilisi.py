@@ -516,20 +516,25 @@ def otomatik_musteri_talepleri_senkronize_et() -> int:
             mevcut_talep_idler.add(m.group(0))
 
     # Yalnızca aktif faza ait onaylanmış talepler ve acil HATA bildirimleri sprinte alınır
+    try:
+        import karar_verici_triage as KVT
+        aktif_faz = KVT.aktif_faz_getir().get("id", "FAZ-1")
+    except Exception:
+        aktif_faz = "FAZ-1"
     isleme_alinacaklar = []
     for t in talepler:
         tid = t.get("id")
         durum = t.get("durum", "BEKLEMEDE")
         tur = t.get("tur", "HATA").upper()
-        faz_id = t.get("faz_id", "FAZ-1")
+        faz_id = t.get("faz_id") or aktif_faz
 
         if durum in ("COZULDU", "IPTAL", "DEGERLENDIRMEDE", "FAZ_BEKLIYOR"):
             continue
         if tid in mevcut_talep_idler:
             continue
 
-        # Sadece HATA olanlar veya Faz 1 onaylı olanlar aktif sprinte girebilir
-        if tur != "HATA" and faz_id != "FAZ-1":
+        # Sadece HATA olanlar veya aktif faz onaylı olanlar sprinte girebilir
+        if tur != "HATA" and faz_id != aktif_faz:
             continue
 
         # Planı yoksa önce plan çıkar
