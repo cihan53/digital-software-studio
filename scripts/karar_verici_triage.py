@@ -244,6 +244,49 @@ def triage_uygula(talep_id: str, hedef_faz: str = None, karar: str = None, karar
     return False
 
 
+def faz_ilerlet() -> bool:
+    """Aktif fazı TAMAMLANDI yapar, sıradaki fazın kilidini açıp AKTIF'e çeker.
+
+    O faza ait FAZ_BEKLIYOR talepler PLANLANDI'ya çekilir ki bir sonraki pano
+    senkronunda sprint görevi olarak işleme girsinler.
+    """
+    data = load_fazlar()
+    fazlar = data.get("fazlar", [])
+    aktif_idx = next((i for i, f in enumerate(fazlar)
+                      if f.get("durum") == "AKTIF"), None)
+    if aktif_idx is None:
+        print("[!] AKTIF faz bulunamadı.")
+        return False
+    if aktif_idx + 1 >= len(fazlar):
+        print(f"[i] {fazlar[aktif_idx]['id']} son faz; ilerletilecek faz yok.")
+        return False
+    eski, yeni = fazlar[aktif_idx], fazlar[aktif_idx + 1]
+    eski["durum"], eski["kilitli"] = "TAMAMLANDI", True
+    yeni["durum"], yeni["kilitli"] = "AKTIF", False
+    save_fazlar(data)
+    print(f"  ✓ {eski['id']} TAMAMLANDI → {yeni['id']} AKTIF (kilit açıldı)")
+
+    if MT:
+        try:
+            d = MT.load_data()
+            donusturulen = 0
+            for t in d.get("talepler", []):
+                if t.get("durum") in ("FAZ_BEKLIYOR", "DEGERLENDIRMEDE") \
+                        and t.get("faz_id") == yeni["id"]:
+                    t["durum"] = "PLANLANDI"
+                    t.setdefault("gecmis", []).append({
+                        "zaman": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        "eylem": f"{yeni['id']} aktif oldu, talep planlandı",
+                        "durum": "PLANLANDI"})
+                    donusturulen += 1
+            if donusturulen:
+                MT.save_data(d)
+                print(f"  ✓ {donusturulen} bekleyen {yeni['id']} talebi PLANLANDI yapıldı")
+        except Exception:
+            pass
+    return True
+
+
 def bekleyenleri_triage_et(otomatik: bool = True):
     """Henüz karara bağlanmamış tüm talepleri listeler veya otomatik triage eder."""
     if not MT:
@@ -293,8 +336,14 @@ def main():
     parser.add_argument("--faz", type=str, default="FAZ-2", help="Hedef Faz (FAZ-1, FAZ-2, FAZ-3)")
     parser.add_argument("--not", dest="karar_notu", type=str, help="Karar verici notu")
     parser.add_argument("--liste", action="store_true", help="Tüm fazları ve talepleri listele")
+    parser.add_argument("--faz-ilerlet", action="store_true",
+                        help="Aktif fazı TAMAMLANDI yap, sonraki fazı AKTIF'e çek")
 
     args = parser.parse_args()
+
+    if args.faz_ilerlet:
+        faz_ilerlet()
+        return
 
     if args.ata:
         triage_uygula(args.ata, hedef_faz=args.faz, karar_notu=args.karar_notu)

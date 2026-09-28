@@ -1405,7 +1405,16 @@ Her dosyayı tam olarak şu formatta ayır (dizine göre GÖRELİ yol kullan):
 <...>
 
 Dosya uzantılarını mimari dokümanda seçilen dile/framework'e göre belirle.
-İşaretleyici satırları dışında hiçbir açıklama metni yazma."""
+İşaretleyici satırları dışında hiçbir açıklama metni yazma.
+
+KENDİ KENDİNE DOĞRULAMA (ZORUNLU):
+- Yazdığın her import/require yolunun gerçekten var olan bir dosyaya veya
+  kurulu bir pakete işaret ettiğinden emin ol. Var olmayan modül
+  ('Cannot find module') üretme; referans vereceğin yardımcı dosya yoksa
+  önce onu da üret.
+- Görevi bitirmeden önce ürettiğin kodun derlendiğini/projeyle tutarlı
+  olduğunu doğrula; görev sonrası deterministik derleme kapısı bu
+  dosyaları kontrol eder ve hata bulursa otomatik düzeltme talebi açılır."""
 
 CODE_HINT = "\nBu bir kaynak kod dosyası: markdown kod çiti kullanma, sadece ham kodu yaz."
 
@@ -1821,11 +1830,12 @@ def _kalite_kapilari_kostur(task: dict, pre_snapshot: set) -> list:
 UAT_MAX_REMEDIATION = int(os.getenv("STUDIO_UAT_MAX_REMEDIATION", "2"))
 
 
-def _auto_talep_uat(task: dict, uat_cikti: str) -> str | None:
-    """Canlı UAT/smoke başarısızlığını müşteri talep havuzuna otomatik düşürür.
+def _auto_talep_uat(task: dict, uat_cikti: str, kaynak: str = "UAT",
+                    neden: str = "canlı kabul denetimi") -> str | None:
+    """Canlı UAT/smoke/derleme başarısızlığını müşteri talep havuzuna düşürür.
 
-    Mükerrer koruması: aynı görev id'siyle açık (çözülmemiş/iptal edilmemiş)
-    bir [UAT] talebi varsa yenisi açılmaz.
+    Mükerrer koruması: aynı görev id'si ve kaynak etiketiyle açık
+    (çözülmemiş/iptal edilmemiş) bir talep varsa yenisi açılmaz.
 
     Sınırlı telafi zinciri: bu görev kendisi bir telafi talebinden
     doğduysa zincir derinliği artar; STUDIO_UAT_MAX_REMEDIATION aşılınca
@@ -1841,12 +1851,12 @@ def _auto_talep_uat(task: dict, uat_cikti: str) -> str | None:
         import importlib
         importlib.reload(MT)
 
-        baslik = f"[UAT] {task['id']} canlı kabul denetimi başarısız: {task.get('title', '')[:80]}"
+        baslik = f"[{kaynak}] {task['id']} {neden} başarısız: {task.get('title', '')[:80]}"
         data = MT.load_data()
         for t in data.get("talepler", []):
-            if (t.get("baslik") or "").startswith(f"[UAT] {task['id']}") \
+            if (t.get("baslik") or "").startswith(f"[{kaynak}] {task['id']}") \
                     and t.get("durum") not in ("COZULDU", "IPTAL"):
-                print(f"   [i] Açık UAT talebi zaten var: {t['id']} — mükerrer kayıt açılmadı.")
+                print(f"   [i] Açık {kaynak} talebi zaten var: {t['id']} — mükerrer kayıt açılmadı.")
                 return t["id"]
 
         # Sınırlı telafi zinciri: görev bir telafi talebinden mi geldi?
@@ -1859,7 +1869,7 @@ def _auto_talep_uat(task: dict, uat_cikti: str) -> str | None:
                 MT.guncelle(
                     kaynak_tid, durum="INSAN_GEREKLI",
                     studio_notu=(
-                        f"Otomatik UAT telafi sınırı aşıldı "
+                        f"Otomatik {kaynak} telafi sınırı aşıldı "
                         f"({UAT_MAX_REMEDIATION} deneme). {task['id']} görevi "
                         f"yine başarısız oldu; insan müdahalesi gerekiyor."))
                 print(f"   ⛔ [TELAFİ SINIRI] {kaynak_tid} → INSAN_GEREKLI "
@@ -1867,8 +1877,8 @@ def _auto_talep_uat(task: dict, uat_cikti: str) -> str | None:
                 return None
 
         aciklama = (
-            f"Canlı UAT denetimi (scripts/uat_live_audit.mjs) '{task['id']}' görevinde "
-            f"başarısız oldu.\n\nSon çıktı satırları:\n```\n{(uat_cikti or '').strip()[-900:]}\n```"
+            f"Deterministik kalite kapısı '{task['id']}' görevinde "
+            f"{neden} başarısızlığı tespit etti.\n\nSon çıktı satırları:\n```\n{(uat_cikti or '').strip()[-900:]}\n```"
         )
         yeni = MT.yeni_talep("HATA", baslik, aciklama, oncelik="YUKSEK", sayfa_url="/")
         # Zincir derinliği ve kaynak görev talebin üzerinde taşınır
@@ -2231,17 +2241,22 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
     gate_notes = _kalite_kapilari_kostur(task, pre_task_git)
     if gate_notes:
         note = "; ".join([n for n in [note] + gate_notes if n])
-        # Smoke kapısı başarısızsa bulguyu talep havuzuna düşür (mükerrer korumalı)
-        # Smoke kapısı başarısızsa bulguyu talep havuzuna düşür (mükerrer korumalı)
-        if any("smoke başarısız" in n for n in gate_notes):
-            telafi_tid = _auto_talep_uat(task, "; ".join(gate_notes))
-            if telafi_tid:
-                note = (note + "; " if note else "") + f"telafi {telafi_tid} talebine devredildi"
+        # Başarısız kapılar bulguyu talep havuzuna düşürür (mükerrer korumalı)
+        for prefix, kw, nd in (("smoke başarısız", "UAT", "smoke denetimi"),
+                               ("derleme başarısız", "BUILD",
+                                "derleme/import doğrulaması")):
+            if any(n.startswith(prefix) for n in gate_notes):
+                telafi_tid = _auto_talep_uat(task, "; ".join(gate_notes),
+                                             kaynak=kw, neden=nd)
+                if telafi_tid:
+                    note = (note + "; " if note else "") \
+                        + f"telafi {telafi_tid} talebine devredildi"
 
     # Doğrulama başarısızlığı telafi talebine devredildiyse görevi
     # SKIPPED ile kapat: sprint bloklanmaz, telafi sprinti koşabilir.
     uat_devri = ("canlı UAT hata tespit edildi" in note
-                 or any(n.startswith("smoke başarısız") for n in gate_notes))
+                 or any(n.startswith(("smoke başarısız", "derleme başarısız"))
+                        for n in gate_notes))
     if uat_devri:
         B.mark(board, task["id"], B.SKIPPED, note=note)
         print(f"   ⏭️  [TELAFİYE DEVİR] {task['id']} SKIPPED — düzeltme telafi talebi sprintinde yapılacak.")
