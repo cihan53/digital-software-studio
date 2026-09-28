@@ -58,6 +58,8 @@
   <button id="bDuraklat" onclick="kontrol('duraklat')">⏸ Duraklat</button>
   <button id="bSurdur" class="gizli" onclick="kontrol('surdur')">▶ Sürdür</button>
   <button onclick="onayla()">💰 Kota Onayla</button>
+  <label class="soluk" title="Atla/Geç aksiyonlarında çalışan çağrıyı anında keser" style="cursor:pointer">
+    <input type="checkbox" id="forceChk"> ⚡ anında kes</label>
   <button class="tehlike" onclick="kontrol('durdur')">⏹ Durdur</button>
   <button class="tehlike" onclick="kontrol('acil_durdur')" title="Koşucuyu ve aktif çağrıyı anında öldürür (SIGKILL)">🛑 Acil Durdur</button>
   <a href="/"><button>⌂</button></a>
@@ -255,6 +257,7 @@ function panoCiz(){
     div.innerHTML=`<div class="sprint-bas"><b>${esc(s.id)}</b> ${esc(s.name||'')}
       <span class="soluk">${esc(s.planned_start||'?')} → ${esc(s.planned_end||'?')}</span>
       <span class="rozet r-${s.status}">${s.status}</span>${ovrz}
+      ${s.status!=='DONE'?`<button class="kucuk" title="Sprintteki tüm açık görevleri atla" onclick="kontrol('atla','${s.id}')">⤼</button>`:''}
       <button class="kucuk" title="Sprint motorunu değiştir" onclick="motorSec('${s.id}')">⚙</button></div>`;
     const g=document.createElement('div'); g.className='gorevler'; g.dataset.sprint=s.id;
     for(const t of s.tasks||[]) g.appendChild(gorevSatir(t));
@@ -302,9 +305,14 @@ async function oncelikOner(gid,deger){
 async function kontrol(aks,gorev,force){
   if(aks==='durdur'&&!confirm('Koşucu durdurulsun mu?'))return;
   if(aks==='acil_durdur'&&!confirm('Koşucu ve çalışan çağrı ANINDA öldürülecek (yarım iş kalabilir).\nDevam?'))return;
+  // Sprint id (S33 gibi) ile atla → toplu işlem olduğu için onay iste
+  if(aks==='atla'&&gorev&&/^S\d+$/.test(gorev)&&
+     !confirm(`${gorev} sprintindeki tüm açık görevler atlanacak.\nDevam?`))return;
+  if((aks==='atla'||aks==='gec')&&document.getElementById('forceChk').checked)
+    force=true;
   const d=await(await fetch('/api/kontrol',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({aksiyon:aks,gorev:gorev,force:!!force})})).json();
-  toast(d.mesaj); ozetYukle();
+  toast(d.mesaj); ozetYukle(); panoYukle();
 }
 let motorOverrides={};
 // Bilinen model listeleri — agy `agy models` çıktısından, claude takma adlarından.
