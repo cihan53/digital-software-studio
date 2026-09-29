@@ -6,10 +6,14 @@
 <title>Müşteri Odası — Digital Software Studio</title>
 <link rel="stylesheet" href="/web/stil.css">
 <style>
-  .duzen { display: flex; gap: 18px; height: calc(100vh - 57px); }
+  .icerik { display: flex; flex-direction: column; height: calc(100vh - 57px);
+    box-sizing: border-box; }
+  .duzen { display: flex; gap: 18px; flex: 1; min-height: 0; }
   .sohbet { flex: 1; display: flex; flex-direction: column; background: var(--panel);
     border: 1px solid var(--sinir); border-radius: var(--r); overflow: hidden; }
-  .mesajlar { flex: 1; overflow-y: auto; padding: 18px; }
+  .mesajlar { flex: 1; overflow-y: auto; padding: 18px; display: flex;
+    flex-direction: column; }
+  .alt-yasla { flex: 1; }
   .mesaj { max-width: 78%; margin-bottom: 12px; padding: 10px 14px; border-radius: 12px; white-space: pre-wrap; }
   .m-musteri { margin-left: auto; background: #1f3a5f; border-bottom-right-radius: 4px; }
   .m-asistan { background: var(--panel2); border: 1px solid var(--sinir); border-bottom-left-radius: 4px; }
@@ -136,9 +140,10 @@ async function yukle(zorla){
     if(!d.ok)return;
     if(zorla||d.mesajlar.length!==sonMesajSayisi){
       sonMesajSayisi=d.mesajlar.length;
-      const kutu=$('mesajlar'); kutu.innerHTML='';
+      const kutu=$('mesajlar'); kutu.innerHTML='<div class="alt-yasla"></div>';
       if(!d.mesajlar.length){
-        kutu.innerHTML='<div class="mesaj m-sistem">Merhaba! 👋 Sorununuzu veya isteğinizi yazın; '+
+        kutu.innerHTML='<div class="alt-yasla"></div><div class="mesaj m-sistem">'+
+          'Merhaba! 👋 Sorununuzu veya isteğinizi yazın; '+
           'birlikte netleştirip onayınıza sunalım.</div>';
       }
       for(const m of d.mesajlar) kutu.appendChild(mesajCiz(m));
