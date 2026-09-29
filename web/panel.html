@@ -46,6 +46,7 @@
     background: rgba(0,0,0,.3); color: inherit; border: 1px solid var(--sinir);
     border-radius: 6px; font-size: 13px; }
   .motor-kutu .baslik { font-weight: 600; margin-bottom: 10px; }
+  .filtre .secili { border-color: var(--vurgu); color: var(--vurgu); font-weight: 600; }
 </style>
 </head>
 <body>
@@ -90,6 +91,7 @@
   <div class="sekme" data-t="audit" onclick="sekmeAc('audit')">🧾 Audit Log</div>
   <div class="sekme" data-t="cagri" onclick="sekmeAc('cagri')">🧠 İşlem Logları</div>
   <div class="sekme" data-t="talep" onclick="sekmeAc('talep')">📥 Talepler</div>
+  <div class="sekme" data-t="faz" onclick="sekmeAc('faz')">🗺 Fazlar</div>
 </div>
 <div class="icerik">
   <div id="aktif" class="kart aktif-kart gizli"></div>
@@ -97,6 +99,7 @@
   <section id="s-pano">
     <div class="ipucu">Görevleri sürükleyip bırakarak <b>öncelik önerisi</b> verirsiniz;
       son sırayı framework bağımlılık ve faz kurallarıyla belirler.</div>
+    <div class="filtre" id="pano-filtre"></div>
     <div id="pano">Yükleniyor…</div>
   </section>
 
@@ -131,6 +134,17 @@
       <th>ID</th><th>Tür</th><th>Öncelik</th><th>Durum</th><th>Başlık</th><th>Sayfa</th><th>Faz</th><th>Issue</th><th></th>
     </tr></thead><tbody id="talep"></tbody></table>
   </section>
+
+  <section id="s-faz" class="gizli">
+    <div class="durum-hat">
+      <span class="soluk">Aktif faz kapanınca sıradaki faz açılır; o faza ait bekleyen talepler
+        otomatik PLANLANDI olur. Talepleri başka faza Talepler sekmesindeki Faz sütunundan taşıyabilirsiniz.</span>
+      <button onclick="fazIlerlet()">▶ Sonraki Faza Geç</button>
+    </div>
+    <table class="tablo"><thead><tr>
+      <th>ID</th><th>Faz</th><th>Durum</th><th>Kilit</th><th>Hedef Tarih</th><th>Önkoşul</th>
+    </tr></thead><tbody id="faz"></tbody></table>
+  </section>
 </div>
 
 <div id="toast" class="bildirim gizli"></div>
@@ -150,10 +164,10 @@ function modalKapat(){ document.getElementById('modal').classList.add('gizli'); 
 
 function sekmeAc(t){
   document.querySelectorAll('.sekme').forEach(x=>x.classList.toggle('aktif', x.dataset.t===t));
-  for (const s of ['pano','canli','audit','cagri','talep'])
+  for (const s of ['pano','canli','audit','cagri','talep','faz'])
     document.getElementById('s-'+s).classList.toggle('gizli', s!==t);
   if(t==='audit') auditYukle(); if(t==='cagri') cagriYukle();
-  if(t==='talep') talepYukle(); if(t==='canli') canliYukle();
+  if(t==='talep') talepYukle(); if(t==='canli') canliYukle(); if(t==='faz') fazYukle();
 }
 let aktifSekme='pano';
 
@@ -246,11 +260,34 @@ async function panoYukle(){
     panoVeri=d.pano; panoCiz();
   }catch(e){}
 }
+// Pano durum grupları — görevler duruma göre ayrı görüntülenebilir.
+const GOREV_GRUP = {
+  ACIK:      t => !['DONE','SKIPPED'].includes(t.status),
+  CALISIYOR: t => t.status==='RUNNING',
+  SIRADA:    t => ['TODO','READY'].includes(t.status),
+  SORUNLU:   t => ['FAILED','BLOCKED'].includes(t.status),
+  TAMAMLANAN:t => t.status==='DONE',
+  ATLANAN:   t => t.status==='SKIPPED',
+  TUMU:      t => true,
+};
+const GRUP_AD = {ACIK:'Açık',CALISIYOR:'Çalışıyor',SIRADA:'Sırada',SORUNLU:'Sorunlu',
+  TAMAMLANAN:'Tamamlanan',ATLANAN:'Atlanan',TUMU:'Tümü'};
+let panoFiltre='ACIK';
+function panoFiltreSec(k){ panoFiltre=k; panoCiz(); }
 function panoCiz(){
   const kok=document.getElementById('pano');
   kok.innerHTML='';
   const sprintler=[...(panoVeri.sprints||[])].sort((a,b)=>(b.order??0)-(a.order??0));
+  const tum=[];
+  for(const s of sprintler) for(const t of s.tasks||[]) tum.push(t);
+  document.getElementById('pano-filtre').innerHTML=Object.keys(GOREV_GRUP).map(k=>
+    `<button class="kucuk${panoFiltre===k?' secili':''}" onclick="panoFiltreSec('${k}')">`+
+    `${GRUP_AD[k]} <span class="soluk">${tum.filter(GOREV_GRUP[k]).length}</span></button>`
+  ).join(' ');
+  const fn=GOREV_GRUP[panoFiltre]||GOREV_GRUP.ACIK;
   for(const s of sprintler){
+    const gorevler=(s.tasks||[]).filter(fn);
+    if(!gorevler.length) continue;   // bu görünümde görevi olmayan sprinti gösterme
     const ov=motorOverrides[s.id];
     const ovrz=ov?` <span class="motor-rozet" title="override — kaldırmak için tıkla" onclick="motorKaldir('${s.id}')">⚙ ${esc(ov.backend||'')}${ov.model?'/'+esc(ov.model):''} ✕</span>`:'';
     const div=document.createElement('div'); div.className='sprint';
@@ -260,9 +297,11 @@ function panoCiz(){
       ${s.status!=='DONE'?`<button class="kucuk" title="Sprintteki tüm açık görevleri atla" onclick="kontrol('atla','${s.id}')">⤼</button>`:''}
       <button class="kucuk" title="Sprint motorunu değiştir" onclick="motorSec('${s.id}')">⚙</button></div>`;
     const g=document.createElement('div'); g.className='gorevler'; g.dataset.sprint=s.id;
-    for(const t of s.tasks||[]) g.appendChild(gorevSatir(t));
+    for(const t of gorevler) g.appendChild(gorevSatir(t));
     div.appendChild(g); kok.appendChild(div);
   }
+  if(!kok.children.length)
+    kok.innerHTML='<div class="kart soluk">Bu görünümde görev yok.</div>';
 }
 function gorevSatir(t){
   const r=document.createElement('div');
@@ -447,11 +486,26 @@ function mdlGoster(seq,alan){ const c=window._mdl; if(c) document.getElementById
 // ---------- talepler ----------
 async function talepYukle(){
   const d=await(await fetch('/api/talepler')).json();
+  let fazlar=[];
+  try{
+    const fd=await(await fetch('/api/fazlar')).json();
+    fazlar=((fd.fazlar&&fd.fazlar.fazlar)||[]);
+  }catch(e){}
+  // Kapalı olmayan taleplerde Faz sütunu açılır menü olur — seçim talebi
+  // o faza taşır (aktif faz → PLANLANDI, gelecek faz → FAZ_BEKLIYOR).
+  const fazSecim=(t)=>{
+    if(['COZULDU','IPTAL'].includes(t.durum))
+      return `<span class="soluk">${esc(t.faz_id||'')}</span>`;
+    return `<select onchange="talepFaz('${t.id}',this.value)">`+
+      fazlar.map(f=>`<option value="${esc(f.id)}"${f.id===t.faz_id?' selected':''}>${esc(f.id)}</option>`).join('')+
+      (t.faz_id&&!fazlar.some(f=>f.id===t.faz_id)?`<option value="${esc(t.faz_id)}" selected>${esc(t.faz_id)}</option>`:'')+
+      `</select>`;
+  };
   document.getElementById('talep').innerHTML=(d.talepler||[]).slice().reverse().map(t=>
     `<tr><td><b>${esc(t.id)}</b></td><td>${esc(t.tur||'')}</td><td>${esc(t.oncelik||'')}</td>
      <td><span class="rozet r-${t.durum}">${esc(t.durum||'')}</span></td>
      <td title="${esc(t.aciklama||'')}">${esc(t.baslik||'')}</td>
-     <td class="soluk">${esc(t.sayfa_url||'')}</td><td class="soluk">${esc(t.faz_id||'')}</td>
+     <td class="soluk">${esc(t.sayfa_url||'')}</td><td>${fazSecim(t)}</td>
      <td>${t.github_issue_url?`<a href="${esc(t.github_issue_url)}" target="_blank">#${t.github_issue_number}</a>`:'—'}</td>
      <td>${t.durum==='IPTAL'?
        `<button class="kucuk" title="Talebi yeniden devreye al" onclick="talepDevreyeAl('${t.id}')">↺ Devreye Al</button>`:''}
@@ -488,12 +542,37 @@ async function talepIptal(tid){
     body:JSON.stringify({aksiyon:'talep_iptal',talep_id:tid,sebep:sebep})})).json();
   toast(d.mesaj); talepYukle();
 }
+async function talepFaz(tid,faz){
+  const d=await(await fetch('/api/kontrol',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({aksiyon:'talep_faz',talep_id:tid,faz:faz})})).json();
+  toast(d.mesaj); talepYukle();
+}
+
+// ---------- fazlar ----------
+async function fazYukle(){
+  try{
+    const d=await(await fetch('/api/fazlar')).json();
+    document.getElementById('faz').innerHTML=((d.fazlar&&d.fazlar.fazlar)||[]).map(f=>
+      `<tr><td><b>${esc(f.id)}</b></td><td>${esc(f.ad||'')}</td>
+       <td><span class="rozet r-${f.durum}">${esc(f.durum||'')}</span></td>
+       <td>${f.kilitli?'🔒':'🔓'}</td>
+       <td class="soluk">${esc(f.hedef_tarih||'')}</td>
+       <td class="soluk">${esc(f.onkosul_faz||'—')}</td></tr>`
+    ).join('')||'<tr><td colspan="6" class="soluk">Faz tanımı yok.</td></tr>';
+  }catch(e){}
+}
+async function fazIlerlet(){
+  if(!confirm('Aktif faz TAMAMLANDI yapılıp sıradaki faz AKTIF olacak.\nO faza ait bekleyen talepler planlanır. Devam?'))return;
+  const d=await(await fetch('/api/kontrol',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({aksiyon:'faz_ilerlet'})})).json();
+  toast(d.mesaj); fazYukle(); talepYukle();
+}
 
 // ---------- döngü ----------
 ozetYukle(); panoYukle();
 setInterval(ozetYukle,2500);
 setInterval(()=>{ if(aktifSekme==='pano')panoYukle(); if(aktifSekme==='canli')canliYukle();
-  if(aktifSekme==='audit')auditYukle(); },3000);
+  if(aktifSekme==='audit')auditYukle(); if(aktifSekme==='faz')fazYukle(); },3000);
 document.querySelectorAll('.sekme').forEach(x=>x.addEventListener('click',()=>aktifSekme=x.dataset.t));
 </script>
 </body>
