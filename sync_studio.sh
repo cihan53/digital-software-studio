@@ -3,8 +3,9 @@
 #  sync_studio.sh — Digital Software Studio → Proje Senkronizasyon Aracı
 #
 #  Güncelleme TEK YÖNLÜDÜR: her zaman studio → proje.
-#  Gerçek iş scripts/studio_updater.py tarafından yapılır (studio.version'daki
-#  tracked_files/protected_files listesine göre, STUDIO:CUSTOM blokları korunarak).
+#  Gerçek iş scripts/studio_updater.py tarafından yapılır (release snapshot'ı
+#  tracked_files/protected_files listesine göre aynen yazılır; ezilenler
+#  workspace/.stale/ altına yedeklenir).
 #  Bu script yalnızca geriye uyumlu bir kısayoldur.
 #
 #  Kullanım:
