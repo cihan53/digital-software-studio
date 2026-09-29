@@ -21,10 +21,15 @@ Güncelleme Kuralları:
   - .studio-version her güncellemeden sonra yazılır
 """
 
+import atexit
+import io
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tarfile
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -49,6 +54,59 @@ def ds_path_bul():
         if (p / "studio.version").exists():
             return p
     return None
+
+
+_SNAPSHOT_DIRS = []
+
+
+def _snapshot_temizle():
+    for d in _SNAPSHOT_DIRS:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+atexit.register(_snapshot_temizle)
+
+
+def ds_snapshot_al(ds_path):
+    """DS klonunun origin/HEAD içeriğini temp dizine arşivler.
+
+    Saha gözlemi: klonun çalışma ağacı eski bir dal/committa kalabiliyor;
+    checkout'taki studio.version bayat kalıp yeni tag'i gizliyordu.
+    Güncelleme her zaman yayınlanmış origin/HEAD üzerinden yapılmalıdır.
+
+    STUDIO_DS_WT=1 → framework geliştiricisi yerel WIP'ini senkronlamak
+    isterse çalışma ağacı kullanılır (snapshot atlanır).
+    Başarısızsa None döner; çağıran çalışma ağacına düşer."""
+    if os.getenv("STUDIO_DS_WT") or not ds_path or not (ds_path / ".git").exists():
+        return None
+    try:
+        subprocess.run(["git", "fetch", "origin", "--quiet"],
+                       cwd=ds_path, capture_output=True, timeout=10)
+    except Exception:
+        pass  # ağ yoksa eldeki origin ref'iyle devam
+    for ref in ("origin/HEAD", "origin/main", "origin/master"):
+        try:
+            arc = subprocess.run(["git", "archive", "--format=tar", ref],
+                                 cwd=ds_path, capture_output=True, timeout=20)
+            if arc.returncode != 0 or not arc.stdout:
+                continue
+            tmp = Path(tempfile.mkdtemp(prefix="studio_ds_"))
+            with tarfile.open(fileobj=io.BytesIO(arc.stdout)) as tf:
+                tf.extractall(tmp, filter="data")
+            _SNAPSHOT_DIRS.append(tmp)
+            return tmp
+        except Exception:
+            continue
+    return None
+
+
+def ds_kaynak_hazirla(ds_path):
+    """Dosya senkronu için etkin DS dizini: origin/HEAD snapshot'ı veya klon.
+
+    Versiyon bilgisi ile kopyalanan dosyaların aynı kaynaktan gelmesini
+    garanti eder (bayat çalışma ağacından 1.10.x içeriği kopyalanmaz)."""
+    snap = ds_snapshot_al(ds_path)
+    return snap or ds_path
 
 
 def ds_version_yukle(ds_path):
@@ -85,6 +143,12 @@ def local_version_kaydet(versiyon, ds_path):
         "proje": ROOT.name
     }
     LOCAL_VERSION_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    # Güncelleme bildirim önbelleği bayat kalmasın — .studio-version
+    # değiştiğine göre paneldeki "güncelleme var" uyarısı da tazelensin.
+    try:
+        (ROOT / "workspace" / ".studio_update_check.json").unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def custom_bloklari_cikart(icerik):
@@ -167,15 +231,19 @@ def dosya_guncelle(proje_dosya, ds_dosya):
 def cmd_durum():
     local = local_version_yukle()
     ds_path = ds_path_bul()
-    ds_ver = ds_version_yukle(ds_path)
+    ds_eff = ds_kaynak_hazirla(ds_path)
+    ds_ver = ds_version_yukle(ds_eff)
 
+    kaynak = str(ds_path) if ds_path else 'GitHub (local bulunamadı)'
+    if ds_path and ds_eff is not ds_path:
+        kaynak += " → origin/HEAD"
     print(f"\n{BOLD}{CYAN}╔══════════════════════════════════════════════════╗")
     print(f"║  📦  Digital Software Studio — Versiyon Durumu  ║")
     print(f"╚══════════════════════════════════════════════════╝{NC}\n")
     print(f"  {BOLD}Bu Proje:{NC} {ROOT.name}")
     print(f"  {BOLD}Framework Versiyonu:{NC} {local.get('version', '?')}")
     print(f"  {BOLD}Son Güncelleme:{NC} {local.get('updated', 'Hiç güncellenmedi')}")
-    print(f"  {BOLD}DS Kaynak:{NC} {str(ds_path) if ds_path else 'GitHub (local bulunamadı)'}")
+    print(f"  {BOLD}DS Kaynak:{NC} {kaynak}")
 
     if ds_ver:
         print(f"\n  {BOLD}DS Son Sürümü:{NC} {ds_ver.get('version', '?')}  ({ds_ver.get('released', '?')})")
@@ -189,7 +257,8 @@ def cmd_durum():
 
 def cmd_kontrol():
     ds_path = ds_path_bul()
-    ds_ver = ds_version_yukle(ds_path)
+    ds_eff = ds_kaynak_hazirla(ds_path)
+    ds_ver = ds_version_yukle(ds_eff)
     local = local_version_yukle()
 
     if not ds_ver:
@@ -210,7 +279,7 @@ def cmd_kontrol():
 
     for rel_path in tracked:
         proje_dosya = ROOT / rel_path
-        ds_dosya = (ds_path / rel_path) if ds_path else None
+        ds_dosya = (ds_eff / rel_path) if ds_eff else None
         if ds_dosya and not ds_dosya.exists():
             continue
         if not proje_dosya.exists():
@@ -327,9 +396,10 @@ def _kosan_surec_uyarisi(restart=False):
 
 def cmd_uygula(otomatik_commit=False, force=False, restart=False):
     ds_path = ds_path_bul()
-    ds_ver = ds_version_yukle(ds_path)
+    ds_eff = ds_kaynak_hazirla(ds_path)
+    ds_ver = ds_version_yukle(ds_eff)
 
-    if not ds_ver or not ds_path:
+    if not ds_ver or not ds_eff:
         print(f"{RED}✗  DS local path bulunamadı.{NC}")
         sys.exit(1)
 
@@ -350,7 +420,7 @@ def cmd_uygula(otomatik_commit=False, force=False, restart=False):
             print(f"  {DIM}·{NC}  {rel_path}  {DIM}(proje-özel — atlandı, --force ile zorlanır){NC}")
             continue
         proje_dosya = ROOT / rel_path
-        ds_dosya = ds_path / rel_path
+        ds_dosya = ds_eff / rel_path
         if not ds_dosya.exists():
             continue
         was_new = not proje_dosya.exists()
