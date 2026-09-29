@@ -354,6 +354,64 @@ def kontrol(body: dict) -> dict:
             return {"ok": False, "mesaj": "sonuc 'onayla' veya 'reddet' olmalı."}
         except Exception as e:
             return {"ok": False, "mesaj": f"Talep modülü: {e}"}
+    if aks == "faz_ilerlet":
+        # Aktif fazı TAMAMLANDI yapıp sıradaki fazı AKTIF'e çeker; o faza
+        # ait FAZ_BEKLIYOR talepler PLANLANDI olur. CLI'deki
+        # `karar_verici_triage --faz-ilerlet` ile aynı iş.
+        try:
+            sys.path.insert(0, str(ROOT / "scripts"))
+            import karar_verici_triage as KVT
+            ok = KVT.faz_ilerlet()
+        except Exception as e:
+            return {"ok": False, "mesaj": f"Triage modülü: {e}"}
+        if ok:
+            B.request("reload", kaynak="web")
+            B.audit("web", "faz_ilerlet")
+            return {"ok": True,
+                    "mesaj": "Faz ilerletildi; yeni faza ait bekleyen talepler planlandı."}
+        return {"ok": False,
+                "mesaj": "İlerletilecek faz yok (aktif faz son faz olabilir)."}
+    if aks == "talep_faz":
+        # Talebi başka bir faza taşır. Aktif faza taşınan talep PLANLANDI
+        # olur; gelecek/kilitli faza taşınan FAZ_BEKLIYOR'da bekler.
+        # Kapalı taleplere (COZULDU/IPTAL) dokunulmaz.
+        tid = (body.get("talep_id") or "").strip()
+        yeni_faz = (body.get("faz") or "").strip()
+        try:
+            sys.path.insert(0, str(ROOT / "scripts"))
+            import karar_verici_triage as KVT
+            import musteri_talepleri as MT
+            t = MT.getir(tid)
+            if not t:
+                return {"ok": False, "mesaj": f"{tid} bulunamadı."}
+            if t.get("durum") in ("COZULDU", "IPTAL"):
+                return {"ok": False,
+                        "mesaj": f"{tid} zaten kapalı ({t.get('durum')})."}
+            fazlar = {f.get("id") for f in KVT.load_fazlar().get("fazlar", [])}
+            if yeni_faz not in fazlar:
+                return {"ok": False, "mesaj": f"Geçersiz faz: {yeni_faz or '-'}"}
+            aktif = KVT.aktif_faz_getir().get("id", "FAZ-1")
+            data = MT.load_data()
+            for x in data.get("talepler", []):
+                if x.get("id") == t["id"]:
+                    x["faz_id"] = yeni_faz
+                    if x.get("durum") in ("DEGERLENDIRMEDE", "FAZ_BEKLIYOR",
+                                          "BEKLEMEDE", "PLANLANDI"):
+                        x["durum"] = ("PLANLANDI" if yeni_faz == aktif
+                                      else "FAZ_BEKLIYOR")
+                    x.setdefault("gecmis", []).append({
+                        "zaman": time.strftime("%Y-%m-%d %H:%M"),
+                        "eylem": f"Panelden {yeni_faz} fazına taşındı",
+                        "durum": x["durum"],
+                    })
+            MT.save_data(data)
+            B.request("reload", kaynak="web")
+            B.audit("web", "talep_faz", talep_id=tid, detay={"faz": yeni_faz})
+            return {"ok": True,
+                    "mesaj": f"{tid} → {yeni_faz} "
+                             f"({'aktif faz' if yeni_faz == aktif else 'faz bekliyor'})."}
+        except Exception as e:
+            return {"ok": False, "mesaj": f"Talep modülü: {e}"}
     if aks == "onayla":
         g = body.get("gorev_kota")
         b = body.get("butce")
