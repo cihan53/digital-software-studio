@@ -506,14 +506,23 @@ def otomatik_musteri_talepleri_senkronize_et() -> int:
     if not talepler:
         return 0
 
-    # Mevcut panodaki görevlerde kayıtlı talep ID'leri
+    # Panoda görevi bulunan talep ID'leri. 'acik_talep_idler' yalnızca
+    # terminal (DONE/SKIPPED) olmayan görevleri sayar — görevleri tamamen
+    # kapanmış bir talep yeniden planlanabilir; aksi hâlde 'Al' ile tekrar
+    # devreye alınan ya da kuyruğa dönen talep panoya hiç eklenemez ve
+    # PLANLANDI'da takılı kalırdı.
     mevcut_talep_idler = set()
+    acik_talep_idler = set()
     for _, task in B.all_tasks(board):
+        sahipler = set()
         if task.get("talep_id"):
-            mevcut_talep_idler.add(task["talep_id"])
+            sahipler.add(task["talep_id"])
         m = re.search(r"TALEP-\d+", task.get("title", ""))
         if m:
-            mevcut_talep_idler.add(m.group(0))
+            sahipler.add(m.group(0))
+        mevcut_talep_idler |= sahipler
+        if task.get("status") not in B.TERMINAL:
+            acik_talep_idler |= sahipler
 
     # Yalnızca aktif faza ait onaylanmış talepler ve acil HATA bildirimleri sprinte alınır
     try:
@@ -531,7 +540,11 @@ def otomatik_musteri_talepleri_senkronize_et() -> int:
         if durum in ("COZULDU", "IPTAL", "DEGERLENDIRMEDE", "FAZ_BEKLIYOR",
                      "INSAN_GEREKLI", "ONAY_BEKLIYOR"):
             continue
-        if tid in mevcut_talep_idler:
+        if tid in acik_talep_idler:
+            continue
+        # İşlemdeki talep için geçmiş görev kaydı varsa dokunma —
+        # telafi zinciri veya kapanış akışı yürüyor olabilir.
+        if durum in ("GELISTIRILIYOR", "TESTTE") and tid in mevcut_talep_idler:
             continue
 
         # Sadece HATA olanlar veya aktif faz onaylı olanlar sprinte girebilir
