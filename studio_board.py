@@ -1436,14 +1436,50 @@ def _ver_tuple(v) -> tuple:
         return (0,)
 
 
+def _git_show_version(p: Path) -> dict | None:
+    """Klonun origin/HEAD'indeki studio.version'ı okur (çalışma ağacı değil).
+
+    Saha gözlemi: klon eski bir dal/committa bırakılabiliyor; çalışma
+    ağacındaki studio.version bayat kalıp 'güncel' sanrısı üretiyordu.
+    Önce hızlı fetch denenir, sonra origin/HEAD (yoksa main/master) okunur.
+    """
+    if not (p / ".git").exists():
+        return None
+    try:
+        subprocess.run(["git", "fetch", "origin", "--quiet"],
+                       cwd=p, capture_output=True, timeout=10)
+    except Exception:
+        pass  # ağ yoksa eldeki origin ref'iyle devam
+    for ref in ("origin/HEAD", "origin/main", "origin/master"):
+        try:
+            r = subprocess.run(
+                ["git", "show", f"{ref}:{DS_VERSION_NAME}"],
+                cwd=p, capture_output=True, text=True, timeout=8)
+            if r.returncode == 0 and r.stdout.strip():
+                return json.loads(r.stdout)
+        except Exception:
+            continue
+    return None
+
+
 def _studio_version_jsonu_bul() -> tuple[dict | None, str]:
-    """DS'nin studio.version'ını bul: önce yerel dizin, yoksa GitHub raw."""
+    """DS'nin studio.version'ını bul: önce yerel klonun origin/HEAD'i
+    (yoksa çalışma ağacı), yoksa GitHub raw."""
     adaylar = []
     env = os.getenv("STUDIO_REPO")
     if env:
         adaylar.append(Path(env))
     adaylar.append(ROOT.parent / "digital-software-studio")
     for p in adaylar:
+        # STUDIO_DS_WT=1 → framework geliştiricisi yerel çalışma ağacını
+        # senkronlamak ister; origin/HEAD okuması atlanır.
+        if not os.getenv("STUDIO_DS_WT"):
+            try:
+                ds = _git_show_version(p)
+                if ds:
+                    return ds, "yerel-git"
+            except Exception:
+                pass
         vf = p / DS_VERSION_NAME
         if vf.is_file():
             try:
