@@ -1374,6 +1374,21 @@ ile o dosyadaki geçmiş hata düzeltmelerini incele.
 - Kodun yanına açıklama ekleme serbestliği yoktur; sadece mevcut koruma
   işaretlerini koru, yenilerini ekleme zorunluluğun yok."""
 
+# Saha gözlemleri: araçlı ajanlar yanlış dizinde komut çalıştırıp workspace/
+# köküne kırık symlink ve sızıntı artefakt bırakabiliyor; ya da düzeltmeyi
+# raporunda anlatıp kaynak dosyaya hiç uygulamayabiliyor (TALEP-041 vakası).
+ENV_HYGIENE_RULE = """
+
+--- ÇALIŞMA ORTAMI HİJYENİ (ZORUNLU) ---
+- Komutları her zaman doğru dizinde çalıştır; göreli yolları geçerli dizine
+  göre iki kez kontrol et. 'workspace/workspace/...' gibi çift yol YASAK.
+- workspace/ veya repo köküne dosya, symlink, package.json, node_modules,
+  test çıktısı veya geçici artefakt BIRAKMA; her üretim görevin hedef
+  dizinine aittir.
+- Çözümünü gerçek dosyalara UYGULA (Write/Edit) ya da === FILE: bloklarıyla
+  üret. Raporunda kod göstermek kodu uygulamak DEĞİLDİR; anlatılan ama
+  yazılmayan düzeltme sistemde mevcut değildir."""
+
 SCOPE_EDIT_RULE = """
 --- KAPSAM DOKÜMANI DÜZENLEME KURALI ---
 Bu doküman KULLANICININ dokümanıdır, senin değil. Mevcut bölüm yapısını ve
@@ -1853,8 +1868,11 @@ def _auto_talep_uat(task: dict, uat_cikti: str, kaynak: str = "UAT",
 
         baslik = f"[{kaynak}] {task['id']} {neden} başarısız: {task.get('title', '')[:80]}"
         data = MT.load_data()
+        # HİJYEN bulguları görev-özel değil ortam-seviyesidir; artefakt
+        # durdukça her görev yeni talep açmasın diye global dedup yapılır.
+        anahtar = "[HİJYEN]" if kaynak == "HİJYEN" else f"[{kaynak}] {task['id']}"
         for t in data.get("talepler", []):
-            if (t.get("baslik") or "").startswith(f"[{kaynak}] {task['id']}") \
+            if (t.get("baslik") or "").startswith(anahtar) \
                     and t.get("durum") not in ("COZULDU", "IPTAL"):
                 print(f"   [i] Açık {kaynak} talebi zaten var: {t['id']} — mükerrer kayıt açılmadı.")
                 return t["id"]
@@ -2150,7 +2168,7 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
     )
     # Geliştirme görevlerinde geçmiş düzeltmelerin korunması zorunludur.
     if task.get("phase") == "develop":
-        task_brief += REGRESSION_GUARD_RULE
+        task_brief += REGRESSION_GUARD_RULE + ENV_HYGIENE_RULE
 
     # Kalite kapıları için görev öncesi çalışma ağacı anlığı
     pre_task_git = _kalite_snapshot()
@@ -2244,7 +2262,11 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
         # Başarısız kapılar bulguyu talep havuzuna düşürür (mükerrer korumalı)
         for prefix, kw, nd in (("smoke başarısız", "UAT", "smoke denetimi"),
                                ("derleme başarısız", "BUILD",
-                                "derleme/import doğrulaması")):
+                                "derleme/import doğrulaması"),
+                               ("kaynak uygulanmadı", "KAYNAK",
+                                "kaynak-uygulama doğrulaması"),
+                               ("hijyen ihlali", "HİJYEN",
+                                "çalışma alanı hijyeni")):
             if any(n.startswith(prefix) for n in gate_notes):
                 telafi_tid = _auto_talep_uat(task, "; ".join(gate_notes),
                                              kaynak=kw, neden=nd)
@@ -2255,7 +2277,8 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
     # Doğrulama başarısızlığı telafi talebine devredildiyse görevi
     # SKIPPED ile kapat: sprint bloklanmaz, telafi sprinti koşabilir.
     uat_devri = ("canlı UAT hata tespit edildi" in note
-                 or any(n.startswith(("smoke başarısız", "derleme başarısız"))
+                 or any(n.startswith(("smoke başarısız", "derleme başarısız",
+                                      "kaynak uygulanmadı"))
                         for n in gate_notes))
     if uat_devri:
         B.mark(board, task["id"], B.SKIPPED, note=note)
