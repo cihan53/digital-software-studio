@@ -16,9 +16,20 @@
   .m-sistem { background: transparent; color: var(--soluk); font-size: 12px; margin: 4px auto; text-align: center; max-width: 90%; }
   .taslak { margin-top: 8px; padding: 10px; border: 1px solid var(--vurgu); border-radius: 8px; background: rgba(88,166,255,.07); }
   .taslak .aks { margin-top: 8px; display: flex; gap: 8px; }
-  .girdi { display: flex; gap: 10px; padding: 12px; border-top: 1px solid var(--sinir); }
-  .girdi input { flex: 1; padding: 10px 14px; font-size: 14px; }
-  .yan-panel { width: 320px; display: flex; flex-direction: column; gap: 12px; }
+  .girdi { display: flex; gap: 10px; padding: 12px; border-top: 1px solid var(--sinir);
+    align-items: flex-end; }
+  .girdi textarea { flex: 1; padding: 10px 14px; font-size: 14px; resize: none;
+    min-height: 42px; max-height: 140px; overflow-y: auto; font-family: inherit;
+    line-height: 1.4; }
+  .yan-panel { width: 320px; display: flex; flex-direction: column; gap: 12px;
+    min-height: 0; }
+  .talepler-kart { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .talep-sekmeler { display: flex; gap: 4px; margin-top: 8px; }
+  .talep-sekme { flex: 1; padding: 4px 6px; font-size: 12px; text-align: center;
+    cursor: pointer; background: var(--panel2); border: 1px solid var(--sinir);
+    border-radius: 6px; color: var(--soluk); user-select: none; }
+  .talep-sekme.aktif { color: var(--metin); border-color: var(--vurgu); }
+  .talep-liste { flex: 1; min-height: 0; overflow-y: auto; margin-top: 8px; }
   .talep-kart { padding: 10px 12px; font-size: 13px; }
   .talep-kart .tid { font-weight: 700; }
   .yaziyor { color: var(--soluk); font-style: italic; padding: 4px 18px 10px; }
@@ -47,7 +58,8 @@
       <div class="mesajlar" id="mesajlar"></div>
       <div class="yaziyor gizli" id="yaziyor">Temsilci yazıyor…</div>
       <div class="girdi">
-        <input id="girdi" placeholder="Mesajınızı yazın… (örn: Harita sayfasında istasyonlar yüklenmiyor)" autocomplete="off">
+        <textarea id="girdi" rows="1"
+          placeholder="Mesajınızı yazın… (Enter: gönder, Shift+Enter: yeni satır)"></textarea>
         <button class="birincil" id="gonder" onclick="gonder()">Gönder</button>
       </div>
     </div>
@@ -56,7 +68,14 @@
            style="border-color:var(--sari);font-size:13px">
         🔔 Tamamlanan talebiniz var — kapatmak için onayınız gerekiyor.
       </div>
-      <div class="kart"><b>📥 Taleplerim</b><div id="talepler" style="margin-top:8px"></div></div>
+      <div class="kart talepler-kart"><b>📥 Taleplerim</b>
+        <div class="talep-sekmeler">
+          <div class="talep-sekme aktif" data-s="acik" onclick="sekmeSec('acik')">Açık</div>
+          <div class="talep-sekme" data-s="onay" onclick="sekmeSec('onay')">Onay</div>
+          <div class="talep-sekme" data-s="kapali" onclick="sekmeSec('kapali')">Kapananlar</div>
+        </div>
+        <div id="talepler" class="talep-liste"></div>
+      </div>
       <div class="kart soluk" style="font-size:12px">
         Onaylanan talepler stüdyo havuzuna düşer; triage ve planlama otomatik yürütülür.
         Durum değişiklikleri burada görünür.
@@ -132,7 +151,20 @@ async function yukle(zorla){
       $('onay-bildirim').innerHTML='🔔 '+bekleyen.length+' talebiniz tamamlandı — '+
         'kapatmak için onayınız gerekiyor: <b>'+esc(bekleyen.map(t=>t.id).join(', '))+'</b>';
     }
-    $('talepler').innerHTML=(d.talepler||[]).map(t=>
+    const tl=d.talepler||[];
+    const acik=tl.filter(t=>t.durum!=='ONAY_BEKLIYOR'&&!KAPALI_DURUMLAR.has(t.durum));
+    const onay=tl.filter(t=>t.durum==='ONAY_BEKLIYOR');
+    const kapali=tl.filter(t=>KAPALI_DURUMLAR.has(t.durum));
+    const gruplar={acik,onay,kapali:kapali.slice(-KAPALI_LIMIT)};
+    const adlar={acik:'Açık',onay:'Onay',kapali:'Kapananlar'};
+    const saylar={acik,onay,kapali};
+    document.querySelectorAll('.talep-sekme').forEach(x=>{
+      const s=x.dataset.s,n=saylar[s].length;
+      x.textContent=adlar[s]+(n?` (${n})`:'');
+    });
+    const bos={acik:'Henüz onaylanmış talep yok.',onay:'Onay bekleyen talep yok.',
+      kapali:'Kapanan talep yok.'}[aktifSekme];
+    $('talepler').innerHTML=gruplar[aktifSekme].map(t=>
       `<div class="kart talep-kart" style="margin-bottom:8px${t.durum==='ONAY_BEKLIYOR'?';border-color:var(--sari)':''}">
         <span class="tid">${esc(t.id)}</span> <span class="rozet r-${t.durum}">${esc(t.durum||'')}</span><br>
         ${esc(t.baslik||'')}<br><span class="soluk">${esc(t.studio_notu||'')}</span>
@@ -140,10 +172,22 @@ async function yukle(zorla){
           <button class="birincil kucuk" onclick="cozumOnay('${esc(t.id)}',true)">✔ Çözüldü, kapat</button>
           <button class="kucuk" onclick="cozumOnay('${esc(t.id)}',false)">✕ Sorun devam ediyor</button></div>`:''}
       </div>`
-    ).join('')||'<span class="soluk">Henüz onaylanmış talep yok.</span>';
+    ).join('')||`<span class="soluk">${bos}</span>`;
+    if(aktifSekme==='kapali'&&kapali.length>KAPALI_LIMIT)
+      $('talepler').innerHTML+=`<div class="soluk" style="font-size:11px;margin-top:6px">
+        …önceki ${kapali.length-KAPALI_LIMIT} kayıt gösterilmiyor</div>`;
   }catch(e){}
 }
 
+let aktifSekme='acik';
+const KAPALI_DURUMLAR=new Set(['COZULDU','IPTAL']);
+const KAPALI_LIMIT=20;
+function sekmeSec(s){
+  aktifSekme=s;
+  document.querySelectorAll('.talep-sekme')
+    .forEach(x=>x.classList.toggle('aktif',x.dataset.s===s));
+  yukle(true);
+}
 async function gonder(){
   const inp=$('girdi'); const metin=inp.value.trim();
   if(!metin)return;
@@ -163,7 +207,7 @@ async function gonder(){
     if(!d.ok) toast(d.mesaj||'Gönderilemedi');
   }catch(e){ toast('Gönderilemedi: '+e); }
   $('yaziyor').classList.add('gizli');
-  inp.disabled=false; $('gonder').disabled=false; inp.focus();
+  inp.disabled=false; $('gonder').disabled=false; inp.style.height='auto'; inp.focus();
   sonMesajSayisi=-1; yukle(true);
 }
 let yaziyorBasla=0;
@@ -255,7 +299,14 @@ async function motorDegis(){
     if(d.motor) motorGoster(d.motor);
   }catch(e){toast('Motor ayarlanamadı: '+e);}
 }
-document.getElementById('girdi').addEventListener('keydown',e=>{if(e.key==='Enter')gonder();});
+const girdiEl=document.getElementById('girdi');
+girdiEl.addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();gonder();}
+});
+girdiEl.addEventListener('input',()=>{
+  girdiEl.style.height='auto';
+  girdiEl.style.height=Math.min(girdiEl.scrollHeight,140)+'px';
+});
 motorModelDoldur();
 yukle(true); setInterval(yukle,3000);
 // "Temsilci yazıyor" göstergesine geçen süre — uzun sürerse kota ipucu.
