@@ -36,6 +36,11 @@ try:
 except ImportError:
     GH = None
 
+try:
+    import kalite_kapilari as KK
+except ImportError:
+    KK = None
+
 
 class RecoverySentinelAgent:
     """Süreç ve Dağıtım Kurtarma Ajanı"""
@@ -119,6 +124,32 @@ class RecoverySentinelAgent:
             pass
 
         return rapor
+
+    def _talep_ac_deploy(self, branch: str, hata: str):
+        """Push/deploy başarısızlığını müşteri talebi olarak havuza düşürür.
+
+        Mükerrer koruması: açık bir [DEPLOY] talebi varken yenisi açılmaz.
+        """
+        if not MT:
+            return
+        try:
+            data = MT.load_data()
+            for t in data.get("talepler", []):
+                if (t.get("baslik") or "").startswith("[DEPLOY]") \
+                        and t.get("durum") not in ("COZULDU", "IPTAL"):
+                    return
+            yeni = MT.yeni_talep(
+                "HATA",
+                f"[DEPLOY] origin/{branch} push başarısız — deploy yarım kaldı",
+                "Kurtarma ajanı yerel değişiklikleri uzak depoya gönderemedi.\n\n"
+                f"```\n{hata[:700]}\n```\n\n"
+                "Olası nedenler: uzak dalda yeni commitler (rebase denemesi de "
+                "başarısız olduysa elle çakışma çözümü gerekir), yetki sorunu "
+                "veya ağ hatası.",
+                oncelik="YUKSEK", sayfa_url="/")
+            self.log("📥", f"Deploy hatası {yeni['id']} talebi olarak havuza düşürüldü.")
+        except Exception:
+            pass
 
     def bekleyen_talepleri_incele(self) -> list:
         """Çözülmüş ancak henüz yayına girmemiş müşteri taleplerini tespit eder."""
@@ -215,12 +246,31 @@ class RecoverySentinelAgent:
                 self.log("⚠️", f"Pano kurtarma sırasında uyarı: {e}")
 
         # 2. Deploy'u tamamla ve canlıya gönder
+        hepsi_temiz = True
         if deploy_yarim and oto_push:
             try:
+                # Çalışma alanına sızan artefaktlar deploy'a karışmasın:
+                # kırık symlink'ler silinir, kalan bulgular stage dışı tutulur.
+                sizinti_yollar = []
+                if KK:
+                    try:
+                        temiz, sizinti_yollar = KK.calisma_alani_hijyeni()
+                        if temiz:
+                            self.log("🧹", f"{len(temiz)} kırık symlink otomatik temizlendi: "
+                                          f"{', '.join(temiz[:4])}")
+                        for yol in sizinti_yollar:
+                            self.log("⚠️", f"Sızan artefakt commit dışında tutulacak: {yol}")
+                    except Exception:
+                        sizinti_yollar = []
+
                 # Uncommitted dosyaları commit et
                 if git_durumu["uncommitted"]:
                     self.log("📦", "Değiştirilen tüm dosyalar paketleniyor (git add -A)...")
                     subprocess.run(["git", "add", "-A"], cwd=self.root, check=True)
+                    for yol in sizinti_yollar:
+                        subprocess.run(
+                            ["git", "reset", "-q", "--", yol],
+                            cwd=self.root, capture_output=True)
 
                     # Anlamlı commit mesajı oluştur
                     if bekleyen_talepler:
@@ -250,28 +300,59 @@ class RecoverySentinelAgent:
                     branch = "main"
 
                 self.log("🚀", f"origin/{branch} dalına pushlanıyor (CI/CD tetikleniyor)...")
-                push_res = subprocess.run(
-                    ["git", "push", "origin", branch],
-                    cwd=self.root, capture_output=True, text=True, timeout=30
-                )
-                if push_res.returncode == 0:
+                push_ok, son_hata = False, ""
+                for deneme in (1, 2):
+                    push_res = subprocess.run(
+                        ["git", "push", "origin", branch],
+                        cwd=self.root, capture_output=True, text=True, timeout=60
+                    )
+                    if push_res.returncode == 0:
+                        push_ok = True
+                        break
+                    son_hata = (push_res.stderr or push_res.stdout or "").strip()
+                    nff = any(k in son_hata for k in
+                              ("non-fast-forward", "fetch first", "rejected"))
+                    if deneme == 1 and nff:
+                        self.log("🔄", "Push reddedildi (non-fast-forward) — uzak "
+                                      "değişiklikler rebase ile alınıp yeniden denenecek...")
+                        pull = subprocess.run(
+                            ["git", "pull", "--rebase", "origin", branch],
+                            cwd=self.root, capture_output=True, text=True, timeout=90)
+                        if pull.returncode != 0:
+                            subprocess.run(["git", "rebase", "--abort"],
+                                           cwd=self.root, capture_output=True)
+                            self.log("⚠️", f"Rebase başarısız (çakışma geri alındı): "
+                                          f"{(pull.stderr or pull.stdout or '').strip()[:160]}")
+                            break
+                        continue
+                    break
+                if push_ok:
                     self.log("🎉", f"BAŞARILI! Tüm yarım kalan değişiklikler GitHub origin/{branch} dalına aktarıldı.")
                     self.log("🚀", "GitHub Actions CI/CD pipeline'ı devreye girdi ve otomatik canlı dağıtımı tetiklendi!")
                 else:
-                    self.log("⚠️", f"Push işlemi sırasında hata/uyarı: {push_res.stderr.strip()[:200]}")
+                    hepsi_temiz = False
+                    self.log("❌", f"PUSH BAŞARISIZ — değişiklikler origin/{branch} dalına ulaşmadı:")
+                    print(f"      {son_hata[:240]}")
+                    self._talep_ac_deploy(branch, son_hata)
 
             except Exception as e:
+                hepsi_temiz = False
                 self.log("❌", f"Otomatik deploy tamamlama sırasında hata oluştu: {e}")
 
         print("═"*65)
-        self.log("🏁", "Kurtarma Ajanı denetimini tamamladı. Sistem artık temiz ve stüdyo akışına hazır.")
+        if hepsi_temiz:
+            self.log("🏁", "Kurtarma Ajanı denetimini tamamladı. Sistem artık temiz ve stüdyo akışına hazır.")
+        else:
+            self.log("⚠️", "Kurtarma TAMAMLANAMADI — deploy hâlâ yarım. "
+                          "Yukarıdaki hatalar giderilmeden sistem temiz sayılmaz.")
         print("═"*65 + "\n")
-        return True
+        return hepsi_temiz
 
 
 def main():
     agent = RecoverySentinelAgent(verbose=True)
-    agent.denetle_ve_kurtar(oto_push=True)
+    temiz = agent.denetle_ve_kurtar(oto_push=True)
+    sys.exit(0 if temiz else 1)
 
 
 if __name__ == "__main__":
