@@ -9,6 +9,7 @@ Alt komutlar:
     smoke            workspace/smoke_checklist.json kontrollerini koşturur
     regresyon        git diff'te kaldırılan fix/koruma referanslarını raporlar
     test-eslestirme  fix görevinde regresyon testi dosyası var mı denetler
+    hijyen           kırık symlink'leri temizler, sızan artefaktları raporlar
     snapshot         git status --porcelain çıktısı üretir (görev öncesi anlık)
     degisenler FILE  snapshot dosyasına göre yeni değişen dosyaları listeler
 
@@ -337,6 +338,133 @@ def build_checklist() -> tuple[int, int, list[str]]:
 
 
 # ---------------------------------------------------------------------------
+# Kapı 5: Çalışma alanı hijyeni + "çözüm kaynağa uygulandı mı" doğrulaması
+# ---------------------------------------------------------------------------
+# Saha gözlemleri:
+#  a) Araçlı ajanlar workspace/ kökünde kırık symlink (göreli yol hatasıyla
+#     'workspace/workspace/...' çift-yolu) ve sızıntı artefaktlar bırakıyor;
+#     'git add -A' ile repoya sızıp ortamı bozuyorlar.
+#  b) Geliştirici ajan düzeltmeyi raporunda anlatıp kaynak dosyaya hiç
+#     yazmayabiliyor (TALEP-041 vakası): _CIKTI.md üretilir, kod değişmez.
+
+# workspace/ kökünde bulunması şüpheli isimler — gerçek proje dosyaları
+# workspace/src/ altında yaşar; kök yalnızca çalışma alanıdır.
+SIZINTI_ISIM_RE = re.compile(
+    r"(?i)^(package\.json|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|"
+    r"node_modules|composer\.(json|lock)|requirements\.txt|pyproject\.toml|"
+    r"Gemfile(\.lock)?|go\.(mod|sum)|Cargo\.(toml|lock)|_CIKTI.*\.md|"
+    r"test-results|playwright-report)$")
+
+# workspace/src/ altında kaynak dosya sayılmayan üretim artefaktları
+SRC_ARTEFAKT_RE = re.compile(
+    r"(?i)(^|/)_CIKTI[^/]*\.md$|(^|/)(test-results|playwright-report)(/|$)")
+
+# Hijyen taramasında içine girilmeyen ağır/üretim dizinleri
+_HIJYEN_SKIP = {"node_modules", ".git", ".nuxt", ".output", "dist", "build",
+                ".history", ".stale", ".trace", "__pycache__", ".dart_tool"}
+
+
+def _rel(p: Path) -> str:
+    return str(p.relative_to(ROOT)).replace("\\", "/")
+
+
+def _calisma_alani_tara() -> tuple[list[str], list[str]]:
+    """workspace/ altında sığ tarama → (kırık symlink'ler, sızan artefaktlar).
+
+    Git'ten bağımsız dosya sistemi taraması: gitignore'a takılan artefaktlar
+    da yakalanır. Kök + 3 seviye iner (workspace/src/<alt>/<dosya> kapsanır),
+    ağır üretim dizinlerine girilmez.
+    """
+    symlinks, artefakt = [], []
+    if not WORKSPACE.is_dir():
+        return symlinks, artefakt
+    duzey = [WORKSPACE]
+    for _ in range(4):
+        yeni = []
+        for d in duzey:
+            try:
+                cocuklar = list(d.iterdir())
+            except OSError:
+                continue
+            for p in cocuklar:
+                rel = _rel(p)
+                if p.is_symlink():
+                    if not p.exists():
+                        symlinks.append(rel)
+                    continue
+                kalan = rel[len("workspace/"):]
+                if "/" not in kalan and SIZINTI_ISIM_RE.match(p.name):
+                    artefakt.append(rel)
+                    continue
+                if rel.startswith("workspace/src/") and SRC_ARTEFAKT_RE.search(rel):
+                    artefakt.append(rel)
+                    continue
+                if p.is_dir() and p.name not in _HIJYEN_SKIP:
+                    yeni.append(p)
+        duzey = yeni
+    return symlinks, artefakt
+
+
+def calisma_alani_hijyeni(files: list[str] | None = None) -> tuple[list[str], list[str]]:
+    """Çalışma alanı hijyen denetimi → (otomatik temizlenenler, bulgular).
+
+    - Hedefsiz (kırık) symlink'ler hiçbir yere işaret etmediği için güvenle
+      silinir ve 'temizlenen' olarak raporlanır.
+    - workspace/ köküne veya workspace/src/ içine sızan artefaktlar
+      (_CIKTI.md, test-results/, yabancı package.json/node_modules vb.)
+      silinmez; yalnızca bulgu olarak raporlanır — kanıt veya kasıtlı
+      dosya olabilirler.
+    """
+    temizlenen, bulgular = [], []
+
+    kirli, artefakt = _calisma_alani_tara()
+    for rel in kirli:
+        try:
+            (ROOT / rel).unlink()
+            temizlenen.append(rel)
+        except OSError as e:
+            bulgular.append(f"{rel}: kırık symlink silinemedi ({e})")
+
+    # Sızıntı adayları: dosya sistemi taraması + görev diff'inden gelenler.
+    adaylar = set(artefakt)
+    for f in files or []:
+        rel = f.replace("\\", "/").rstrip("/")
+        if not rel.startswith("workspace/"):
+            continue
+        kalan = rel[len("workspace/"):]
+        if "/" not in kalan and SIZINTI_ISIM_RE.match(kalan):
+            adaylar.add(rel)
+        if SRC_ARTEFAKT_RE.search(rel):
+            adaylar.add(rel)
+
+    for rel in sorted(adaylar):
+        p = ROOT / rel
+        if rel in temizlenen or not (p.exists() or p.is_symlink()):
+            continue
+        bulgular.append(f"{rel}: çalışma alanına sızan artefakt")
+    return temizlenen, bulgular
+
+
+def kaynak_degisti_mi(task: dict, files: list[str]) -> bool | None:
+    """Develop görevi workspace/src hedefliyorsa gerçek kaynak değişikliği şart.
+
+    True/False = kapı kararı; None = kapı bu göreve uygulanamaz.
+    '_CIKTI.md' gibi çıktı artefaktları ve test raporu dizinleri kaynak
+    değişikliği sayılmaz.
+    """
+    if task.get("phase") != "develop":
+        return None
+    outputs = [o.replace("\\", "/") for o in task.get("outputs", [])]
+    if not any(o.startswith("workspace/src") for o in outputs):
+        return None
+    for f in files:
+        rel = f.replace("\\", "/").rstrip("/")
+        if rel.startswith("workspace/src/") and not SRC_ARTEFAKT_RE.search(rel):
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Birleşik görev kapısı — engine bunu çağırır
 # ---------------------------------------------------------------------------
 
@@ -344,6 +472,34 @@ def gorev_kapilari(task: dict, pre_snapshot: set[str]) -> list[str]:
     """Görev sonrası deterministik kapılar. Dönen liste pano notuna eklenir."""
     notes = []
     files = changed_files_since(pre_snapshot)
+
+    # 0a) Kaynak uygulandı mı — develop çıktısı yalnızca rapor/artefakt ise
+    #     dosya listesi boş olsa bile yakala.
+    if kaynak_degisti_mi(task, files) is False:
+        msg = ("develop görevi workspace/src hedefliyor ama gerçek kaynak "
+               "dosya değişmedi — çözüm yalnızca rapora/çıktı dokümanına "
+               "yazılmış olabilir")
+        print(f"   ⚠️  [KAYNAK KAPISI] {msg}")
+        uyarilari_dosyaya_yaz(
+            task.get("id", "?"),
+            [msg + f" — dosyalar: {', '.join(files[:8]) or 'yok'}"])
+        notes.append("kaynak uygulanmadı")
+
+    # 0b) Çalışma alanı hijyeni — kırık symlink'ler temizlenir, sızan
+    #     artefaktlar raporlanır (diff listesinden bağımsız çalışır).
+    temizlenen, bulgular = calisma_alani_hijyeni(files)
+    if temizlenen:
+        print(f"   🧹 [HİJYEN] {len(temizlenen)} kırık symlink otomatik temizlendi:")
+        for s in temizlenen[:6]:
+            print(f"         - {s}")
+        notes.append(f"hijyen: {len(temizlenen)} kırık symlink temizlendi")
+    if bulgular:
+        print(f"   ⚠️  [HİJYEN KAPISI] {len(bulgular)} sızan artefakt tespit edildi:")
+        for b in bulgular[:6]:
+            print(f"         - {b}")
+        uyarilari_dosyaya_yaz(task.get("id", "?"), bulgular)
+        notes.append(f"hijyen ihlali ({len(bulgular)})")
+
     if not files:
         return notes
 
@@ -441,6 +597,16 @@ def _cli_test_eslestirme(files: list[str]) -> int:
     return 0 if ok else 1
 
 
+def _cli_hijyen() -> int:
+    temiz, bulgu = calisma_alani_hijyeni(changed_files_since(set()))
+    for s in temiz:
+        print(f"  🧹 temizlendi: {s}")
+    for b in bulgu:
+        print(f"  ⚠️  {b}")
+    print(f"hijyen: {len(temiz)} kırık symlink temizlendi, {len(bulgu)} bulgu")
+    return 1 if bulgu else 0
+
+
 def main():
     import argparse
     p = argparse.ArgumentParser(description="Deterministik kalite kapıları")
@@ -449,6 +615,7 @@ def main():
     r = sub.add_parser("regresyon"); r.add_argument("files", nargs="*")
     t = sub.add_parser("test-eslestirme"); t.add_argument("files", nargs="*")
     sub.add_parser("snapshot")
+    sub.add_parser("hijyen")
     d = sub.add_parser("degisenler"); d.add_argument("snapshot_file")
 
     args = p.parse_args()
@@ -461,6 +628,8 @@ def main():
     if args.cmd == "snapshot":
         print("\n".join(sorted(porcelain_snapshot())))
         return
+    if args.cmd == "hijyen":
+        sys.exit(_cli_hijyen())
     if args.cmd == "degisenler":
         before = set(Path(args.snapshot_file).read_text().splitlines())
         print("\n".join(changed_files_since(before)))
