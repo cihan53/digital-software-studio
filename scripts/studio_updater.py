@@ -16,8 +16,10 @@ Kullanım:
   python3 scripts/studio_updater.py --uygula --restart  # + web panelini yeniden başlat
 
 Güncelleme Kuralları:
-  - STUDIO:CUSTOM:BEGIN / STUDIO:CUSTOM:END blokları KORUNUR
-  - Diğer içerik DS versiyonuyla güncellenir
+  - tracked_files içeriği release (origin/HEAD) snapshot'ından AYNEN yazılır
+    (satır-satır birleştirme YOK — release tek doğruluk kaynağıdır)
+  - protected_files --force olmadan atlanır
+  - Ezilen dosyalar workspace/.stale/ altına yedeklenir
   - .studio-version her güncellemeden sonra yazılır
 """
 
@@ -151,80 +153,39 @@ def local_version_kaydet(versiyon, ds_path):
         pass
 
 
-def custom_bloklari_cikart(icerik):
-    bloklar = {}
-    satirlar = icerik.split("\n")
-    blok_idx = 0
-    i = 0
-    while i < len(satirlar):
-        if "STUDIO:CUSTOM:BEGIN" in satirlar[i]:
-            blok_satirlar = [satirlar[i]]
-            i += 1
-            while i < len(satirlar) and "STUDIO:CUSTOM:END" not in satirlar[i]:
-                blok_satirlar.append(satirlar[i])
-                i += 1
-            if i < len(satirlar):
-                blok_satirlar.append(satirlar[i])
-            bloklar[blok_idx] = "\n".join(blok_satirlar)
-            blok_idx += 1
-        i += 1
-    return bloklar
-
-
-def custom_bloklari_uygula(yeni_icerik, eski_bloklar):
-    if not eski_bloklar:
-        return yeni_icerik
-    satirlar = yeni_icerik.split("\n")
-    sonuc = []
-    blok_idx = 0
-    i = 0
-    while i < len(satirlar):
-        if "STUDIO:CUSTOM:BEGIN" in satirlar[i] and blok_idx in eski_bloklar:
-            sonuc.append(eski_bloklar[blok_idx])
-            blok_idx += 1
-            i += 1
-            while i < len(satirlar) and "STUDIO:CUSTOM:END" not in satirlar[i]:
-                i += 1
-            i += 1
-        else:
-            sonuc.append(satirlar[i])
-            i += 1
-    return "\n".join(sonuc)
-
-
-def normalize_custom(icerik):
-    """CUSTOM blokları çıkararak normalize eder — fark karşılaştırması için."""
-    satirlar = icerik.split("\n")
-    filtreli = []
-    atlaniyor = False
-    for satir in satirlar:
-        if "STUDIO:CUSTOM:BEGIN" in satir:
-            atlaniyor = True
-        if not atlaniyor:
-            filtreli.append(satir)
-        if "STUDIO:CUSTOM:END" in satir:
-            atlaniyor = False
-    return "\n".join(filtreli)
-
-
 def dosya_fark_var_mi(proje_dosya, ds_dosya):
+    """İki dosya bayt-bayt farklı mı? (birleştirme yok — aynen karşılaştırma)"""
     if not proje_dosya.exists() or not ds_dosya.exists():
         return proje_dosya.exists() != ds_dosya.exists()
-    p = normalize_custom(proje_dosya.read_text(encoding="utf-8", errors="replace"))
-    d = normalize_custom(ds_dosya.read_text(encoding="utf-8", errors="replace"))
-    return p != d
+    return proje_dosya.read_bytes() != ds_dosya.read_bytes()
+
+
+def _stale_yedek(proje_dosya):
+    """Ezilecek proje dosyasının son halini workspace/.stale/ altına yedekler."""
+    try:
+        rel = proje_dosya.relative_to(ROOT)
+    except ValueError:
+        rel = Path(proje_dosya.name)
+    hedef = ROOT / "workspace" / ".stale" / rel
+    try:
+        hedef.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(proje_dosya, hedef)
+    except OSError:
+        pass
 
 
 def dosya_guncelle(proje_dosya, ds_dosya):
+    """DS dosyasını AYNEN yazar (birleştirme yok).
+
+    Ezilen eski dosya workspace/.stale/<rel> altında saklanır — yanlışlıkla
+    kaybolan proje-özel bir satır oradan geri alınabilir.
+    """
     if not ds_dosya.exists():
         return False
-    ds_icerik = ds_dosya.read_text(encoding="utf-8", errors="replace")
-    eski_bloklar = {}
     if proje_dosya.exists():
-        eski_bloklar = custom_bloklari_cikart(proje_dosya.read_text(encoding="utf-8", errors="replace"))
-    yeni_icerik = custom_bloklari_uygula(ds_icerik, eski_bloklar)
+        _stale_yedek(proje_dosya)
     proje_dosya.parent.mkdir(parents=True, exist_ok=True)
-    proje_dosya.write_text(yeni_icerik, encoding="utf-8")
+    proje_dosya.write_bytes(ds_dosya.read_bytes())
     return True
 
 
