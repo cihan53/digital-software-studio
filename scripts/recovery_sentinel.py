@@ -12,8 +12,10 @@ Bu ajan, stüdyo açılırken veya çalışma sırasında:
 4. "Yarım kalan işler ve deploy tamamlandı" raporunu verip stüdyonun olağan akışına devam etmesini sağlar.
 """
 
+import json
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -151,6 +153,86 @@ class RecoverySentinelAgent:
         except Exception:
             pass
 
+    def denetle_ci_cd_deploy(self) -> dict:
+        """GitHub Actions üzerindeki son deploy durumunu sorgular.
+        Deploy hatası varsa otomatik olarak [DEPLOY-CI/CD] talebi açar.
+        """
+        sonuc = {"durum": "BILINMIYOR", "run_id": None, "hata": None}
+        try:
+            cmd = ["gh", "run", "list", "--limit", "5", "--json",
+                   "databaseId,status,conclusion,workflowName,headSha,url,createdAt"]
+            res = subprocess.run(cmd, cwd=self.root, capture_output=True, text=True, timeout=20)
+            if res.returncode != 0:
+                return sonuc
+            runs = json.loads(res.stdout)
+            deploy_runs = [r for r in runs if "deploy" in (r.get("workflowName") or "").lower()]
+            if not deploy_runs:
+                return sonuc
+            son_run = deploy_runs[0]
+            run_id = son_run.get("databaseId")
+            status = son_run.get("status")
+            conclusion = son_run.get("conclusion")
+            sonuc["run_id"] = run_id
+            sonuc["status"] = status
+            sonuc["conclusion"] = conclusion
+
+            if status in ("in_progress", "queued"):
+                sonuc["durum"] = "CALISIYOR"
+                self.log("⏳", f"Canlı dağıtım (CI/CD) GitHub Actions üzerinde devam ediyor (Run ID: {run_id}).")
+            elif conclusion == "success":
+                sonuc["durum"] = "BASARILI"
+                self.log("✅", f"Canlı dağıtım (CI/CD) BAŞARILI! Sürüm cPanel ortamında aktif (Run ID: {run_id}).")
+                self._coz_deploy_talepleri()
+            elif conclusion in ("failure", "timed_out", "cancelled"):
+                sonuc["durum"] = "BASARISIZ"
+                log_cmd = ["gh", "run", "view", str(run_id), "--log-failed"]
+                log_res = subprocess.run(log_cmd, cwd=self.root, capture_output=True, text=True, timeout=30)
+                hata_log = log_res.stdout or log_res.stderr or "Hata detayı alınamadı"
+                sonuc["hata"] = hata_log[:1500]
+                self.log("❌", f"Canlı dağıtım (CI/CD) BAŞARISIZ! (Run ID: {run_id})")
+                self._talep_ac_deploy_ci_cd(run_id, son_run.get("workflowName", "Deploy"), hata_log)
+        except Exception as e:
+            self.log("ℹ️", f"CI/CD deploy durumu kontrol edilemedi: {e}")
+        return sonuc
+
+    def _coz_deploy_talepleri(self):
+        """Açık kalan [DEPLOY] taleplerini COZULDU olarak günceller."""
+        if not MT:
+            return
+        try:
+            data = MT.load_data()
+            for t in data.get("talepler", []):
+                if (t.get("baslik") or "").startswith(("[DEPLOY]", "[DEPLOY-CI/CD]")) and t.get("durum") not in ("COZULDU", "IPTAL"):
+                    MT.guncelle(t["id"], durum="COZULDU",
+                                studio_notu="CI/CD dağıtımı başarıyla tamamlandı, canlı sistem devrede.")
+                    self.log("✓", f"Eski deploy hatası {t['id']} başarıyla kapatıldı.")
+        except Exception:
+            pass
+
+    def _talep_ac_deploy_ci_cd(self, run_id: int, workflow: str, hata: str):
+        """CI/CD deploy başarısızlığını acil müşteri talebi olarak havuza düşürür."""
+        if not MT:
+            return
+        try:
+            data = MT.load_data()
+            for t in data.get("talepler", []):
+                if f"Run #{run_id}" in (t.get("aciklama") or "") and t.get("durum") not in ("COZULDU", "IPTAL"):
+                    return
+                if (t.get("baslik") or "").startswith("[DEPLOY-CI/CD]") and t.get("durum") not in ("COZULDU", "IPTAL"):
+                    return
+            yeni = MT.yeni_talep(
+                "HATA",
+                f"[DEPLOY-CI/CD] GitHub Actions cPanel dağıtımı başarısız oldu (Run #{run_id})",
+                f"GitHub Actions '{workflow}' iş akışı canlıya dağıtım yaparken çöktü.\n\n"
+                f"**Run ID:** {run_id}\n\n"
+                f"**Başarısız Olan Adım Logları:**\n```\n{hata[:1200]}\n```\n\n"
+                "Ajanların bu hatayı inceleyip workflow veya kaynak kodundaki derleme/dağıtım sorununu çözmesi gerekmektedir.",
+                oncelik="ACIL", sayfa_url="/"
+            )
+            self.log("🚨", f"CI/CD Deploy arızası {yeni['id']} talebi olarak havuza düşürüldü!")
+        except Exception as e:
+            self.log("⚠️", f"Deploy talebi oluşturulurken hata: {e}")
+
     def bekleyen_talepleri_incele(self) -> list:
         """Çözülmüş ancak henüz yayına girmemiş müşteri taleplerini tespit eder."""
         bekleyenler = []
@@ -188,12 +270,14 @@ class RecoverySentinelAgent:
         git_durumu = self.git_durumu_incele()
         pano_durumu = self.pano_yarim_isleri_incele()
         bekleyen_talepler = self.bekleyen_talepleri_incele()
+        ci_cd_bilgi = self.denetle_ci_cd_deploy()
 
         yarim_is_var = pano_durumu["toplam_yarim"] > 0
         deploy_yarim = git_durumu["uncommitted"] or (git_durumu["unpushed_commits"] > 0)
+        ci_cd_hatali = ci_cd_bilgi.get("durum") == "BASARISIZ"
 
         # Durum 1: Hiçbir yarım iş yok, her şey güncel
-        if not yarim_is_var and not deploy_yarim:
+        if not yarim_is_var and not deploy_yarim and not ci_cd_hatali:
             self.log("✅", "Harika! Sistemde yarım kalmış iş veya bekleyen deploy bulunmuyor.")
             self.log("ℹ️", "Tüm görevler tutarlı, yerel kod tabanı origin/master ile tam senkronize.")
             print("═"*65 + "\n")
@@ -329,6 +413,11 @@ class RecoverySentinelAgent:
                 if push_ok:
                     self.log("🎉", f"BAŞARILI! Tüm yarım kalan değişiklikler GitHub origin/{branch} dalına aktarıldı.")
                     self.log("🚀", "GitHub Actions CI/CD pipeline'ı devreye girdi ve otomatik canlı dağıtımı tetiklendi!")
+                    try:
+                        time.sleep(3)
+                        self.denetle_ci_cd_deploy()
+                    except Exception:
+                        pass
                 else:
                     hepsi_temiz = False
                     self.log("❌", f"PUSH BAŞARISIZ — değişiklikler origin/{branch} dalına ulaşmadı:")

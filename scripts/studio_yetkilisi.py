@@ -497,6 +497,10 @@ def otomatik_musteri_talepleri_senkronize_et() -> int:
     """
     sys.path.insert(0, str(ROOT))
     import studio_board as B
+    try:
+        B.reconcile_talepler_and_board()
+    except Exception:
+        pass
     board = B.load()
     if not board:
         return 0
@@ -542,9 +546,9 @@ def otomatik_musteri_talepleri_senkronize_et() -> int:
             continue
         if tid in acik_talep_idler:
             continue
-        # İşlemdeki talep için geçmiş görev kaydı varsa dokunma —
-        # telafi zinciri veya kapanış akışı yürüyor olabilir.
-        if durum in ("GELISTIRILIYOR", "TESTTE") and tid in mevcut_talep_idler:
+        # İşlemdeki talep için açık görev varsa dokunma; ancak açık görevi kalmamışsa
+        # (çökmüş veya atlanmışsa) sprinte yeniden alınmasını sağla.
+        if durum in ("GELISTIRILIYOR", "TESTTE") and tid in acik_talep_idler:
             continue
 
         # Sadece HATA olanlar veya aktif faz onaylı olanlar sprinte girebilir
@@ -563,7 +567,12 @@ def otomatik_musteri_talepleri_senkronize_et() -> int:
     print(f"\n⚡ [MÜŞTERİ TALEPLERİ SENKRONİZASYONU (TRIAGE ONAYLI)]")
     print(f"  {len(isleme_alinacaklar)} adet talep aktif sprint panosuna ekleniyor...")
 
-    sid = f"S{len(board.get('sprints', [])) + 1}"
+    mevcut_sprint_nolar = [
+        int(s["id"][1:]) for s in board.get("sprints", [])
+        if s.get("id", "").startswith("S") and s.get("id")[1:].isdigit()
+    ]
+    yeni_sid_no = (max(mevcut_sprint_nolar) + 1) if mevcut_sprint_nolar else 1
+    sid = f"S{yeni_sid_no}"
     tasks = []
     task_counter = 1
 
