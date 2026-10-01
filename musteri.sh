@@ -201,9 +201,15 @@ while true; do
       read -r -p "Devam etmek için Enter'a basın..." _
       ;;
     5)
-      echo -e "\n${BLUE}🌐 Canlı geliştirme ortamı açılıyor (Ctrl+C ile durdurulabilir)...${NC}"
+      echo -e "\n${BLUE}🌐 Yerel geliştirme ortamı açılıyor (Ctrl+C ile durdurulabilir)...${NC}"
       sleep 1
-      ./canli.sh
+      if [ -f "./yerel_ortam.sh" ]; then
+        ./yerel_ortam.sh
+      elif [ -f "./workspace/yerel_ortam.sh" ]; then
+        ./workspace/yerel_ortam.sh
+      else
+        ./canli.sh
+      fi
       ;;
     6)
       echo -e "\n${GREEN}workspace/docs/musteri_talepleri.md açılıyor:${NC}"
