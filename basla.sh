@@ -83,8 +83,14 @@ PYEOF
   --kurtar|--deploy|--recovery)
       $PY scripts/recovery_sentinel.py
       exit 0 ;;
-  --canli|--dev)
-      exec ./canli.sh ;;
+  --canli|--dev|--yerel)
+      if [ -f "./yerel_ortam.sh" ]; then
+        exec ./yerel_ortam.sh
+      elif [ -f "./workspace/yerel_ortam.sh" ]; then
+        exec ./workspace/yerel_ortam.sh
+      else
+        exec ./canli.sh
+      fi ;;
   --test-izle)
       node scripts/tarayici_test_izle.mjs
       exit 0 ;;

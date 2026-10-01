@@ -54,9 +54,8 @@ async function main() {
   if (!isFrontendUp || !isBackendUp) {
     console.log(`\n${YELLOW}⚠️  DİKKAT: Sistem henüz canlı değil!${RESET}`);
     if (!isFrontendUp) console.log(`   - Web Arayüzü (Port 3000): ${RED}KAPALI${RESET}`);
-    if (!isBackendUp) console.log(`   - Backend API (Port 3001): ${RED}KAPALI${RESET}`);
-    console.log(`\n👉 ${BOLD}Lütfen önce başka bir terminal sekmesinde sistemi ayağa kaldırın:${RESET}`);
-    console.log(`   ${GREEN}./canli.sh${RESET}`);
+    console.log(`\n👉 ${BOLD}Lütfen önce başka bir terminal sekmesinde yerel sistemi ayağa kaldırın:${RESET}`);
+    console.log(`   ${GREEN}./yerel_ortam.sh${RESET}`);
     console.log(`\nArdından bu komutu tekrar çalıştırın:\n   ${CYAN}./basla.sh --test-izle${RESET}\n`);
     process.exit(1);
   }
