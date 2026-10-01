@@ -1085,8 +1085,8 @@ def progress(board: dict) -> dict:
     }
 
 
-# ---------------------------------------------------------------- canlı ortam
-# UAT/ziyaretçi testleri canlı sisteme ihtiyaç duyar (canli.sh):
+# ---------------------------------------------------------------- yerel ortam
+# UAT/ziyaretçi testleri yerel geliştirme sistemine ihtiyaç duyar (yerel_ortam.sh):
 # frontend localhost:3000 (Nuxt), backend localhost:3001 (Fastify).
 LIVE_PORTS = (3000, 3001)
 
