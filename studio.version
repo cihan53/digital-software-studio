@@ -1,6 +1,6 @@
 {
-  "version": "1.10.16",
-  "released": "2026-09-29",
+  "version": "1.10.17",
+  "released": "2026-10-01",
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
     "scripts/musteri_talepleri.py",
@@ -32,6 +32,13 @@
   ],
   "protected_files": [],
   "changelog": [
+    {
+      "version": "1.10.17",
+      "date": "2026-10-01",
+      "changes": [
+        "Merge pull request #108 from cihan53/feature/107"
+      ]
+    },
     {
       "version": "1.10.16",
       "date": "2026-09-29",
