@@ -788,13 +788,41 @@ def recover_orphans(board: dict) -> bool:
     return changed
 
 
-# ---------------------------------------------------------------- durum makinesi
 def refresh(board: dict) -> dict:
     """Bağımlılıklara göre TODO -> READY / BLOCKED geçişlerini uygular.
 
     Sprint'ler kesin sıralıdır: bir sprint'in görevleri, önceki sprint'in
-    TAMAMI bitmeden READY olamaz.
+    TAMAMI bitmeden READY olamaz. Çözülmüş veya iptal edilmiş taleplere ait
+    görevler panoda bekletilmez; doğrudan DONE veya SKIPPED yapılır.
     """
+    cozulmus_talepler = set()
+    iptal_talepler = set()
+    try:
+        conn = db_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT id, durum FROM talepler WHERE durum IN ('COZULDU', 'KAPATILDI', 'IPTAL')")
+        for row in cur.fetchall():
+            d = (row["durum"] or "").upper()
+            if d in ("COZULDU", "KAPATILDI"):
+                cozulmus_talepler.add(row["id"])
+            elif d == "IPTAL":
+                iptal_talepler.add(row["id"])
+        conn.close()
+    except Exception:
+        pass
+
+    # 1. Çözülmüş/iptal taleplerin görev durumlarını güncelle
+    for s in board.get("sprints", []):
+        for t in s.get("tasks", []):
+            tid = t.get("talep_id")
+            if tid:
+                if tid in cozulmus_talepler and t.get("status") not in (DONE, SKIPPED):
+                    t["status"] = DONE
+                    t["note"] = "talep çözüldü (senkronize)"
+                elif tid in iptal_talepler and t.get("status") not in (DONE, SKIPPED):
+                    t["status"] = SKIPPED
+                    t["note"] = "talep iptal edildi"
+
     done_ids = {t["id"] for _, t in all_tasks(board) if t["status"] in TERMINAL}
     failed_ids = {t["id"] for _, t in all_tasks(board) if t["status"] == FAILED}
 
@@ -909,6 +937,89 @@ def purge_talep_gorevleri(talep_id: str) -> dict:
     save(board)
     audit("musteri", "pano_talep_temizlik", talep_id=talep_id,
           detay={"silinen": sonuc["silinen"], "kosan": sonuc["kosan"]})
+    return sonuc
+
+
+def sync_talep_cozuldu(talep_id: str) -> dict:
+    """Çözülen talebin panodaki görevlerini kapatır, sprintleri ve kuyruğu günceller."""
+    conn = db_conn()
+    guncellenenler = []
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, sprint_id, durum FROM pano_gorevleri "
+            "WHERE talep_id = ? AND durum NOT IN ('DONE', 'SKIPPED')",
+            (talep_id,)
+        )
+        rows = cur.fetchall()
+        for r in rows:
+            gid = r["id"]
+            cur.execute("UPDATE pano_gorevleri SET durum = 'DONE', not_ = 'talep çözüldü (senkronize)' WHERE id = ?", (gid,))
+            guncellenenler.append(gid)
+        conn.commit()
+    except Exception as e:
+        print(f"  [!] sync_talep_cozuldu hatası: {e}")
+    finally:
+        conn.close()
+
+    board = db_load_board()
+    if board:
+        refresh(board)
+        schedule(board)
+        save(board)
+        request("reload", "1", kaynak="musteri")
+    return {"guncellenenler": guncellenenler}
+
+
+def reconcile_talepler_and_board() -> dict:
+    """Veritabanındaki talepler ile pano görevlerini tam mutabakata sokar.
+
+    - Çözülmüş veya kapatılmış taleplerin panodaki açık görevlerini DONE yapar.
+    - İptal edilen taleplerin panodaki açık görevlerini SKIPPED yapar.
+    - Tüm görevleri kapanmış sprintleri DONE olarak sonlandırır.
+    """
+    conn = db_conn()
+    sonuc = {"kapatilan_gorevler": [], "tamamlanan_sprintler": []}
+    try:
+        cur = conn.cursor()
+        # 1. Çözülmüş taleplerin açık görevlerini DONE yap
+        cur.execute(
+            "SELECT p.id FROM pano_gorevleri p "
+            "JOIN talepler t ON p.talep_id = t.id "
+            "WHERE t.durum IN ('COZULDU', 'KAPATILDI') AND p.durum NOT IN ('DONE', 'SKIPPED')"
+        )
+        for r in cur.fetchall():
+            cur.execute(
+                "UPDATE pano_gorevleri SET durum = 'DONE', not_ = 'talep çözüldü (mutabakat)' WHERE id = ?",
+                (r["id"],)
+            )
+            sonuc["kapatilan_gorevler"].append(r["id"])
+
+        # 2. İptal taleplerin açık görevlerini SKIPPED yap
+        cur.execute(
+            "SELECT p.id FROM pano_gorevleri p "
+            "JOIN talepler t ON p.talep_id = t.id "
+            "WHERE t.durum = 'IPTAL' AND p.durum NOT IN ('DONE', 'SKIPPED')"
+        )
+        for r in cur.fetchall():
+            cur.execute(
+                "UPDATE pano_gorevleri SET durum = 'SKIPPED', not_ = 'talep iptal edildi (mutabakat)' WHERE id = ?",
+                (r["id"],)
+            )
+            sonuc["kapatilan_gorevler"].append(r["id"])
+
+        conn.commit()
+    except Exception as e:
+        print(f"  [!] reconcile_talepler_and_board hatası: {e}")
+    finally:
+        conn.close()
+
+    board = db_load_board()
+    if board:
+        refresh(board)
+        schedule(board)
+        save(board)
+        request("reload", "1", kaynak="sistem")
     return sonuc
 
 

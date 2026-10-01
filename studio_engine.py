@@ -2504,6 +2504,7 @@ def otomatik_kurtar_ve_temizle(board: dict) -> int:
     """Yarım kalan, çöken veya önceki oturumlarda hata veren (FAILED / BLOCKED)
     görevleri kontrol eder; yetimleri ve geçici API hatası (503 / kapasite / ağ)
     alan görevleri otomatik olarak kurtarıp tekrar sıraya (TODO) alır.
+    Çözülmüş veya iptal edilmiş taleplerin görevleri sıraya ALINMAZ.
     Kurtarılan görev sayısını döner.
     """
     changed = False
@@ -2512,9 +2513,39 @@ def otomatik_kurtar_ve_temizle(board: dict) -> int:
     if B.recover_orphans(board):
         changed = True
 
+    cozulmus_tids = set()
+    iptal_tids = set()
+    try:
+        conn = B.db_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT id, durum FROM talepler WHERE durum IN ('COZULDU', 'KAPATILDI', 'IPTAL')")
+        for r in cur.fetchall():
+            d = (r["durum"] or "").upper()
+            if d in ("COZULDU", "KAPATILDI"):
+                cozulmus_tids.add(r["id"])
+            elif d == "IPTAL":
+                iptal_tids.add(r["id"])
+        conn.close()
+    except Exception:
+        pass
+
     # 2. FAILED ve BLOCKED görevler (Örn: Model 503 kapasite hatası, geçici ağ hatası)
     for s in board.get("sprints", []):
         for t in s.get("tasks", []):
+            tid = t.get("talep_id")
+            if tid and tid in cozulmus_tids:
+                if t.get("status") != B.DONE:
+                    t["status"] = B.DONE
+                    t["note"] = "talep çözüldü (mutabakat)"
+                    changed = True
+                continue
+            if tid and tid in iptal_tids:
+                if t.get("status") != B.SKIPPED:
+                    t["status"] = B.SKIPPED
+                    t["note"] = "talep iptal edildi"
+                    changed = True
+                continue
+
             if t.get("status") in (B.FAILED, B.BLOCKED):
                 old_status = t.get("status")
                 note = t.get("note", "")
@@ -2542,7 +2573,14 @@ def run_board(org: dict, brief: str, once: bool = False,
         print("[i] Koşucu 'acil durdur' ile devre dışı. "
               "Yeniden başlatmak için: ./basla.sh")
         return 0
-    # 0. Süreç, Kurtarma ve Dağıtım Nöbetçisi Ajanı (Failover & Deploy Recovery)
+
+    # 0. Çözülmüş talepler ile pano görevleri arasında mutabakat sağla
+    try:
+        B.reconcile_talepler_and_board()
+    except Exception:
+        pass
+
+    # 0.1 Süreç, Kurtarma ve Dağıtım Nöbetçisi Ajanı (Failover & Deploy Recovery)
     try:
         sys.path.insert(0, str(ROOT / "scripts"))
         import recovery_sentinel as RS

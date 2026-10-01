@@ -501,8 +501,13 @@ def guncelle(talep_id: str, durum: str = None, gorevli_rol: str = None,
                     "eylem": f"Durum güncellendi: {durum}",
                     "durum": durum.upper()
                 })
-                # Eğer talep çözüldüyse GitHub Issue'yu otomatik kapat
+                # Eğer talep çözüldüyse panodaki görevleri senkronize kapat ve GitHub Issue'yu kapat
                 if durum.upper() == "COZULDU":
+                    try:
+                        B.sync_talep_cozuldu(talep_id)
+                    except Exception as e:
+                        print(f"  ℹ️ Pano senkronizasyon uyarısı: {e}")
+
                     if t.get("github_issue_number") and GH:
                         kapanis_aciklama = studio_notu or f"Talep {datetime.now().strftime('%Y-%m-%d %H:%M')} itibarıyla stüdyo ekibi tarafından başarıyla çözüldü."
                         GH.github_issue_kapat(t["github_issue_number"], kapanis_notu=kapanis_aciklama)
@@ -524,6 +529,12 @@ def guncelle(talep_id: str, durum: str = None, gorevli_rol: str = None,
                                 push_res = subprocess.run(["git", "push", "origin", "master"], cwd=ROOT, capture_output=True, text=True)
                                 if push_res.returncode == 0:
                                     print("  ✓ origin/master dalına başarıyla pushlandı. GitHub Actions CI/CD otomatik dağıtımı başlattı!")
+                                    try:
+                                        sys.path.insert(0, str(ROOT / "scripts"))
+                                        import recovery_sentinel as RS
+                                        RS.RecoverySentinelAgent(verbose=False).denetle_ci_cd_deploy()
+                                    except Exception:
+                                        pass
                                 else:
                                     print(f"  ⚠️ Push uyarısı: {push_res.stderr.strip()[:200]}")
                             else:
