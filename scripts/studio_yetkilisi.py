@@ -245,7 +245,7 @@ def ai_danisma(talep: dict, kategori_id: str) -> str:
     ai_araclari = [
         {
             "ad": "AGY",
-            "komut": ["agy", "ask", "--no-interactive", prompt],
+            "komut": ["agy", "-p", prompt, "--output-format", "text"],
         },
         {
             "ad": "Devin",
@@ -381,11 +381,11 @@ def cozum_plani_olustur(talep_id: str) -> str:
             "Müşterinin bildirdiği hata veya eksiklik tamamen ortadan kalktı.",
             f"İlgili ekranda (`{sayfa or '/'}`) görsel veya işlevsel bir kırılma yaşanmadı.",
             "Mevcut çalışan diğer rotalar ve özellikler bozulmadan korundu.",
-            f"Değişiklik tamamlandıktan sonra talep durumu `COZULDU` olarak güncellendi.",
+            f"Değişiklik tamamlandıktan sonra talep durumu `ONAY_BEKLIYOR` olarak güncellendi; kullanıcı canlıda teyit ettikten sonra `COZULDU` olarak kapatıldı.",
         ])
     )
-    # Son iki genel kriter her zaman ekle
-    kabul_md += "\n- [ ] Değişiklik tamamlandıktan sonra talep durumu `COZULDU` olarak güncellendi."
+    # Son genel kriter
+    kabul_md += "\n- [ ] Değişiklik tamamlandıktan sonra talep durumu `ONAY_BEKLIYOR` olarak güncellendi; kullanıcı canlıda teyit ettikten sonra `COZULDU` olarak kapatıldı."
 
     # Dosya listesi markdown
     dosya_md = "\n".join(f"   - `{d}`" for d in dosyalar)
@@ -690,8 +690,8 @@ def main():
             args.cozum_onayla,
             durum="COZULDU",
             studio_notu=(
-                f"{datetime.now().strftime('%Y-%m-%d %H:%M')} itibarıyla ekip tarafından "
-                f"çözüldü ve müşteri onayına sunuldu."
+                f"{datetime.now().strftime('%Y-%m-%d %H:%M')} itibarıyla müşteri tarafından "
+                f"canlıda doğrulandı ve ÇÖZÜLDÜ olarak kapatıldı."
             ),
         ):
             print(f"✓ [{args.cozum_onayla}] ÇÖZÜLDÜ olarak işaretlendi.")
