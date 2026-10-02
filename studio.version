@@ -1,6 +1,6 @@
 {
-  "version": "1.10.17",
-  "released": "2026-10-01",
+  "version": "1.10.18",
+  "released": "2026-10-02",
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
     "scripts/musteri_talepleri.py",
@@ -32,6 +32,13 @@
   ],
   "protected_files": [],
   "changelog": [
+    {
+      "version": "1.10.18",
+      "date": "2026-10-02",
+      "changes": [
+        "feat: devre kesici, canlı onay kapısı ve agy canlı akış desteği (#109)"
+      ]
+    },
     {
       "version": "1.10.17",
       "date": "2026-10-01",
