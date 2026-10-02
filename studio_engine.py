@@ -738,7 +738,40 @@ def _call_agy(system_prompt: str, user_prompt: str, effort: str, model: str,
     cmd.append(f"-p={merged}")
 
     run_cwd = ROOT if tools else SCRATCH_DIR
-    rc, out, err = _run_cli(cmd, run_cwd, AGY_TIMEOUT + 60, "agy")
+    live = TRACE_DIR / "current.out"
+    izle_dur = threading.Event()
+    t_start = time.time()
+
+    def _agy_nabiz():
+        while not izle_dur.is_set():
+            gecen = int(time.time() - t_start)
+            dakika = gecen // 60
+            saniye = gecen % 60
+            sure_str = f"{dakika}dk {saniye}sn" if dakika else f"{saniye}sn"
+            bilgi = (
+                f"🤖 [AGY ÇAĞRISI AKTİF]\n"
+                f"────────────────────────────────────────────────────────────\n"
+                f"  • Model        : {model} (effort: {effort})\n"
+                f"  • Çalışma Alanı: {run_cwd.relative_to(ROOT) if run_cwd != ROOT else '.'}\n"
+                f"  • Geçen Süre   : {sure_str} (Zaman aşımı: {AGY_TIMEOUT}s)\n"
+                f"  • Durum        : Model görev üzerinde çalışıyor, araçları yürütüyor...\n"
+                f"  • Son Nabız    : {datetime.now().strftime('%H:%M:%S')}\n"
+                f"────────────────────────────────────────────────────────────\n"
+            )
+            try:
+                live.write_text(bilgi, encoding="utf-8")
+            except OSError:
+                pass
+            izle_dur.wait(3)
+
+    t_nabiz = threading.Thread(target=_agy_nabiz, daemon=True)
+    t_nabiz.start()
+
+    try:
+        rc, out, err = _run_cli(cmd, run_cwd, AGY_TIMEOUT + 60, "agy")
+    finally:
+        izle_dur.set()
+        t_nabiz.join(timeout=1)
 
     if rc != 0:
         detail = (err or out or "").strip()[:500]
@@ -1849,14 +1882,14 @@ def _auto_talep_uat(task: dict, uat_cikti: str, kaynak: str = "UAT",
                     neden: str = "canlı kabul denetimi") -> str | None:
     """Canlı UAT/smoke/derleme başarısızlığını müşteri talep havuzuna düşürür.
 
-    Mükerrer koruması: aynı görev id'si ve kaynak etiketiyle açık
+    Mükerrer koruması: aynı kök talep veya görev id'si ile açık
     (çözülmemiş/iptal edilmemiş) bir talep varsa yenisi açılmaz.
 
-    Sınırlı telafi zinciri: bu görev kendisi bir telafi talebinden
-    doğduysa zincir derinliği artar; STUDIO_UAT_MAX_REMEDIATION aşılınca
-    kaynak talep INSAN_GEREKLI yapılır ve yeni otomatik telafi açılmaz.
+    Devre Kesici (Circuit Breaker): Bir talep zinciri STUDIO_UAT_MAX_REMEDIATION
+    sınırına ulaştığında yeni talep açmak yerine pano otomatik DURAKLATILIR
+    ve talep INSAN_GEREKLI durumuna çekilerek kısır döngü kesilir.
 
-    Açılan talep id'sini döner; açılmadıysa/limitteyse None.
+    Açılan talep id'sini döner; açılmadıysa/devre kesici devredeyse None.
     """
     try:
         scripts_dir = str(ROOT / "scripts")
@@ -1866,46 +1899,81 @@ def _auto_talep_uat(task: dict, uat_cikti: str, kaynak: str = "UAT",
         import importlib
         importlib.reload(MT)
 
-        baslik = f"[{kaynak}] {task['id']} {neden} başarısız: {task.get('title', '')[:80]}"
+        # 1. Kök talep tespiti (task['talep_id'] veya başlıktan regex)
+        kok_tid = task.get("talep_id")
+        if not kok_tid:
+            m = re.search(r"TALEP-\d+", task.get("title", "") + " " + task.get("description", ""))
+            if m:
+                kok_tid = m.group(0)
+
+        # Eğer bulunan talep başka bir kök talebin telafisiyse, asıl köke kadar takip et
+        if kok_tid:
+            k_talep = MT.getir(kok_tid) or {}
+            while k_talep.get("kok_talep_id") and k_talep.get("kok_talep_id") != kok_tid:
+                kok_tid = k_talep["kok_talep_id"]
+                k_talep = MT.getir(kok_tid) or {}
+
         data = MT.load_data()
-        # HİJYEN bulguları görev-özel değil ortam-seviyesidir; artefakt
-        # durdukça her görev yeni talep açmasın diye global dedup yapılır.
-        anahtar = "[HİJYEN]" if kaynak == "HİJYEN" else f"[{kaynak}] {task['id']}"
-        for t in data.get("talepler", []):
-            if (t.get("baslik") or "").startswith(anahtar) \
-                    and t.get("durum") not in ("COZULDU", "IPTAL"):
+        acik_talepler = [t for t in data.get("talepler", []) if t.get("durum") not in ("COZULDU", "IPTAL")]
+
+        # 2. Mükerrer kontrolü: Bu kök talep veya bu görev için açık telafi talebi var mı?
+        anahtar_gorev = f"[{kaynak}] {task['id']}"
+        for t in acik_talepler:
+            t_baslik = t.get("baslik") or ""
+            if kaynak == "HİJYEN" and t_baslik.startswith("[HİJYEN]"):
+                print(f"   [i] Açık HİJYEN talebi zaten var: {t['id']} — mükerrer kayıt açılmadı.")
+                return t["id"]
+            if kok_tid and (t.get("kok_talep_id") == kok_tid or f"[{kok_tid}]" in t_baslik):
+                print(f"   [i] Bu kök talep ({kok_tid}) için açık {kaynak} talebi zaten var: {t['id']} — mükerrer açılmadı.")
+                return t["id"]
+            if t_baslik.startswith(anahtar_gorev):
                 print(f"   [i] Açık {kaynak} talebi zaten var: {t['id']} — mükerrer kayıt açılmadı.")
                 return t["id"]
 
-        # Sınırlı telafi zinciri: görev bir telafi talebinden mi geldi?
-        zincir = 0
-        kaynak_tid = task.get("talep_id")
-        if kaynak_tid:
-            kaynak = MT.getir(kaynak_tid) or {}
-            zincir = int(kaynak.get("telafi_zincir") or 0) + 1
-            if zincir > UAT_MAX_REMEDIATION:
-                MT.guncelle(
-                    kaynak_tid, durum="INSAN_GEREKLI",
-                    studio_notu=(
-                        f"Otomatik {kaynak} telafi sınırı aşıldı "
-                        f"({UAT_MAX_REMEDIATION} deneme). {task['id']} görevi "
-                        f"yine başarısız oldu; insan müdahalesi gerekiyor."))
-                print(f"   ⛔ [TELAFİ SINIRI] {kaynak_tid} → INSAN_GEREKLI "
-                      f"(zincir {zincir} > {UAT_MAX_REMEDIATION}).")
+        # 3. Devre Kesici (Circuit Breaker) & Sınırlı Telafi Zinciri Kontrolü
+        zincir = 1
+        if kok_tid:
+            k_talep = MT.getir(kok_tid) or {}
+            zincir = int(k_talep.get("telafi_zincir") or 0) + 1
+            if zincir >= UAT_MAX_REMEDIATION:
+                not_metni = (
+                    f"Otomatik {kaynak} telafi sınırı aşıldı ({zincir}/{UAT_MAX_REMEDIATION}). "
+                    f"'{task['id']}' görevi yine başarısız oldu; Devre Kesici panoyu duraklattı."
+                )
+                MT.guncelle(kok_tid, durum="INSAN_GEREKLI", studio_notu=not_metni)
+                if task.get("talep_id") and task["talep_id"] != kok_tid:
+                    MT.guncelle(task["talep_id"], durum="INSAN_GEREKLI", studio_notu=not_metni)
+
+                # Devre kesici: panoyu duraklat ve audit kaydı düş
+                B.request("pause", f"devre_kesici:{kok_tid}", kaynak="kalite")
+                B.audit("kalite", "devre_kesici_tetiklendi", talep_id=kok_tid,
+                        detay={"zincir": zincir, "gorev": task["id"], "kaynak": kaynak, "neden": neden})
+                print(f"\n   ⛔ [DEVRE KESİCİ DEVREYE GİRDİ] {kok_tid} için telafi sınırı aşıldı ({zincir} deneme).")
+                print(f"      Pano otomatik DURAKLATILDI. Sonsuz hata/talep döngüsü engellendi.")
+                print(f"      İncelemeden sonra panoyu sürdürmek için web panelinden '▶ Sürdür' veya './basla.sh --surdur' yapabilirsiniz.\n")
                 return None
 
+        # 4. Yeni telafi talebi oluştur
+        kok_etiket = f"[{kok_tid}] " if kok_tid else ""
+        baslik = f"[{kaynak}] {kok_etiket}{task['id']} {neden} başarısız: {task.get('title', '')[:70]}"
         aciklama = (
             f"Deterministik kalite kapısı '{task['id']}' görevinde "
             f"{neden} başarısızlığı tespit etti.\n\nSon çıktı satırları:\n```\n{(uat_cikti or '').strip()[-900:]}\n```"
         )
         yeni = MT.yeni_talep("HATA", baslik, aciklama, oncelik="YUKSEK", sayfa_url="/")
-        # Zincir derinliği ve kaynak görev talebin üzerinde taşınır
+        
+        # Zincir derinliği ve kök talep bağlantısını kaydet
         data2 = MT.load_data()
         for t in data2.get("talepler", []):
             if t["id"] == yeni["id"]:
                 t["telafi_zincir"] = zincir
+                t["kok_talep_id"] = kok_tid or task.get("talep_id")
                 t["kaynak_gorev"] = task["id"]
         MT.save_data(data2)
+
+        if kok_tid:
+            MT.guncelle(kok_tid, telafi_zincir=zincir)
+
         print(f"   📥 [OTOMATİK TALEP] {yeni['id']} havuza eklendi (zincir {zincir}/{UAT_MAX_REMEDIATION}): {baslik[:70]}")
         return yeni["id"]
     except Exception as e:
@@ -2296,10 +2364,18 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
             import musteri_talepleri as MT
             import importlib
             importlib.reload(MT)
-            if task.get("phase") == "test" and not uat_devri:
-                MT.guncelle(task["talep_id"], durum="ONAY_BEKLIYOR",
-                            studio_notu=f"Görev {task['id']} tamamlandı ve UAT testinden geçti — "
-                                        "kapanış için müşteri onayı bekleniyor.")
+            if not uat_devri:
+                # Test görevi veya bu talep için açık başka görev kalmadıysa ONAY_BEKLIYOR yap
+                baska_acik_gorev = any(
+                    t.get("talep_id") == task["talep_id"]
+                    and t.get("id") != task["id"]
+                    and t.get("status") not in B.TERMINAL
+                    for _, t in B.all_tasks(board)
+                )
+                if not baska_acik_gorev:
+                    MT.guncelle(task["talep_id"], durum="ONAY_BEKLIYOR",
+                                studio_notu=f"Görev {task['id']} tamamlandı — "
+                                            "canlı sistemde doğrulama ve kapanış için müşteri onayı bekleniyor.")
         except Exception:
             pass
     return True
@@ -2573,6 +2649,20 @@ def run_board(org: dict, brief: str, once: bool = False,
         print("[i] Koşucu 'acil durdur' ile devre dışı. "
               "Yeniden başlatmak için: ./basla.sh")
         return 0
+
+    # 0. Disk alanı kontrolü: Sistem diski kritik seviyede mi (< 500 MB)?
+    try:
+        st = shutil.disk_usage(ROOT)
+        free_mb = st.free / (1024 * 1024)
+        if free_mb < 500:
+            print(f"\n⛔ [DİSK KRİTİK] Kullanılabilir disk alanı {free_mb:.0f} MB (< 500 MB).")
+            print(f"   Çökmeleri ve veri kaybını önlemek için pano otomatik DURAKLATILDI.")
+            print(f"   Lütfen disk alanı açtıktan sonra './basla.sh --surdur' ile devam edin.\n")
+            B.request("pause", f"disk_dolu:{free_mb:.0f}MB", kaynak="sistem")
+            B.audit("sistem", "disk_alani_kritik", detay={"bos_mb": round(free_mb, 1)})
+            return 0
+    except Exception:
+        pass
 
     # 0. Çözülmüş talepler ile pano görevleri arasında mutabakat sağla
     try:
