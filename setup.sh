@@ -7,6 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 BOLD='\033[1m'
+DIM='\033[2m'
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
 YELLOW='\033[1;33m'
