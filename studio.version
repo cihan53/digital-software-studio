@@ -28,7 +28,8 @@
     "web/panel.html",
     "web/musteri.html",
     "web/stil.css",
-    "studio.version"
+    "studio.version",
+    "setup.sh"
   ],
   "protected_files": [],
   "changelog": [
