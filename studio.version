@@ -1,5 +1,5 @@
 {
-  "version": "1.10.25",
+  "version": "1.10.26",
   "released": "2026-10-03",
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
@@ -33,6 +33,13 @@
   ],
   "protected_files": [],
   "changelog": [
+    {
+      "version": "1.10.26",
+      "date": "2026-10-03",
+      "changes": [
+        "Merge pull request #127 from cihan53/bug/126"
+      ]
+    },
     {
       "version": "1.10.25",
       "date": "2026-10-03",
