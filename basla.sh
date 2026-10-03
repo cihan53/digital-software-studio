@@ -17,6 +17,8 @@
 #   ./basla.sh --tara /path/to/kaynak-proje   deterministik kaynak taraması üretir
 #                                           (workspace/docs/kaynak_proje_*.md)
 #   STUDIO_WORD_SCALE=3 ./basla.sh            rol kelime bütçelerini 3 katına çıkarır
+#   ./basla.sh --replan                       tasarımı başlatır, panoyu mevcut
+#                                             analizle SIFIRDAN yeniden planlar
 #
 #   Git akışı: otomatik commit'ler çalışma dalına (studio/calisma) gider;
 #   ./basla.sh --merge     onay — çalışma dalını main'e birleştirir
@@ -112,6 +114,8 @@ PYEOF
       fi
       $PY scripts/kaynak_tarama.py --kaynak "$2" --docs workspace/docs
       exit $? ;;
+  --replan|--yeniden-planla)
+      REPLAN_ARG="--replan" ;;
   --musteri|--talep|--talepler)
       exec ./musteri.sh "${@:2}" ;;
   --izle)   exec $PY studio_ctl.py ;;
@@ -649,7 +653,7 @@ export STUDIO_BACKEND="${STUDIO_BACKEND:-agy}"
 export STUDIO_AGY_BIN="${AGY_EXE:-$HOME/.local/bin/agy}"
 [ -n "${DEVIN_EXE:-}" ] && export STUDIO_DEVIN_BIN="$DEVIN_EXE"
 mkdir -p "$(dirname "$LOG")"
-nohup $PY studio_engine.py --full --yes ${STUDIO_BUTCE:+--max-cost $STUDIO_BUTCE} > "$LOG" 2>&1 &
+nohup $PY studio_engine.py --full --yes ${REPLAN_ARG:-} ${STUDIO_BUTCE:+--max-cost $STUDIO_BUTCE} > "$LOG" 2>&1 &
 PID=$!
 sleep 2
 if ! kill -0 "$PID" 2>/dev/null; then

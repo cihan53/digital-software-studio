@@ -145,6 +145,7 @@ Stüdyo çalışırken terminal üzerinden canlı olarak izlenebilir:
 | **`./basla.sh --kurtar`** | Kurtarma ajanını çalıştırır, yarım kalan işleri ve deployları tamamlar. |
 | **`./basla.sh --onayla`** | Günlük kota dolduğunda ek görev izni verir. |
 | **`./basla.sh --tara <dizin>`** | Var olan bir projeyi deterministik tarar; sonucu `workspace/docs/kaynak_proje_*.md` olarak yazar (analiz/migrasyon işlerinde). |
+| **`./basla.sh --replan`** | Tasarımı başlatır ve sprint panosunu mevcut analizle sıfırdan yeniden planlar. |
 | **`./basla.sh --durdur`** | Çalışan stüdyoyu nazikçe durdurur. |
 | **`./basla.sh --oncelik <görev> <n>`** | Görev önceliğini değiştirir (büyük = önce koşar). |
 | **`./basla.sh --sira <görev> <poz>`** | Görevi sprint içinde yeniden sıralar. |
