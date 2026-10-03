@@ -24,6 +24,7 @@ import time
 import subprocess
 import sys
 import threading
+from datetime import datetime
 from pathlib import Path
 
 # Log'un tail -f ile anlık izlenebilmesi için satır tamponlama.
@@ -2449,7 +2450,6 @@ def autonomous_gap_review_and_phasing(org: dict, brief: str, board: dict) -> int
     tespit eder, tartışıp yeni sprint fazlarına böler ve panoya ekler.
     Eklenen yeni sprint sayısını döner (0 = eksik yok, proje tamam).
     """
-    from datetime import datetime
     print("\n" + "="*70)
     print("  🧠 [LİDERLİK DÖNGÜSÜ: CTO & PRODUCT OWNER EKSİK VE FAZ DEĞERLENDİRMESİ]")
     print("="*70)
