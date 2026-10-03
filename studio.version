@@ -1,5 +1,5 @@
 {
-  "version": "1.10.21",
+  "version": "1.10.22",
   "released": "2026-10-03",
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
@@ -33,6 +33,13 @@
   ],
   "protected_files": [],
   "changelog": [
+    {
+      "version": "1.10.22",
+      "date": "2026-10-03",
+      "changes": [
+        "feat: CLI asılı kalma gözcüsü + sınırlı otomatik tekrar (#120) (#121)"
+      ]
+    },
     {
       "version": "1.10.21",
       "date": "2026-10-03",
