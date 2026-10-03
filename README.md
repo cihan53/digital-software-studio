@@ -226,6 +226,22 @@ roller varsayılan backend ile çalışmaya devam eder.
 `STUDIO_DEVIN_CLOUD`, `STUDIO_DEVIN_TIMEOUT`, `STUDIO_DEVIN_PERMISSION_MODE`
 (bkz. `.env.example`).
 
+### Asılı Kalma Gözcüsü (otomatik kurtarma)
+
+Bir CLI çağrısı (agy / devin / claude) uzun süre **hiçbir canlılık sinyali**
+üretmeden beklemede kalırsa — CPU ilerlemesi yok, stdout'da bayt yok ve
+süreç grubunda açık `ESTABLISHED` TCP soketi yok — motor süreç grubunu kendi
+kendine keser ve çağrıyı yeniden dener. Böylece API isteği ölü kalıp CLI
+sonsuz beklediğinde manuel `kill` + pipeline yeniden başlatma gerekmez.
+
+- `STUDIO_CLI_STALL` (vars. **600s**): inaktivite eşiği; `0` kapatır.
+- `STUDIO_CALL_RETRY` (vars. **2**): asılı kalma başına en fazla yeniden
+  deneme. Tükenirse panelde alternatif motor önerisi çıkar ve hata
+  çağırana iletilir — kısır döngüye girilmez.
+- `STUDIO_DEVIN_STALL` (vars. **300s**): devin'e özel ek koruma — model
+  yanıtı `stop` ile bitirmiş ama CLI çıkmıyorsa, tamamlanmış son mesaj
+  `sessions.db`'den kurtarılıp çağrı başarılı sayılır.
+
 ---
 
 ## 🛡️ Güvenlik & Gizlilik (Zero Leakage Protocol)

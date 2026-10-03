@@ -343,6 +343,20 @@ DEVIN_TIMEOUT = int(os.getenv("STUDIO_DEVIN_TIMEOUT", "3600"))
 # kurtarılır ve süreç kesilir.
 DEVIN_STALL = int(os.getenv("STUDIO_DEVIN_STALL", "300"))
 CLAUDE_TIMEOUT = int(os.getenv("STUDIO_CLAUDE_TIMEOUT", "1800"))
+# Evrensel asılı-kalma gözcüsü: bir CLI çağrısı bu kadar saniye boyunca
+# hiçbir canlılık sinyali üretmezse (CPU ilerlemesi, stdout baytı, açık
+# ESTABLISHED TCP soketi) süreç grubu öldürülür ve CliStalledError fırlatılır.
+# 0 = kapalı. Amaç: API isteği ölümcül takıldığında ~60 dk'lık timeout
+# beklemek yerine erken fark edip yeniden denemek.
+CLI_STALL = int(os.getenv("STUDIO_CLI_STALL", "600"))
+# Asılı kalma (CliStalledError) sonrası çağrının en fazla kaç kez otomatik
+# yeniden deneneceği. Üst sınır kısır döngüyü engeller; tükenince hata
+# çağırana yükselir.
+CALL_RETRY = int(os.getenv("STUDIO_CALL_RETRY", "2"))
+
+
+class CliStalledError(RuntimeError):
+    """CLI süreci canlılık sinyali üretmeden asılı kaldı; çağrı tekrarlanabilir."""
 DEVIN_CLOUD = os.getenv("STUDIO_DEVIN_CLOUD", "0") == "1"
 DEVIN_PERMISSION_MODE = os.getenv("STUDIO_DEVIN_PERMISSION_MODE", "dangerous")
 EFFORT = os.getenv("STUDIO_EFFORT", "high")   # low | medium | high
@@ -637,10 +651,53 @@ class CallAborted(Exception):
     """
 
 
+def _cli_grup_stats(pgid: int) -> tuple[float | None, int]:
+    """Süreç grubu için (toplam_cpu_saniye, established_tcp_sayisi).
+
+    pgrep/ps/lsof her 15s'de bir çağrılır — maliyeti ihmal edilebilir.
+    Ölçüm başarısızsa cpu None döner (o sinyal atlanır, diğerleri konuşur).
+    """
+    try:
+        out = subprocess.run(["pgrep", "-g", str(pgid)],
+                             capture_output=True, text=True, timeout=5).stdout
+        pids = [p for p in out.split() if p.strip().isdigit()]
+    except (OSError, subprocess.SubprocessError):
+        pids = []
+    if not pids:
+        return None, 0
+    csvp = ",".join(pids)
+    cpu = 0.0
+    try:
+        out = subprocess.run(["ps", "-o", "time=", "-p", csvp],
+                             capture_output=True, text=True, timeout=5).stdout
+        for tok in out.split():
+            # ps TIME biçimi: [[gg-]ss:]dd:ss  → gün önekinde "-" kullanır
+            try:
+                vals = [float(x) for x in tok.replace("-", ":").split(":")]
+            except ValueError:
+                continue
+            sn = 0.0
+            for v in vals:
+                sn = sn * 60 + v
+            cpu += sn
+    except (OSError, subprocess.SubprocessError):
+        cpu = None
+    soket = 0
+    try:
+        out = subprocess.run(
+            ["lsof", "-a", "-nP", "-iTCP", "-sTCP:ESTABLISHED", "-p", csvp],
+            capture_output=True, text=True, timeout=10).stdout
+        soket = out.count("ESTABLISHED")
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return cpu, soket
+
+
 def _run_cli(cmd: list, cwd: Path, timeout: int, name: str,
              stdin_text: str | None = None,
              on_stdout_line=None,
-             kesme=None):
+             kesme=None,
+             stall_after: int = CLI_STALL):
     """CLI'yi kesilebilir şekilde çalıştırır.
 
     Normal akışta subprocess.run ile aynıdır. Farkı: her yarım saniyede
@@ -667,6 +724,10 @@ def _run_cli(cmd: list, cwd: Path, timeout: int, name: str,
             except (OSError, BrokenPipeError):
                 pass
         threading.Thread(target=_besle, daemon=True).start()
+    # Canlılık sayacı: stdout baytı, CPU ilerlemesi veya açık TCP soketi
+    # görüldükçe güncellenir. Hiçbiri stall_after saniyedir yoksa çağrı
+    # asılı sayılıp CliStalledError fırlatılır.
+    son_canli = [time.time()]
     okuyucular = []
     if on_stdout_line is not None:
         # stdout'u satır satır tüket: hem topla hem canlı geri çağrıya ver.
@@ -677,6 +738,7 @@ def _run_cli(cmd: list, cwd: Path, timeout: int, name: str,
             try:
                 for satir in proc.stdout:
                     out_parca.append(satir)
+                    son_canli[0] = time.time()
                     try:
                         on_stdout_line(satir)
                     except Exception:
@@ -696,6 +758,7 @@ def _run_cli(cmd: list, cwd: Path, timeout: int, name: str,
             okuyucular.append(t)
     deadline = time.time() + timeout
     try:
+        son_olcum = {"t": 0.0, "cpu": None}
         while proc.poll() is None:
             if B.is_set("force"):
                 try:
@@ -717,6 +780,35 @@ def _run_cli(cmd: list, cwd: Path, timeout: int, name: str,
                     except OSError:
                         pass
                 break
+            if stall_after and time.time() - son_canli[0] > stall_after:
+                # 15s'de bir ölç: CPU ilerliyor mu / açık soket var mı.
+                # İkisi de yoksa süreç ölü bir beklemede (asılı HTTP isteği)
+                # — kesip CliStalledError ile çağıranın tekrarlamasına bırak.
+                if time.time() - son_olcum["t"] >= 15:
+                    son_olcum["t"] = time.time()
+                    try:
+                        cpu, soket = _cli_grup_stats(os.getpgid(proc.pid))
+                    except OSError:
+                        cpu, soket = None, 0
+                    if cpu is not None and son_olcum["cpu"] is not None \
+                            and cpu > son_olcum["cpu"] + 0.5:
+                        son_canli[0] = time.time()   # CPU ilerliyor → canlı
+                    elif soket > 0:
+                        son_canli[0] = time.time()   # açık bağlantı var → canlı
+                    if cpu is not None:
+                        son_olcum["cpu"] = cpu
+                if time.time() - son_canli[0] > stall_after:
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                        proc.wait(timeout=5)
+                    except (OSError, subprocess.TimeoutExpired):
+                        try:
+                            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                        except OSError:
+                            pass
+                    raise CliStalledError(
+                        f"{name} {stall_after}s boyunca canlılık sinyali "
+                        "üretmedi (CPU ilerlemesi/çıktı/açık soket yok).")
             if time.time() > deadline:
                 try:
                     os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
@@ -1012,7 +1104,7 @@ def _call_devin(system_prompt: str, user_prompt: str, effort: str, model: str,
     if asil.is_set():
         text = (kurtarilan["text"] or "").strip()
         if not text:
-            raise RuntimeError(
+            raise CliStalledError(
                 f"devin {DEVIN_STALL}s boyunca yeni çıktı üretmedi ve "
                 "kurtarılacak tamamlanmış mesaj bulunamadı.")
         print(f"  [~] devin yanıtı {DEVIN_STALL}s asılı kaldı; tamamlanmış "
@@ -1229,6 +1321,7 @@ def query_claude(system_prompt: str, user_prompt: str,
     t0 = time.time()
 
     waited = 0
+    stall_deneme = 0
     try:
         while True:
             try:
@@ -1249,6 +1342,18 @@ def query_claude(system_prompt: str, user_prompt: str,
             except CallAborted:
                 (TRACE_DIR / "current.json").write_text("{}", encoding="utf-8")
                 raise
+            except CliStalledError as e:
+                # Asılı çağrıyı sınırlı sayıda yeniden dene; tükenince
+                # alternatif motor öner + hatayı yukarı bırak (kısır döngü yok).
+                stall_deneme += 1
+                if stall_deneme > CALL_RETRY:
+                    B.motor_oneri_yaz(backend, model,
+                                      meta.get("task") or meta.get("sprint") or "",
+                                      str(e), _motor_alternatifler(backend))
+                    raise
+                print(f"  [~] {e} — çağrı yeniden deneniyor "
+                      f"({stall_deneme}/{CALL_RETRY}).", file=sys.stderr)
+                time.sleep(10)
             except RuntimeError as e:
                 if not is_limit_error(str(e)):
                     raise
