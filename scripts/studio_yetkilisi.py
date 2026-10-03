@@ -288,27 +288,98 @@ def ai_danisma(talep: dict, kategori_id: str) -> str:
 # KATEGORİ TESPİT FONKSİYONU — v2.0
 # ==============================================================================
 
+def _kelime_say(metin: str, anahtarlar: list) -> int:
+    """Anahtar kelimeleri kelime sınırıyla sayar (alt dizgi eşleşmesi yok).
+
+    Başlangıç sınırı zorunlu ('api' ≠ 'kapı'); 5 karakterden kısa
+    kelimelerde bitiş sınırı da zorunlu ('api' ≠ 'apiary', 'rest' ≠
+    'restore'), uzunlarda Türkçe ek alınabilir ('kaynak' → 'kaynağı' hariç).
+    """
+    n = 0
+    for k in anahtarlar:
+        k = k.lower()
+        son = r"(?!\w)" if len(k) < 5 else ""
+        if re.search(r"(?<!\w)" + re.escape(k) + son, metin):
+            n += 1
+    return n
+
+
 def tespit_et_kategori(talep: dict) -> dict:
     """
     Talep metnini analiz ederek en uygun kategoriyi seçer.
-    Öncelik sırası: KATEGORILER listesindeki sıra.
-    """
-    metin = " ".join([
-        talep.get("baslik", ""),
-        talep.get("aciklama", ""),
-        talep.get("sayfa_url", ""),
-    ]).lower()
 
+    Skor tabanlı: başlıktaki eşleşme 3 ağırlıklı, açıklama/sayfa 1 ağırlıklı.
+    En yüksek skor kazanır; eşitlikte KATEGORILER sırası belirler. Hiçbiri
+    eşleşmezse varsayılan (anahtarsız) kategori seçilir.
+    """
+    baslik = (talep.get("baslik") or "").lower()
+    diger = " ".join([talep.get("aciklama") or "",
+                      talep.get("sayfa_url") or ""]).lower()
+
+    en_iyi, en_skor = None, 0
     for kat in KATEGORILER:
         anahtar = kat["anahtar_kelimeler"]
         if not anahtar:
-            # Varsayılan kategori — her zaman eşleşir
-            return kat
-        if any(k in metin for k in anahtar):
-            return kat
+            continue
+        skor = 3 * _kelime_say(baslik, anahtar) + _kelime_say(diger, anahtar)
+        if skor > en_skor:
+            en_iyi, en_skor = kat, skor
+    if en_iyi:
+        return en_iyi
 
-    # Güvenlik: son kategoriye (web_engineer) düş
+    # Varsayılan kategori (anahtarsız) — son kategori (web_engineer)
+    for kat in KATEGORILER:
+        if not kat["anahtar_kelimeler"]:
+            return kat
     return KATEGORILER[-1]
+
+
+# Tasarım-aşaması rolleri kod yazmaz (doküman üretir); kod görevinde
+# uygulayıcı role eşlenir.
+_KOD_ROLU = {"ui_designer": "web_engineer"}
+
+_FRONTEND_ADAYLARI = ("workspace/src/web", "workspace/src/frontend")
+_KOD_UZANTILARI = r"(?:vue|ts|tsx|js|mjs|css|scss|json|html|py|sh)"
+
+
+def _proje_yolu_coz(yol: str) -> str:
+    """Kategorideki sabit frontend yolunu projede gerçekten var olan
+    dizine (workspace/src/web | frontend) çevirir."""
+    for aday in _FRONTEND_ADAYLARI:
+        if yol.startswith("workspace/src/frontend") and (ROOT / aday).is_dir():
+            return aday + yol[len("workspace/src/frontend"):]
+    return yol
+
+
+def talepten_dosyalar(talep: dict, limit: int = 4) -> list:
+    """Talep metninde geçen ve projede VAR olan dosya yollarını döndürür.
+
+    'workspace/...' ile başlayan açık yollar ya da 'assets/css/main.css' /
+    'app.config.ts' gibi workspace/src altında tek eşleşen dosyalar.
+    """
+    metin = " ".join([talep.get("baslik") or "", talep.get("aciklama") or ""])
+    src = ROOT / "workspace" / "src"
+    bulunan = []
+
+    def ekle(rel: str):
+        if rel not in bulunan:
+            bulunan.append(rel)
+
+    for m in re.finditer(r"workspace/[\w./-]+", metin):
+        rel = m.group(0).rstrip(".,;:)")
+        if rel.startswith("workspace/src") and (ROOT / rel).is_file():
+            ekle(rel)
+
+    for m in re.finditer(r"(?<![\w/])([\w.-]+(?:/[\w.-]+)*\.%s)\b" % _KOD_UZANTILARI, metin):
+        ad = m.group(1)
+        if ad.startswith("workspace/") or not src.is_dir():
+            continue
+        adaylar = [p for p in src.rglob(Path(ad).name)
+                   if "node_modules" not in p.parts and ".nuxt" not in p.parts
+                   and p.is_file() and p.as_posix().endswith(ad)]
+        if len(adaylar) == 1:
+            ekle(adaylar[0].relative_to(ROOT).as_posix())
+    return bulunan[:limit]
 
 
 def tespit_et_rol_ve_bilesen(talep: dict) -> tuple:
@@ -579,14 +650,20 @@ def otomatik_musteri_talepleri_senkronize_et() -> int:
     for t in isleme_alinacaklar:
         tid = t["id"]
         kat = tespit_et_kategori(t)
-        rol = kat["id"]
+        rol = _KOD_ROLU.get(kat["id"], kat["id"])
         ham_dosyalar = kat["dosyalar"]
         plan_dosyasi = t.get("cozum_plani") or f"workspace/docs/cozum_planlari/{tid}.md"
 
         # Çıktı yollarının mutlak olarak workspace/ altında kaldığını garanti et
-        guvenli_dosyalar = [d for d in ham_dosyalar if d.startswith("workspace/")]
+        # Talepte açıkça geçen mevcut dosyalar önceliklidir; kategorinin sabit
+        # yolları ise projedeki gerçek dizin yapısına çözülür.
+        guvenli_dosyalar = talepten_dosyalar(t)
+        for d in ham_dosyalar:
+            d = _proje_yolu_coz(d)
+            if d.startswith("workspace/") and d not in guvenli_dosyalar:
+                guvenli_dosyalar.append(d)
         if not guvenli_dosyalar:
-            guvenli_dosyalar = ["workspace/src/frontend/"]
+            guvenli_dosyalar = [_proje_yolu_coz("workspace/src/frontend/")]
 
         # 1. Geliştirme Görevi
         dev_task_id = f"{sid}-T{task_counter}"
@@ -597,7 +674,7 @@ def otomatik_musteri_talepleri_senkronize_et() -> int:
             "description": f"Müşteri Talebi: {t.get('aciklama')}\nÇözüm Planı: {plan_dosyasi}",
             "role": rol,
             "phase": "develop",
-            "outputs": guvenli_dosyalar[:2],
+            "outputs": guvenli_dosyalar[:4],
             "depends_on": [],
             "talep_id": tid,
         }
