@@ -13,6 +13,9 @@
 #   ./basla.sh --onayla     günlük kota dolduğunda bir tur daha izin ver
 #   ./basla.sh --onayla 5   bugün için 5 görevlik ek kota tanı
 #
+#   Git akışı: otomatik commit'ler çalışma dalına (studio/calisma) gider;
+#   ./basla.sh --merge     onay — çalışma dalını main'e birleştirir
+#
 #   Pano yönetimi (studio.db üzerinde çalışır, koşucu bayrakla haberdar edilir):
 #   ./basla.sh --oncelik S1-T2 10      görev önceliği (büyük = önce koşar)
 #   ./basla.sh --sira S1-T2 0          görevi sprint içinde sıraya taşı
@@ -114,6 +117,20 @@ print(f"✓ Onay verildi. Bugünkü kota: {d['gorev']}/{mg} görev, "
 print("  Başlatmak için: ./basla.sh")
 PYEOF
       exit 0 ;;
+  --merge|--onayla-merge)
+      DAL="${STUDIO_GIT_BRANCH:-studio/calisma}"
+      if [ ! -d .git ]; then
+        red "Bu klasör bir git reposu değil."; exit 1
+      fi
+      echo "Onay: çalışma dalı '$DAL' → main"
+      git checkout main \
+        && git pull --ff-only origin main \
+        && git merge --no-ff -X theirs "$DAL" \
+             -m "merge: $DAL (onaylandı)" \
+        && git push origin main \
+        && git checkout -q "$DAL" \
+        && echo "OK merge tamam - tekrar '$DAL' dalindasin."
+      exit $? ;;
   --durum)
       $PY - <<'PYEOF'
 import json, pathlib, subprocess, time, os, sys

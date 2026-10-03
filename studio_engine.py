@@ -186,6 +186,44 @@ def mark_step_done(state: dict, agent_id: str):
     save_state(state)
 
 
+def git_auto_commit(mesaj: str):
+    """STUDIO_GIT_AUTO açıkken proje dosyalarını çalışma dalına commit'ler.
+
+    .gitignore beyaz listesi sayesinde yalnızca proje çıktıları stage'lenir.
+    Repo ana dalındaysa (main/master) önce GIT_BRANCH dalına geçilir —
+    symbolic-ref kullanılır, yani çalışma ağacına (açık studio.db dahil)
+    dokunulmaz. Ana dala otomatik commit/push yapılmaz; merge kullanıcı
+    onayıdır. Repo/git yoksa tamamen no-op olur; git hataları üretimi
+    durdurmaz.
+    """
+    if not GIT_AUTO or not (ROOT / ".git").exists():
+        return
+
+    def _git(*args) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", *args], cwd=str(ROOT),
+                              capture_output=True, text=True, timeout=120)
+    try:
+        dal = _git("branch", "--show-current").stdout.strip()
+        if not dal or dal in ("main", "master"):
+            hedef = GIT_BRANCH
+            if _git("rev-parse", "--verify", "--quiet", hedef).returncode != 0:
+                if _git("branch", hedef).returncode != 0:
+                    return
+            if _git("symbolic-ref", "HEAD",
+                    f"refs/heads/{hedef}").returncode != 0:
+                return
+            dal = hedef
+        if not _git("status", "--porcelain").stdout.strip():
+            return
+        _git("add", "-A")
+        if _git("commit", "-q", "-m", mesaj).returncode != 0:
+            return
+        if GIT_PUSH:
+            _git("push", "-q", "-u", "origin", dal)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
 # -------------------------------------------------------------
 # 1b. ORTAM ÖN KONTROLÜ (deterministik — model kullanılmaz)
 # -------------------------------------------------------------
@@ -299,11 +337,23 @@ AGY_TIMEOUT = int(os.getenv("STUDIO_AGY_TIMEOUT", "1800"))
 DEVIN_MODEL = os.getenv("STUDIO_DEVIN_MODEL", "")   # boş = hesap/CLI varsayılanı
 CLAUDE_MODEL = os.getenv("STUDIO_CLAUDE_MODEL", "sonnet")  # sonnet / opus / haiku
 DEVIN_TIMEOUT = int(os.getenv("STUDIO_DEVIN_TIMEOUT", "3600"))
+# devin -p'de model yanıtı bitip (finish_reason=stop) süreç çıkmadan asılı
+# kalabiliyor (ör. otomatik "continue" isteği API'de takılıyor). sessions.db'de
+# bu kadar saniye yeni düğüm görünmezse son tamamlanmış asistan mesajı
+# kurtarılır ve süreç kesilir.
+DEVIN_STALL = int(os.getenv("STUDIO_DEVIN_STALL", "300"))
 CLAUDE_TIMEOUT = int(os.getenv("STUDIO_CLAUDE_TIMEOUT", "1800"))
 DEVIN_CLOUD = os.getenv("STUDIO_DEVIN_CLOUD", "0") == "1"
 DEVIN_PERMISSION_MODE = os.getenv("STUDIO_DEVIN_PERMISSION_MODE", "dangerous")
 EFFORT = os.getenv("STUDIO_EFFORT", "high")   # low | medium | high
 MAX_TOKENS = int(os.getenv("STUDIO_MAX_TOKENS", "64000"))
+
+# Otomatik git yedekleme: proje çıktıları her üretimde çalışma dalına
+# commit'lenir (repo yoksa no-op). main/master'a asla otomatik yazılmaz —
+# ana dala merge kullanıcı onayıdır (./basla.sh --merge).
+GIT_AUTO = os.getenv("STUDIO_GIT_AUTO", "1") == "1"
+GIT_PUSH = os.getenv("STUDIO_GIT_PUSH", "1") == "1"
+GIT_BRANCH = os.getenv("STUDIO_GIT_BRANCH", "studio/calisma")
 
 
 
@@ -589,7 +639,8 @@ class CallAborted(Exception):
 
 def _run_cli(cmd: list, cwd: Path, timeout: int, name: str,
              stdin_text: str | None = None,
-             on_stdout_line=None):
+             on_stdout_line=None,
+             kesme=None):
     """CLI'yi kesilebilir şekilde çalıştırır.
 
     Normal akışta subprocess.run ile aynıdır. Farkı: her yarım saniyede
@@ -599,6 +650,9 @@ def _run_cli(cmd: list, cwd: Path, timeout: int, name: str,
     stdin'ine beslenir (uzun prompt'lar argv sınırını aşar).
     `on_stdout_line` verilirse stdout satır satır okuyucu iş parçacığıyla
     tüketilir ve her satır geri çağrıya iletilir (canlı akış için).
+    `kesme` bir threading.Event ise set edildiğinde süreç grubu SIGTERM ile
+    kapatılır; hata fırlatılmaz, çıkış koduyla dönülür (çağıran kurtarma
+    mantığını uygular — örn. devin asılı kalma tespiti).
     """
     proc = subprocess.Popen(
         cmd, stdin=subprocess.PIPE if stdin_text is not None else None,
@@ -653,6 +707,16 @@ def _run_cli(cmd: list, cwd: Path, timeout: int, name: str,
                     except OSError:
                         pass
                 raise CallAborted(f"{name} çağrısı kullanıcı isteğiyle kesildi (--force).")
+            if kesme is not None and kesme.is_set():
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                    proc.wait(timeout=5)
+                except (OSError, subprocess.TimeoutExpired):
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    except OSError:
+                        pass
+                break
             if time.time() > deadline:
                 try:
                     os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
@@ -843,6 +907,12 @@ def _call_devin(system_prompt: str, user_prompt: str, effort: str, model: str,
     except OSError:
         pass
     izle_dur = threading.Event()
+    # Asılı kalma tespiti: model "stop" ile bitirdikten sonra CLI'nin
+    # gönderdiği otomatik "continue" isteği API'de takılırsa süreç sonsuza
+    # dek yaşayabilir. Son tamamlanmış asistan mesajını saklayıp
+    # DEVIN_STALL saniyedir yeni düğüm gelmiyorsa çağrıyı keseriz.
+    asil = threading.Event()
+    kurtarilan = {"text": ""}
 
     def _devin_izle():
         baslangic = int(time.time())
@@ -851,6 +921,9 @@ def _call_devin(system_prompt: str, user_prompt: str, effort: str, model: str,
         # kimliğe göre tutup yenisiyle ezeceğiz — sıra ilk görülme sırası.
         mesajlar = {}
         son_metin = [""]
+        son_node = [0]
+        son_degisim = [time.time()]
+        son_asistan = {"text": "", "stop": False}
         while not izle_dur.is_set():
             try:
                 if sess_db.exists():
@@ -866,12 +939,16 @@ def _call_devin(system_prompt: str, user_prompt: str, effort: str, model: str,
                             oturum = row[0] if row else None
                         if oturum:
                             dugumler = conn.execute(
-                                "SELECT chat_message FROM message_nodes"
-                                " WHERE session_id=? ORDER BY node_id",
+                                "SELECT node_id, chat_message FROM"
+                                " message_nodes WHERE session_id=?"
+                                " ORDER BY node_id",
                                 (oturum,)).fetchall()
-                            for mesaj in dugumler:
+                            if dugumler and dugumler[-1][0] > son_node[0]:
+                                son_node[0] = dugumler[-1][0]
+                                son_degisim[0] = time.time()
+                            for dugum_id, mesaj in dugumler:
                                 try:
-                                    m = json.loads(mesaj[0])
+                                    m = json.loads(mesaj)
                                 except (ValueError, TypeError):
                                     continue
                                 rol = m.get("role")
@@ -880,6 +957,11 @@ def _call_devin(system_prompt: str, user_prompt: str, effort: str, model: str,
                                     icerik = (m.get("content") or "").strip()
                                     if icerik:
                                         satirlar.append(icerik)
+                                        meta_ = m.get("metadata") or {}
+                                        son_asistan["text"] = icerik
+                                        son_asistan["stop"] = (
+                                            meta_.get("finish_reason")
+                                            == "stop")
                                     for tc in m.get("tool_calls") or []:
                                         ad = tc.get("name", "?")
                                         arg = json.dumps(
@@ -906,15 +988,39 @@ def _call_devin(system_prompt: str, user_prompt: str, effort: str, model: str,
                         conn.close()
             except (OSError, sqlite3.Error):
                 pass
+            # Model "stop" ile bitirmiş ama süreç hâlâ dönmediyse ve
+            # DEVIN_STALL süredir yeni düğüm yoksa istek asılı demektir —
+            # son tamamlanmış mesajı kurtarıp süreci kestir.
+            if (son_asistan["stop"] and son_asistan["text"]
+                    and time.time() - son_degisim[0] > DEVIN_STALL):
+                kurtarilan["text"] = son_asistan["text"]
+                asil.set()
+                break
             izle_dur.wait(2.0)
 
     izleyici = threading.Thread(target=_devin_izle, daemon=True)
     izleyici.start()
 
     try:
-        rc, out, err = _run_cli(cmd, run_cwd, DEVIN_TIMEOUT + 60, "devin")
+        rc, out, err = _run_cli(cmd, run_cwd, DEVIN_TIMEOUT + 60, "devin",
+                                kesme=asil)
     finally:
         izle_dur.set()
+
+    # Asılı kalma kurtarması: süreç kesildi ama son tamamlanmış mesaj
+    # sessions.db'den alındı — stdout boş geleceği için onu kullan.
+    if asil.is_set():
+        text = (kurtarilan["text"] or "").strip()
+        if not text:
+            raise RuntimeError(
+                f"devin {DEVIN_STALL}s boyunca yeni çıktı üretmedi ve "
+                "kurtarılacak tamamlanmış mesaj bulunamadı.")
+        print(f"  [~] devin yanıtı {DEVIN_STALL}s asılı kaldı; tamamlanmış "
+              "son asistan mesajı sessions.db'den kurtarıldı.",
+              file=sys.stderr)
+        (TRACE_DIR / "current.out").write_text(text, encoding="utf-8")
+        return CliResult(text=text, stop_reason="stall_recovered",
+                         cost=0.0, usage={})
 
     if rc != 0:
         detail = (err or out or "").strip()[:500]
@@ -1609,6 +1715,7 @@ def run_agent(agent: dict, brief: str, state: dict, force: bool = False,
             print(f"       [✓] {f.relative_to(ROOT)}{extra}")
         produced.extend(files)
         mark_output_done(state, target)
+        git_auto_commit(f"studio: {agent['id']} → {target}")
 
     return produced
 
@@ -1711,6 +1818,7 @@ def execute_pipeline(org: dict, brief: str, args):
 
         if not args.dry_run:
             mark_step_done(state, agent_id)
+            git_auto_commit(f"studio: rol tamamlandı — {agent_id}")
 
     print(f"\n🎉 Bitti. Çıktılar: {WORKSPACE.relative_to(ROOT)}/")
 
@@ -2208,6 +2316,7 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
         agent = synthesize_role(org, role_id)
     if agent is None:
         B.mark(board, task["id"], B.FAILED, f"rol bulunamadı: {task['role']}")
+        git_auto_commit(f"studio: görev FAILED — {task['id']}")
         return False
 
     override = B.motor_override(task["id"])
@@ -2223,6 +2332,7 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
         inputs_text = collect_inputs(agent, strict=False)
     except FileNotFoundError as e:
         B.mark(board, task["id"], B.BLOCKED, str(e))
+        git_auto_commit(f"studio: görev BLOCKED — {task['id']}")
         print(f"     [!] {e}", file=sys.stderr)
         return False
 
@@ -2287,6 +2397,7 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
             output = query_claude(system, user, backend, model, effort, meta, tools)
         except RuntimeError as e:
             B.mark(board, task["id"], B.FAILED, str(e)[:200])
+            git_auto_commit(f"studio: görev FAILED — {task['id']}")
             print(f"     [!] {e}", file=sys.stderr)
             return False
 
@@ -2351,9 +2462,11 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
                         for n in gate_notes))
     if uat_devri:
         B.mark(board, task["id"], B.SKIPPED, note=note)
+        git_auto_commit(f"studio: görev SKIPPED — {task['id']}")
         print(f"   ⏭️  [TELAFİYE DEVİR] {task['id']} SKIPPED — düzeltme telafi talebi sprintinde yapılacak.")
     else:
         B.mark(board, task["id"], B.DONE, note=note)
+        git_auto_commit(f"studio: görev DONE — {task['id']}")
 
     # Müşteri talebi görevi ise durumu otomatik güncelle.
     # UAT telafiye devredildiyse (uat_devri) talep çözülmüş sayılmaz.
@@ -2745,6 +2858,7 @@ def run_board(org: dict, brief: str, once: bool = False,
             _, t = B.find_task(board, tid)
             if t:
                 B.mark(board, tid, B.SKIPPED, "kullanıcı atladı")
+                git_auto_commit(f"studio: görev SKIPPED — {tid}")
                 _talep_beklemeye_al(t)
                 print(f"\n[ATLANDI] {tid}")
             B.clear("skip")
@@ -2890,6 +3004,7 @@ def run_board(org: dict, brief: str, once: bool = False,
             print(f"\n[KESİLDİ] {e}")
             if B.value_of("skip") == task["id"]:
                 B.mark(board, task["id"], B.SKIPPED, "kullanıcı atladı")
+                git_auto_commit(f"studio: görev SKIPPED — {task['id']}")
                 _talep_beklemeye_al(task)
                 B.clear("skip")
             else:
