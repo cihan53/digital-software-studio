@@ -728,14 +728,15 @@ def _run_cli(cmd: list, cwd: Path, timeout: int, name: str,
     # görüldükçe güncellenir. Hiçbiri stall_after saniyedir yoksa çağrı
     # asılı sayılıp CliStalledError fırlatılır.
     son_canli = [time.time()]
-    okuyucular = []
-    if on_stdout_line is not None:
-        # stdout'u satır satır tüket: hem topla hem canlı geri çağrıya ver.
-        # stderr de ayrı tüketilmeli — aksi hâlde boru dolunca süreç kilitlenir.
-        out_parca, err_parca = [], []
+    # stdout/stderr HER ZAMAN arka plan iş parçacığıyla tahliye edilir —
+    # on_stdout_line'sız çağrılarda da boru 64 KB'da dolarsa çocuk süreç
+    # write()'da bloke olup ana süreçle karşılıklı bekler (pipe deadlock).
+    # Okuyucular hem veriyi toplar hem de (varsa) canlı geri çağrıyı besler.
+    out_parca, err_parca = [], []
 
-        def _oku_out():
-            try:
+    def _oku_out():
+        try:
+            if on_stdout_line is not None:
                 for satir in proc.stdout:
                     out_parca.append(satir)
                     son_canli[0] = time.time()
@@ -743,19 +744,30 @@ def _run_cli(cmd: list, cwd: Path, timeout: int, name: str,
                         on_stdout_line(satir)
                     except Exception:
                         pass
-            except (OSError, ValueError):
-                pass
+            else:
+                for veri in iter(lambda: proc.stdout.read(4096), ""):
+                    if not veri:
+                        break
+                    out_parca.append(veri)
+                    son_canli[0] = time.time()
+        except (OSError, ValueError):
+            pass
 
-        def _oku_err():
-            try:
-                err_parca.append(proc.stderr.read() or "")
-            except (OSError, ValueError):
-                pass
+    def _oku_err():
+        try:
+            for veri in iter(lambda: proc.stderr.read(4096), ""):
+                if not veri:
+                    break
+                err_parca.append(veri)
+                son_canli[0] = time.time()
+        except (OSError, ValueError):
+            pass
 
-        for hedef in (_oku_out, _oku_err):
-            t = threading.Thread(target=hedef, daemon=True)
-            t.start()
-            okuyucular.append(t)
+    okuyucular = []
+    for hedef in (_oku_out, _oku_err):
+        t = threading.Thread(target=hedef, daemon=True)
+        t.start()
+        okuyucular.append(t)
     deadline = time.time() + timeout
     try:
         son_olcum = {"t": 0.0, "cpu": None}
@@ -816,12 +828,9 @@ def _run_cli(cmd: list, cwd: Path, timeout: int, name: str,
                     pass
                 raise RuntimeError(f"{name} {timeout}s içinde yanıt vermedi.")
             time.sleep(0.5)
-        if okuyucular:
-            for t in okuyucular:
-                t.join(timeout=10)
-            out, err = "".join(out_parca), "".join(err_parca)
-        else:
-            out, err = proc.communicate()
+        for t in okuyucular:
+            t.join(timeout=10)
+        out, err = "".join(out_parca), "".join(err_parca)
         # Yarış: süreç SIGTERM ile zaten ölüp döngüden çıkmış olabilir;
         # yarım kalan çıktı parse hatasına dönüşmesin, CallAborted korunur.
         if B.is_set("force"):
