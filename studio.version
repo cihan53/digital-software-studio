@@ -1,5 +1,5 @@
 {
-  "version": "1.10.20",
+  "version": "1.10.21",
   "released": "2026-10-03",
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
@@ -33,6 +33,13 @@
   ],
   "protected_files": [],
   "changelog": [
+    {
+      "version": "1.10.21",
+      "date": "2026-10-03",
+      "changes": [
+        "feat: devin asili-kalma kurtarmasi ve otomatik git yedekleme (#114) (#116)"
+      ]
+    },
     {
       "version": "1.10.20",
       "date": "2026-10-03",
