@@ -144,6 +144,7 @@ Stüdyo çalışırken terminal üzerinden canlı olarak izlenebilir:
 | **`./basla.sh --durum`** | Tek satırlık durum ve kota özeti basar. |
 | **`./basla.sh --kurtar`** | Kurtarma ajanını çalıştırır, yarım kalan işleri ve deployları tamamlar. |
 | **`./basla.sh --onayla`** | Günlük kota dolduğunda ek görev izni verir. |
+| **`./basla.sh --tara <dizin>`** | Var olan bir projeyi deterministik tarar; sonucu `workspace/docs/kaynak_proje_*.md` olarak yazar (analiz/migrasyon işlerinde). |
 | **`./basla.sh --durdur`** | Çalışan stüdyoyu nazikçe durdurur. |
 | **`./basla.sh --oncelik <görev> <n>`** | Görev önceliğini değiştirir (büyük = önce koşar). |
 | **`./basla.sh --sira <görev> <poz>`** | Görevi sprint içinde yeniden sıralar. |
@@ -151,6 +152,49 @@ Stüdyo çalışırken terminal üzerinden canlı olarak izlenebilir:
 | **`./basla.sh --gec <görev> [--force]`** | Başka bir göreve geçer; `--force` çağrıyı anında keser. |
 | **`./basla.sh --atla [<görev>] [--force]`** | Görevi atlar (id yoksa koşan/sıradaki). |
 | **`./musteri.sh`** | Müşteri denetim masasını açar. |
+
+---
+
+## 🔎 Mevcut Projeyi Stüdyoya Tanıtma (Kaynak Taraması)
+
+Sıfırdan ürün yerine **var olan bir kod tabanını** analiz ettirmek/migre ettirmek
+istiyorsanız (ör. Angular → Vue çevirisi), önce kaynak projeyi deterministik
+olarak taratın:
+
+```bash
+./basla.sh --tara /path/to/kaynak-proje
+# eşdeğer: python3 scripts/kaynak_tarama.py --kaynak /path/to/kaynak-proje
+```
+
+Tarayıcı LLM **kullanmaz** — dosya sistemi ve desen eşleştirme ile çalışır ve
+`workspace/docs/` altına üç parça yazar (her biri girdi boyut sınırının altında):
+
+| Dosya | İçerik |
+| :--- | :--- |
+| `kaynak_proje_taramasi.md` | Teknoloji yığını, rol/menü enum'ları, guard'lar, erişim servisleri, **tüm routing dosyalarının tam kaynağı** |
+| `kaynak_proje_yetki_taramasi.md` | `ngxPermissionsOnly/Except` kullanımları, `.ts` içi rol/feature kontrolleri, koşullu görünürlük satırları |
+| `kaynak_proje_envanter.md` | Modül/dizin/component/servis envanteri |
+
+Motor, `workspace/docs/kaynak_proje_*.md` dosyalarını gördüğünde bunları
+**design aşamasındaki tüm rollerin girdisine otomatik ekler** ve prompt'a
+"tarama otoritedir" notu düşer — böylece CTO/PO/UX/güvenlik analizleri
+uydurma değil, kaynak kodun gerçek route–guard–rol–feature envanteri üzerinden
+yapılır.
+
+> Yeniden analiz için: çıktıları state'ten sıfırlayıp motoru
+> `studio_engine.py --full --yes --replan` ile çalıştırın.
+
+### Analiz derinliği: kelime bütçesi çarpanı
+
+Kapsamlı analizlerde rol dokümanlarının kelime bütçesini ölçekleyin:
+
+```bash
+python3 studio_engine.py --full --yes --word-scale 3   # veya
+STUDIO_WORD_SCALE=3 ./basla.sh
+```
+
+`--word-scale N` her rolün `max_words` bütçesini N ile çarpar (ör. UX Lideri
+2400 → 7200 kelime). Varsayılan `1`'dir.
 
 ---
 

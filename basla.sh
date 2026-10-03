@@ -13,6 +13,11 @@
 #   ./basla.sh --onayla     günlük kota dolduğunda bir tur daha izin ver
 #   ./basla.sh --onayla 5   bugün için 5 görevlik ek kota tanı
 #
+#   Var olan bir kod tabanını stüdyoya tanıtma (migrasyon/analiz projeleri):
+#   ./basla.sh --tara /path/to/kaynak-proje   deterministik kaynak taraması üretir
+#                                           (workspace/docs/kaynak_proje_*.md)
+#   STUDIO_WORD_SCALE=3 ./basla.sh            rol kelime bütçelerini 3 katına çıkarır
+#
 #   Git akışı: otomatik commit'ler çalışma dalına (studio/calisma) gider;
 #   ./basla.sh --merge     onay — çalışma dalını main'e birleştirir
 #
@@ -100,6 +105,13 @@ PYEOF
   --incele|--review)
       $PY studio_engine.py --review
       exit 0 ;;
+  --tara|--scan|--kaynak-tara)
+      if [ -z "${2:-}" ]; then
+        red "Kullanım: ./basla.sh --tara <kaynak-proje-dizini>"
+        exit 1
+      fi
+      $PY scripts/kaynak_tarama.py --kaynak "$2" --docs workspace/docs
+      exit $? ;;
   --musteri|--talep|--talepler)
       exec ./musteri.sh "${@:2}" ;;
   --izle)   exec $PY studio_ctl.py ;;
