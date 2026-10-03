@@ -137,13 +137,27 @@ def local_version_yukle():
     return {"version": "0.0.0", "updated": None}
 
 
+def korunan_dosyalar(ds_ver):
+    """DS'nin protected_files'ı + projenin .studio-version'daki yerel listesi.
+
+    Projeye özel düzenlenen tracked dosyalar (örn. studio_board.py LIVE_PORTS)
+    her güncellemede eziliyordu; proje bunları kendi .studio-version'ında
+    "protected_files": [...] ile kilitleyebilir.
+    """
+    yerel = local_version_yukle().get("protected_files", [])
+    return set((ds_ver or {}).get("protected_files", [])) | set(yerel)
+
+
 def local_version_kaydet(versiyon, ds_path):
+    onceki_korunan = local_version_yukle().get("protected_files")
     data = {
         "version": versiyon,
         "updated": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "ds_path": str(ds_path),
         "proje": ROOT.name
     }
+    if onceki_korunan:
+        data["protected_files"] = onceki_korunan
     LOCAL_VERSION_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     # Güncelleme bildirim önbelleği bayat kalmasın — .studio-version
     # değiştiğine göre paneldeki "güncelleme var" uyarısı da tazelensin.
@@ -227,7 +241,7 @@ def cmd_kontrol():
         sys.exit(1)
 
     tracked = ds_ver.get("tracked_files", [])
-    korunan = set(ds_ver.get("protected_files", []))
+    korunan = korunan_dosyalar(ds_ver)
 
     print(f"\n{BOLD}{CYAN}╔══════════════════════════════════════════════════╗")
     print(f"║  🔍  Framework Güncelleme Kontrol Raporu        ║")
@@ -365,7 +379,7 @@ def cmd_uygula(otomatik_commit=False, force=False, restart=False):
         sys.exit(1)
 
     tracked = ds_ver.get("tracked_files", [])
-    korunan = set(ds_ver.get("protected_files", []))
+    korunan = korunan_dosyalar(ds_ver)
 
     print(f"\n{BOLD}{CYAN}╔══════════════════════════════════════════════════╗")
     print(f"║  🚀  Framework Güncelleme Uygulanıyor           ║")
