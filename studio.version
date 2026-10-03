@@ -1,5 +1,5 @@
 {
-  "version": "1.10.22",
+  "version": "1.10.23",
   "released": "2026-10-03",
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
@@ -33,6 +33,13 @@
   ],
   "protected_files": [],
   "changelog": [
+    {
+      "version": "1.10.23",
+      "date": "2026-10-03",
+      "changes": [
+        "Merge pull request #122 from cihan53/bug/123-cli-pipe-deadlock"
+      ]
+    },
     {
       "version": "1.10.22",
       "date": "2026-10-03",
