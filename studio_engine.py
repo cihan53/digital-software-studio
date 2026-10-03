@@ -1342,6 +1342,21 @@ def read_input(path_str: str) -> str:
     raise FileNotFoundError(path_str)
 
 
+# scripts/kaynak_tarama.py ile üretilen deterministik tarama parçaları —
+# var olduklarında design aşaması rollerinin girdilerine otomatik eklenir.
+KAYNAK_TARAMA_GLOB = "kaynak_proje_*.md"
+KAYNAK_TARAMA_NOTU = (
+    "===== KAYNAK TARAMA NOTU =====\n"
+    "Girdilerindeki kaynak_proje_*.md dokümanları hedef kaynak projenin "
+    "deterministik (LLM'siz) taramasıdır ve OTORİTEDİR: içlerindeki route, "
+    "guard, rol, menü ve feature-flag bilgisi tek doğruluk kaynağıdır. "
+    "Taramayla çelişen varsayım üretme; taramada olmayan ekran/modül UYDURMA. "
+    "Taramadaki her route/ekran için çıktında karşılık üret; bilinçli "
+    "dışarıda bıraktığın varsa '> **BİLİNÇLİ DIŞARIDA:** <gerekçe>' ile "
+    "işaretle."
+)
+
+
 def collect_inputs(agent: dict, strict: bool = True) -> str:
     """Ajanın girdilerini toplar.
 
@@ -1352,10 +1367,23 @@ def collect_inputs(agent: dict, strict: bool = True) -> str:
     rol seviyesindeki girdi listesi o an henüz üretilmemiş dokümanlar içerebilir.
     Sıralamayı panonun 'depends_on' alanı yönetir; burada eksik doküman
     engelleyici değil, prompt'a düşülen bir nottur.
+
+    Ayrıca: workspace/docs/ altında kaynak_proje_*.md tarama dosyaları varsa
+    design aşamasındaki rollere otomatik girdi olarak eklenir ve otorite notu
+    düşülür (scripts/kaynak_tarama.py).
     """
+    inputs = list(agent["inputs"])
+    scan_injected = False
+    if agent.get("stage") == "design":
+        for p in sorted(DOC_DIR.glob(KAYNAK_TARAMA_GLOB)):
+            rel = f"workspace/docs/{p.name}"
+            if rel not in inputs:
+                inputs.append(rel)
+                scan_injected = True
+
     blocks = []
     missing = []
-    for inp in agent["inputs"]:
+    for inp in inputs:
         try:
             content = read_input(inp)
         except FileNotFoundError:
@@ -1381,6 +1409,8 @@ def collect_inputs(agent: dict, strict: bool = True) -> str:
               "içeriklerini uydurma; görevini eldeki girdilerle yap ve eksikten "
               "kaynaklanan varsayımlarını '> **Varsayım:**' ile işaretle."
         )
+    if scan_injected:
+        blocks.insert(0, KAYNAK_TARAMA_NOTU)
     return "\n\n".join(blocks)
 
 
@@ -1488,6 +1518,14 @@ def extract_mandatory(text: str) -> list[str]:
 
 
 DOC_WORD_BUDGET = int(os.getenv("STUDIO_DOC_WORDS", "1800"))
+# Rol "max_words" bütçeleri bu çarpanla ölçeklenir (derin analiz için
+# --word-scale 3 veya STUDIO_WORD_SCALE=3). 1.0 = org_chart değerleri aynen.
+WORD_SCALE = float(os.getenv("STUDIO_WORD_SCALE", "1.0"))
+
+
+def word_budget(agent: dict) -> int:
+    """Rolün etkin kelime bütçesi: max_words (veya varsayılan) × WORD_SCALE."""
+    return int((agent.get("max_words") or DOC_WORD_BUDGET) * WORD_SCALE)
 
 LENGTH_RULE = """
 --- UZUNLUK DİSİPLİNİ ---
@@ -1614,7 +1652,7 @@ def build_prompts(agent: dict, target: str, siblings: list[str], brief: str,
     if target == BRIEF_NAME:
         system += SCOPE_EDIT_RULE.format(rid=agent["id"])
     elif not is_dir and target.endswith(".md"):
-        words = int(agent.get("max_words") or DOC_WORD_BUDGET)
+        words = word_budget(agent)
         system += LENGTH_RULE.format(words=words)
 
     if is_dir:
@@ -1705,7 +1743,7 @@ def run_agent(agent: dict, brief: str, state: dict, force: bool = False,
             extra = ""
             if f.suffix == ".md":
                 w = len(f.read_text(encoding="utf-8", errors="replace").split())
-                budget = int(agent.get("max_words") or DOC_WORD_BUDGET)
+                budget = word_budget(agent)
                 if target == BRIEF_NAME:
                     extra = f"  ({w:,} kelime)"
                 elif w > budget * 1.6:
@@ -3075,10 +3113,15 @@ def main():
                     help="liderlik eksik denetimini ve yeni faz planlamasını tetikle")
     ap.add_argument("--backend", choices=sorted(VALID_BACKENDS), default=None,
                     help="çalıştırma arka ucu (varsayılan: STUDIO_BACKEND veya agy)")
+    ap.add_argument("--word-scale", type=float, default=None, metavar="N",
+                    help="rol max_words bütçelerini N ile çarpar "
+                         "(derin analiz için ör. 3; varsayılan: STUDIO_WORD_SCALE veya 1)")
     args = ap.parse_args()
 
-    global BACKEND
+    global BACKEND, WORD_SCALE
     BACKEND = (args.backend or os.getenv("STUDIO_BACKEND", "agy")).lower()
+    if args.word_scale:
+        WORD_SCALE = args.word_scale
 
     org_path = resolve_doc(args.org)
     if not org_path.exists():
