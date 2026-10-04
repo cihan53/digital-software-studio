@@ -1,0 +1,20 @@
+{
+  "source": { "path": "/yol/kaynak-proje", "live_url": "https://dev.ornek.io", "kind": "web" },
+  "analysis": {
+    "unit": "ekran",
+    "template": ["amaç", "girdiler", "çıktılar", "durumlar", "bağımlılıklar", "riskler"],
+    "max_words_l1": 250, "max_words_l2": 600,
+    "l2_quota_pct": 15, "l2_quota_max": 20, "stop_after_no_new": 5,
+    "output_dir": "workspace/docs/analiz"
+  },
+  "discovery": {
+    "goal": "Keşfin tek cümlelik hedefi",
+    "questions": ["Hangi widget/alanlar var?", "Hangi API uçlarını çağırıyor?"],
+    "allow": { "hosts": ["dev.ornek.io"], "paths": [] },
+    "deny": { "paths": ["logout|delete|billing"], "actions": ["submit", "save", "delete", "send", "pay"] },
+    "mode": "read_only",
+    "limits": { "max_units": 150, "max_actions_per_unit": 12, "max_depth": 2, "max_minutes": 90, "max_off_inventory_pct": 10 },
+    "inventory": "workspace/docs/analiz/_envanter.txt",
+    "log": "workspace/docs/analiz/_ziyaret_gunlugu.jsonl"
+  }
+}
