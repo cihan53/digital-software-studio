@@ -53,7 +53,7 @@
       sel: q('.ant-select').length,
       pick: q('.ant-picker').length,
       api,
-      lk: uniq([...document.querySelectorAll('a[href]')].map((e) => e.getAttribute('href')).filter((h) => h && h.length > 1)).slice(0, 80),
+      lk: uniq([...document.querySelectorAll('a[href]')].map((e) => { try { const u = new URL(e.getAttribute('href'), location.href); return u.origin === location.origin ? u.pathname + u.search : e.getAttribute('href'); } catch (x) { return null; } }).filter((h) => h && h.length > 1)).slice(0, 120),
       cv: q('canvas').length,
       tr: q('tbody tr').length,
       txt: root.innerText.replace(/\s+/g, ' ').slice(0, 400),
@@ -91,6 +91,20 @@
     return r;
   }
 
-  window.__ks = { extract, probe };
+  // Liste satırı/kart tıklamasıyla detay rotası örneklemesi: i. adayı TIKLAMAYI ZAMANLAR (sayfa değişirse evaluate
+  // kopmasın diye hemen döner); gezgin bekleyip location.pathname'i ayrıca okur. Aday yoksa null.
+  // Yalnızca tablo satırı / liste öğesi / tıklanabilir kart adayıdır; buton ve bağlantı etiketlerine dokunmaz.
+  function rowSample(i) {
+    const root = rootEl();
+    const adaylar = [...root.querySelectorAll('tbody tr, [role=row], .ant-list-item, .ant-card-hoverable')]
+      .filter((e) => gorunur(e) && !dialogIci(e) && !e.querySelector('th') && !e.closest('thead'));
+    const el = adaylar[i];
+    if (!el) return null;
+    const hedef = el.querySelector('td:not(:last-child), [class*="title"], [class*="name"]') || el;
+    setTimeout(() => hedef.click(), 30);
+    return location.pathname;
+  }
+
+  window.__ks = { extract, probe, rowSample };
   return true;
 })();
