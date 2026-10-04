@@ -136,3 +136,21 @@ class KosucuDayanikliligi(unittest.TestCase):
             hedef = Path(d) / "alt" / "h.sh"
             self.assertTrue(U.dosya_guncelle(hedef, kaynak))
             self.assertTrue(hedef.stat().st_mode & stat.S_IXUSR)
+
+
+class Yalitim(unittest.TestCase):
+    def test_resolve_script_workspace_oncelikli(self):
+        import tempfile as _t
+        import studio_engine as E
+        with _t.TemporaryDirectory() as d:
+            eskiw, eskir = E.WORKSPACE, E.ROOT
+            E.WORKSPACE, E.ROOT = Path(d) / "workspace", Path(d)
+            try:
+                (Path(d) / "scripts").mkdir()
+                (Path(d) / "scripts" / "a.mjs").write_text("fw")
+                self.assertEqual(E.resolve_script("a.mjs"), Path(d) / "scripts" / "a.mjs")            # override yok → framework
+                (Path(d) / "workspace" / "scripts").mkdir(parents=True)
+                (Path(d) / "workspace" / "scripts" / "a.mjs").write_text("proje")
+                self.assertEqual(E.resolve_script("a.mjs"), Path(d) / "workspace" / "scripts" / "a.mjs")  # override kazanır
+            finally:
+                E.WORKSPACE, E.ROOT = eskiw, eskir
