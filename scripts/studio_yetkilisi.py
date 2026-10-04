@@ -91,6 +91,7 @@ KATEGORILER = [
             "studio.tick.plist",
             "studio_schedule.sh",
             "yerel_ortam.sh",
+            "workspace/yerel_ortam.sh",
             "cpanel_nuxt_entry.cjs",
             "cpanel_api_entry.cjs",
         ],
@@ -129,7 +130,7 @@ KATEGORILER = [
         "plan_asamalari": """\
 ### Aşama A: İnceleme ve Hazırlık (`backend_engineer`)
 - İlgili Fastify modülündeki rota tanımı ve handler mantığını incele.
-- Sorunun yerel ortamda (`./yerel_ortam.sh` → 3001) yeniden üretilebilirliğini teyit et.
+- Sorunun yerel ortamda (`./workspace/yerel_ortam.sh` → 3001) yeniden üretilebilirliğini teyit et.
 
 ### Aşama B: Kodlama ve Çözüm
 - İlgili route veya servis katmanında gerekli düzeltmeyi yap.
@@ -190,7 +191,7 @@ KATEGORILER = [
         "plan_asamalari": """\
 ### Aşama A: İnceleme ve Hazırlık (`web_engineer`)
 - İlgili Vue bileşenindeki mevcut state, props ve event akışını kontrol et.
-- Sorunun yerel ortamda (`./yerel_ortam.sh` → 3000) yeniden üretilebilirliğini teyit et.
+- Sorunun yerel ortamda (`./workspace/yerel_ortam.sh` → 3000) yeniden üretilebilirliğini teyit et.
 
 ### Aşama B: Kodlama ve Çözüm
 - İlgili bileşende gerekli refactor / hata düzeltmesini yap.

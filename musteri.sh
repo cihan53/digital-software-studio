@@ -203,10 +203,10 @@ while true; do
     5)
       echo -e "\n${BLUE}🌐 Yerel geliştirme ortamı açılıyor (Ctrl+C ile durdurulabilir)...${NC}"
       sleep 1
-      if [ -f "./yerel_ortam.sh" ]; then
-        ./yerel_ortam.sh
-      elif [ -f "./workspace/yerel_ortam.sh" ]; then
+      if [ -f "./workspace/yerel_ortam.sh" ]; then
         ./workspace/yerel_ortam.sh
+      elif [ -f "./yerel_ortam.sh" ]; then
+        ./yerel_ortam.sh
       else
         ./canli.sh
       fi
