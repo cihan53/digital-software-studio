@@ -268,3 +268,18 @@ Dosya yoksa eski davranış sürer.
 - **Korumalı keşif:** `discovery_analyst` rolü yalnızca geçerli keşif sözleşmesiyle çalışır
   (`--only discovery_analyst`); kuyruk envanterden gelir, `read_only` mod, ziyaret günlüğü.
   Sapma denetimi: `python3 scripts/kesif_denetle.py`.
+
+### Melez keşif gezgini (LLM'siz)
+
+Tarayıcı kısmı koddur, yazım kısmı deterministik; model çağrısı gerekmez:
+
+```bash
+node scripts/kesif_gezgin.mjs --login   # görünür Chrome: BİR KEZ giriş yap (şifre betiğe girmez, profil workspace/.kesif_profil)
+node scripts/kesif_gezgin.mjs           # envanteri gez; devam edilebilir (--fresh, --only '^/admin', --headed)
+python3 scripts/kesif_yaz.py            # ham bulgu → şablonlu birim dosyaları
+python3 scripts/analiz_dogrula.py && python3 scripts/kesif_denetle.py
+```
+
+Gezgin her ziyareti/tıklamayı `kesif_denetle.py --sunucu` ile sözleşmeye karşı denetler; yalnızca görünür ve
+dialog dışındaki `discovery.open_labels` butonlarına tıklar, `deny.labels` (save, delete, merge, export …) asla.
+Sayfa seçicileri `discovery.selectors` ile projeye göre ayarlanır. Gereksinim: Node 22 + sistemde Chrome (`CHROME_PATH`).

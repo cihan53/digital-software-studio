@@ -16,17 +16,18 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CONFIG_PATH = ROOT / "workspace" / "studio.config.json"
+CONFIG_PATH = Path(os.environ.get("STUDIO_CONFIG") or ROOT / "workspace" / "studio.config.json")
 
 DEFAULTS: dict = {
     "source": {"path": "", "live_url": "", "kind": ""},
     "analysis": {
         "unit": "birim",
-        "template": ["amaç", "girdiler", "çıktılar", "durumlar", "bağımlılıklar", "riskler"],
+        "template": ["amaç", "roller", "filtreler", "widgetlar", "modal ve çekmeceler", "durumlar", "api uçları", "riskler"],
         "max_words_l1": 250,
         "max_words_l2": 600,
         "l2_quota_pct": 15,
@@ -39,7 +40,17 @@ DEFAULTS: dict = {
         "questions": [],
         "allow": {"hosts": [], "paths": []},
         "deny": {"paths": ["logout|signout|delete|billing|payment"],
-                 "actions": ["submit", "save", "delete", "send", "pay"]},
+                 "actions": ["submit", "save", "delete", "send", "pay"],
+                 # Tıklanması YASAK buton etiketleri (kelime sınırlı regex).
+                 "labels": ["save", "submit", "delete", "remove", "confirm", "apply", "send",
+                            "pay", "export", "download", "refresh", "sync", "merge", "run",
+                            "start", "stop", "reset", "logout", "sign out", "ok", "yes",
+                            "upload", "import", "invite", "activate", "deactivate"]},
+        # Gezginin yoklayabileceği (aç-oku-kapat) buton etiketleri; dışındakilere tıklanmaz.
+        # Sayfa içi seçiciler (boş bırakılırsa kütüphane-bağımsız varsayılanlar kullanılır).
+        "selectors": {},
+        "open_labels": ["new", "add", "create", "select", "filter", "columns", "details",
+                        "view", "show", "settings", "configure", "manage", "edit", "custom"],
         "mode": "read_only",
         "limits": {"max_units": 150, "max_actions_per_unit": 12,
                    "max_depth": 2, "max_minutes": 90,
