@@ -115,9 +115,15 @@ class Yetenek(unittest.TestCase):
 class KosucuDayanikliligi(unittest.TestCase):
     def test_yerel_ortam_cikti_izni_ve_workspace_disi_red(self):
         import studio_engine as E
-        self.assertEqual(E.check_output_path("yerel_ortam.sh").name, "yerel_ortam.sh")      # planlayıcı kuralı
-        with self.assertRaises(ValueError):
-            E.check_output_path("baska/dosya.sh")                                           # hâlâ reddedilir
+        self.assertEqual(E.check_output_path("workspace/yerel_ortam.sh").name, "yerel_ortam.sh")   # planlayıcı kuralı: workspace içine
+        for kotu in ("yerel_ortam.sh", "baska/dosya.sh"):
+            with self.assertRaises(ValueError):                                                   # workspace dışı hâlâ reddedilir
+                E.check_output_path(kotu)
+
+    def test_org_chart_yerel_ortam_workspace_icinde(self):
+        import re as _re
+        s = (ROOT / "org_chart.json").read_text(encoding="utf-8")
+        self.assertEqual(_re.findall(r"(?<!workspace/)yerel_ortam\.sh", s), [])
 
     def test_updater_calistirma_izni_korur(self):
         import stat

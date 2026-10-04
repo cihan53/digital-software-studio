@@ -94,10 +94,10 @@ PYEOF
       $PY scripts/recovery_sentinel.py
       exit 0 ;;
   --canli|--dev|--yerel)
-      if [ -f "./yerel_ortam.sh" ]; then
-        exec ./yerel_ortam.sh
-      elif [ -f "./workspace/yerel_ortam.sh" ]; then
+      if [ -f "./workspace/yerel_ortam.sh" ]; then
         exec ./workspace/yerel_ortam.sh
+      elif [ -f "./yerel_ortam.sh" ]; then
+        exec ./yerel_ortam.sh
       else
         exec ./canli.sh
       fi ;;
