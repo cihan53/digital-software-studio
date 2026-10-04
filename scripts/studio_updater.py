@@ -200,6 +200,10 @@ def dosya_guncelle(proje_dosya, ds_dosya):
         _stale_yedek(proje_dosya)
     proje_dosya.parent.mkdir(parents=True, exist_ok=True)
     proje_dosya.write_bytes(ds_dosya.read_bytes())
+    try:
+        proje_dosya.chmod(ds_dosya.stat().st_mode & 0o777)     # çalıştırma izni kaynaktan korunur
+    except OSError:
+        pass
     return True
 
 

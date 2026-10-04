@@ -50,7 +50,7 @@ RESPECT_CALENDAR = os.getenv("STUDIO_RESPECT_CALENDAR", "0") == "1"
 ALLOWED_OUTPUT_ROOTS = (WORKSPACE,)
 # Tek istisna: kullanıcının elle düzenlediği, rollerin zenginleştirdiği canlı
 # kapsam dokümanı proje kökünde durabilir (geriye dönük uyumluluk).
-ALLOWED_OUTPUT_FILES = {ROOT / "proje_kapsami.md"}
+ALLOWED_OUTPUT_FILES = {ROOT / "proje_kapsami.md", ROOT / "yerel_ortam.sh"}
 DOC_DIR = WORKSPACE / "docs"
 # Proje dokümanları workspace kuralı gereği workspace/docs/ altında yaşar;
 # kökte bulunanlar geriye dönük olarak desteklenir.
@@ -3293,6 +3293,13 @@ def run_board(org: dict, brief: str, once: bool = False,
             else:
                 B.mark(board, task["id"], B.READY, "kesildi — kuyruğa geri alındı")
             B.clear("force")
+            B.refresh(board); B.save(board)
+            continue
+        except Exception as e:
+            # Beklenmeyen görev hatası (ör. geçersiz çıktı yolu): koşucu çökmez, görev FAILED olur.
+            print(f"\n[GÖREV HATASI] {task['id']}: {type(e).__name__}: {e}")
+            B.mark(board, task["id"], B.FAILED, f"çalışma hatası: {type(e).__name__}: {str(e)[:200]}")
+            B.audit("engine", "gorev_hatasi", gorev_id=task["id"], detay={"tip": type(e).__name__, "mesaj": str(e)[:300]})
             B.refresh(board); B.save(board)
             continue
         gercek = spent_so_far() - onceki
