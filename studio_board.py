@@ -869,10 +869,24 @@ def refresh(board: dict) -> dict:
     return board
 
 
+HUMAN_ROLE = "human"
+
+
+def is_human(task: dict) -> bool:
+    """İnsan onay kapısı: koşucu bu görevi ASLA çalıştırmaz (scripts/insan_onayi.py ile onaylanır)."""
+    return (task.get("role") or "").lower() == HUMAN_ROLE
+
+
+def pending_human(board: dict) -> list[dict]:
+    """Bağımlılıkları tamamlanmış (READY) ve insan onayı bekleyen görevler."""
+    return [t for _, t in all_tasks(board) if is_human(t) and t["status"] == READY]
+
+
 def next_ready(board: dict):
-    """Yürütülecek tek bir görev döndürür (öncelik ve faz sırasına saygı duyarak)."""
+    """Yürütülecek tek bir görev döndürür (öncelik ve faz sırasına saygı duyarak).
+    İnsan onay görevleri (role: human) yürütülebilir değildir; sprint onlar bitmeden kapanmaz."""
     for s in sorted(board["sprints"], key=lambda x: x["order"]):
-        ready = [t for t in s["tasks"] if t["status"] == READY]
+        ready = [t for t in s["tasks"] if t["status"] == READY and not is_human(t)]
         if ready:
             # Önce kullanıcı önceliği (büyük önce koşar), sonra faz ve pano sırası.
             ready.sort(key=lambda t: (-(t.get("priority") or 0),
