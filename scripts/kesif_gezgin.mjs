@@ -122,6 +122,23 @@ async function main() {
     proc.kill(); return;
   }
 
+  // ---- oturum kontrolü (yetenek_kontrol kullanır): profille hedefi aç, giriş sayfasına düşüyor mu? ----
+  if (flag('--oturum-kontrol')) {
+    const { proc, cdp } = await chromeBaslat(profil, true);
+    const pg = await sayfaAc(cdp);
+    let kod = 0;
+    try {
+      await pg.s('Page.navigate', { url: origin + '/' });
+      await sleep(6000);
+      const r = await pg.s('Runtime.evaluate', { expression: 'location.pathname', returnByValue: true });
+      const yol = r.result.value || '';
+      kod = yol.startsWith(d.login_path) ? 2 : 0;
+      console.log(kod === 0 ? `oturum var (${yol})` : `oturum yok (${yol})`);
+    } catch (e) { console.error(e.message); kod = 1; }
+    await cdp.send('Browser.close').catch(() => {}); proc.kill();
+    process.exit(kod);
+  }
+
   // ---- envanter ----
   const envYol = path.resolve(ROOT, d.inventory);
   if (!existsSync(envYol)) { console.error(`envanter yok: ${envYol}`); process.exit(3); }
