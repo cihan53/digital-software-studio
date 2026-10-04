@@ -134,7 +134,7 @@ class GezginUcAnca(unittest.TestCase):
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         with tempfile.TemporaryDirectory() as t:
             t = Path(t)
-            (t / "inv.txt").write_text("/home\n/items/:id\n/login\n")
+            (t / "inv.txt").write_text("/home\n/items\n/items/:id\n/items/:id/edit\n/login\n")
             cfg = {"source": {"live_url": f"http://127.0.0.1:{port}"},
                    "analysis": {"output_dir": str(t / "docs")},
                    "discovery": {"goal": "g", "questions": ["q"], "allow": {"hosts": [f"127.0.0.1:{port}"]},
@@ -155,6 +155,8 @@ class GezginUcAnca(unittest.TestCase):
             self.assertEqual(item["durum"], "tamam", item)
             self.assertEqual(item["url"].rsplit("/", 1)[-1], "7")
             self.assertFalse((t / "docs" / "_ham" / "login.json").exists())
+            edit = json.loads((t / "docs" / "_ham" / "items-id-edit.json").read_text())
+            self.assertEqual((edit["durum"], edit.get("tahmin")), ("tamam", True), edit)   # kimlik türetme
             # Chrome profili serbest: süreç temizlendi
             ps = subprocess.run(["pgrep", "-f", str(t / "prof")], capture_output=True, text=True)
             self.assertEqual(ps.stdout.strip(), "")

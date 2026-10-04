@@ -129,6 +129,13 @@ class Kesif(unittest.TestCase):
         bad = K.denetle([row(url="https://dev.x.io/home"), row(url="https://dev.x.io/admin/x/y", birim="b2")], D, inv)
         self.assertTrue(any("envanter dışı" in v for v in bad["ihlaller"]))
 
+    def test_ornekleme_satirlari_birim_tavanina_sayilmaz(self):
+        rows = [{"birim": "~ornekleme", "url": "https://dev.x.io/home", "soru_id": "Q1",
+                 "eylem_sinifi": "reversible", "eylem": "row-click:/a/:id"} for _ in range(40)]
+        r = K.denetle(rows, D, None)
+        self.assertEqual(r["ihlaller"], [])
+        self.assertEqual(r["birim"], 0)
+
     def _inv(self, items):
         f = Path(tempfile.mkdtemp()) / "inv.txt"
         f.write_text("\n".join(items))

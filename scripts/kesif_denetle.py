@@ -109,6 +109,7 @@ def denetle(rows: list[dict], d: dict, inventory: list[re.Pattern] | None = None
     viol: list[str] = []
     per_unit: dict[str, int] = defaultdict(int)
     off = 0
+    sampling = 0
     for i, r in enumerate(rows, 1):
         if "_bozuk_satir" in r:
             viol.append(f"satır {r['_bozuk_satir']}: geçersiz JSON")
@@ -122,12 +123,17 @@ def denetle(rows: list[dict], d: dict, inventory: list[re.Pattern] | None = None
             viol.append(f"satır {i}: soru_id eksik/bilinmeyen ('{sid}')")
         if int(r.get("derinlik", 0) or 0) > lim["max_depth"]:
             viol.append(f"satır {i}: derinlik {r.get('derinlik')} > {lim['max_depth']}")
-        per_unit[r.get("birim", "?")] += 1
+        if str(r.get("birim", "")).startswith("~"):      # örnekleme yardımcı satırları birim sayılmaz
+            sampling += 1
+        else:
+            per_unit[r.get("birim", "?")] += 1
         if inventory is not None and not in_inventory(r.get("url", ""), inventory):
             off += 1
     for b, n in per_unit.items():
         if n > lim["max_actions_per_unit"]:
             viol.append(f"birim '{b}': {n} eylem > tavan {lim['max_actions_per_unit']}")
+    if sampling > lim.get("max_sampling_actions", 300):
+        viol.append(f"örnekleme eylemi {sampling} > tavan {lim.get('max_sampling_actions', 300)}")
     if len(per_unit) > lim["max_units"]:
         viol.append(f"{len(per_unit)} birim > tavan {lim['max_units']}")
     off_pct = round(100 * off / len(rows), 1) if rows and inventory is not None else 0.0
