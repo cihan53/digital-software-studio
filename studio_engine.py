@@ -2944,21 +2944,25 @@ Bu faz tamamlandığında sistem canlı UAT ve ziyaretçi testlerini geçmiş ol
         print(f"  [✓] Yeni faz ({s_id}) panoya eklendi ve rapor üretildi: {report_path.relative_to(ROOT)}")
         return 1
 
-    # Senaryo B: Ziyaretçi Fazı Tamamlanmış ve Açık Kritik Hata Kalmamış
-    print("  [✓] Liderlik İncelemesi: Tüm ekranlar, butonlar ve UAT kabul kriterleri başarıyla tamamlandı.")
-    final_md = f"""# Liderlik Nihai Onay ve Faz Kapanış Raporu
+    # Senaryo B: ziyaretçi fazı planda var. Rapor SONUCA GÖRE üretilir; onay/kabul iddiası taşımaz.
+    st = {}
+    acik = []
+    for _s, _t in B.all_tasks(board):
+        st[_t["status"]] = st.get(_t["status"], 0) + 1
+        if _t["status"] not in B.TERMINAL or _t["status"] == B.SKIPPED:
+            acik.append(f"- `{_t['id']}` {_t['title']} — {_t['status']}")
+    print("  [i] Liderlik İncelemesi: yeni faz gerekmedi; durum raporu yazılıyor (onay iddiası YOK).")
+    final_md = f"""# Pano Durum Raporu (otomatik)
 
-> **Tarih:** {datetime.now().strftime('%Y-%m-%d %H:%M')}  
-> **Katılımcılar:** CTO, Product Owner, Sprint Planner  
-> **Durum:** **PROJE %100 ONAYLANDI VE KABUL EDİLDİ**  
+> **Tarih:** {datetime.now().strftime('%Y-%m-%d %H:%M')}
+> Bu rapor panodaki görev durumlarından üretilir. **Kabul/onay vermez**: UAT sonuçları ve müşteri onayı
+> ilgili görev çıktılarındadır (`uat_kabul_raporu*.md`, `workspace/docs/onaylar/`).
 
----
+## Görev durumu
+""" + "\n".join(f"- {k}: {v}" for k, v in sorted(st.items())) + """
 
-## Sonuç
-- Tüm rotalar, butonlar ve modallar ziyaretçi gözüyle denetlenmiştir.
-- Canlı UAT testleri (Port 3000 ve 3001) hatasız tamamlanmıştır.
-- Açık engelleyici hata kalmamıştır. Sistem canlı kullanıma hazırdır.
-"""
+## Tamamlanmamış / atlanmış görevler
+""" + ("\n".join(acik) if acik else "- yok") + "\n"
     report_path.write_text(final_md, encoding="utf-8")
     return 0
 
@@ -3237,7 +3241,12 @@ def run_board(org: dict, brief: str, once: bool = False,
             # 3. SÜREKLİ NÖBET & DİNLEME DÖNGÜSÜ (Shell kapanana kadar ayakta kalır)
             idle_counter = getattr(run_board, "_idle_counter", 0) + 1
             run_board._idle_counter = idle_counter
-            if idle_counter % 6 == 1:
+            bekleyen_insan = B.pending_human(board)
+            if bekleyen_insan and idle_counter % 6 == 1:
+                print(f"\n[İNSAN ONAYI BEKLENİYOR] ({time.strftime('%H:%M:%S')}) "
+                      + ", ".join(t["id"] for t in bekleyen_insan))
+                print("   Listele/onayla:  python3 scripts/insan_onayi.py list | approve <ID> --not \"...\"")
+            elif idle_counter % 6 == 1:
                 cur_time = time.strftime("%H:%M:%S")
                 print(f"\n[💤 AYAKTA VE DİNLİYOR] ({cur_time}) Aktif işler tamamlandı.")
                 print("   Yeni bir müşteri talebi geldiğinde ('./musteri.sh') sistem otomatik olarak algılayıp çözecektir.")
