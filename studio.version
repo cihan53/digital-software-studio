@@ -16,6 +16,8 @@
     "scripts/kesif_yaz.py",
     "scripts/kesif_roller.py",
     "scripts/insan_onayi.py",
+    "scripts/koruma_kontrol.py",
+    "scripts/yetenek_kontrol.py",
     "scripts/kesif_cikarici.js",
     "scripts/kesif_sema.mjs",
     "scripts/kesif_gezgin.mjs",
