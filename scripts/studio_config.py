@@ -25,6 +25,8 @@ CONFIG_PATH = Path(os.environ.get("STUDIO_CONFIG") or ROOT / "workspace" / "stud
 
 DEFAULTS: dict = {
     "source": {"path": "", "live_url": "", "kind": ""},
+    # Çalışan yerel sistemin portları (UAT/ziyaretçi görevleri canlı mı diye bakar). Proje farkı buraya yazılır.
+    "live": {"ports": [3000, 3001]},
     "analysis": {
         "unit": "birim",
         "template": ["amaç", "roller", "filtreler", "widgetlar", "modal ve çekmeceler", "durumlar", "api uçları", "riskler"],

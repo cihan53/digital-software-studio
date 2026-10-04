@@ -1213,13 +1213,25 @@ def progress(board: dict) -> dict:
 # ---------------------------------------------------------------- yerel ortam
 # UAT/ziyaretçi testleri yerel geliştirme sistemine ihtiyaç duyar (yerel_ortam.sh):
 # frontend localhost:3000 (Nuxt), backend localhost:3001 (Fastify).
-LIVE_PORTS = (3000, 3001)
+LIVE_PORTS = (3000, 3001)      # varsayılan; proje farkı workspace/studio.config.json → live.ports ile verilir
+
+
+def live_ports() -> tuple:
+    """Canlı ortam portları: studio.config.json 'live.ports' (liste) varsa o, yoksa LIVE_PORTS."""
+    try:
+        cfg = json.loads((WORKSPACE / "studio.config.json").read_text(encoding="utf-8"))
+        ports = (cfg.get("live") or {}).get("ports")
+        if ports and all(isinstance(p, int) and 0 < p < 65536 for p in ports):
+            return tuple(ports)
+    except (OSError, ValueError):
+        pass
+    return LIVE_PORTS
 
 
 def live_status() -> dict:
-    """Canlı ortam portlarının durumu: {3000: bool, 3001: bool}."""
+    """Canlı ortam portlarının durumu: {port: bool}."""
     out = {}
-    for port in LIVE_PORTS:
+    for port in live_ports():
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=0.4):
                 out[port] = True
