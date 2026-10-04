@@ -1198,6 +1198,11 @@ def _call_claude(system_prompt: str, user_prompt: str, effort: str, model: str,
         cmd += ["--system-prompt", system_prompt.replace("\x00", "")]
     for t in tools or []:
         cmd += ["--allowedTools", t]
+    if tools:
+        # Referans (kaynak) proje ajan çalışma dizininin dışındaysa okunamıyordu
+        # ('dizin erişimi reddedildi' → yer tutucu üretiliyordu).
+        for d in kaynak_dizinleri():
+            cmd += ["--add-dir", d]
 
     run_cwd = ROOT if tools else SCRATCH_DIR
     rc, out, err = _run_cli(cmd, run_cwd, CLAUDE_TIMEOUT + 60, "claude",
@@ -1469,6 +1474,67 @@ KAYNAK_TARAMA_NOTU = (
     "dışarıda bıraktığın varsa '> **BİLİNÇLİ DIŞARIDA:** <gerekçe>' ile "
     "işaretle."
 )
+
+
+def kaynak_dizinleri() -> list:
+    """Ajanın OKUYABİLMESİ gereken referans (kaynak) proje dizinleri.
+
+    Kaynaklar: STUDIO_KAYNAK_DIRS (os.pathsep ile ayrık), workspace/
+    .kaynak_projeler.json ({"dizinler": [...]}) ve workspace/docs/
+    kaynak_proje_*.md başlığındaki `/mutlak/yol` (kaynak_tarama.py çıktısı).
+    Yalnızca var olan dizinler döner; claude CLI'ya --add-dir ile verilir.
+    """
+    adaylar = [x for x in os.environ.get("STUDIO_KAYNAK_DIRS", "").split(os.pathsep) if x]
+    try:
+        d = json.loads((WORKSPACE / ".kaynak_projeler.json").read_text(encoding="utf-8"))
+        adaylar += list(d.get("dizinler", []))
+    except (OSError, ValueError):
+        pass
+    for p in sorted(DOC_DIR.glob(KAYNAK_TARAMA_GLOB)):
+        try:
+            bas = p.read_text(encoding="utf-8")[:1200]
+        except OSError:
+            continue
+        m = re.search(r"`(/[^`\s]+)`", bas)
+        if m:
+            adaylar.append(m.group(1))
+    out = []
+    for a in adaylar:
+        try:
+            yol = str(Path(a).expanduser().resolve())
+        except OSError:
+            continue
+        if yol not in out and Path(yol).is_dir():
+            out.append(yol)
+    return out
+
+
+_UAT_KARAR_RE = re.compile(
+    r"(?im)^[\s>*_#-]*(?:KARAR|SONU[ÇC]|NİHAİ KARAR)\s*[:：]\s*[*_\s]*"
+    r"(RED|KABUL|ONAY|GEÇT|GECT)")
+
+
+def uat_karari(rapor_yolu) -> str | None:
+    """UAT raporunun kararı: 'RED' | 'KABUL' | None (okunamadı/bulunamadı).
+
+    'KARAR: REDDEDİLDİ…' / 'Sonuç: KABUL EDİLDİ' gibi satırlara bakar;
+    raporun ilk 120 satırındaki İLK karar satırı geçerlidir.
+    """
+    try:
+        satirlar = Path(rapor_yolu).read_text(encoding="utf-8").splitlines()[:120]
+    except OSError:
+        return None
+    m = _UAT_KARAR_RE.search("\n".join(satirlar).upper().replace("İ", "I"))
+    if not m:
+        return None
+    if m.group(1).startswith("RED"):
+        return "RED"
+    # 'KABUL EDİLEMEZ / EDİLMEDİ' olumsuzları RED sayılır
+    sonrasi = "\n".join(satirlar).upper().replace("İ", "I")[m.end():m.end() + 24]
+    return "RED" if re.match(r"\s*(EDILEMEZ|EDILMEDI|EDILMEZ)", sonrasi) else "KABUL"
+
+
+UAT_RED_LIMIT = 2  # bu kadar UAT reddinden sonra talep insana devredilir
 
 
 def collect_inputs(agent: dict, strict: bool = True) -> str:
@@ -2639,9 +2705,33 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
                     for _, t in B.all_tasks(board)
                 )
                 if not baska_acik_gorev:
-                    MT.guncelle(task["talep_id"], durum="ONAY_BEKLIYOR",
-                                studio_notu=f"Görev {task['id']} tamamlandı — "
-                                            "canlı sistemde doğrulama ve kapanış için müşteri onayı bekleniyor.")
+                    karar = None
+                    rapor = None
+                    if "uat" in (task.get("role") or "").lower():
+                        for o in task.get("outputs", []):
+                            if o.endswith(".md"):
+                                rapor = o
+                                karar = uat_karari(ROOT / o)
+                                break
+                    if karar == "RED":
+                        # UAT reddetti: talebi müşteri onayına SUNMA; geliştirmeye
+                        # geri dön (yeniden sprint). Döngü sınırı: INSAN_GEREKLI.
+                        t_kayit = MT.getir(task["talep_id"]) or {}
+                        red_sayisi = sum(1 for g in t_kayit.get("gecmis", [])
+                                         if g.get("eylem") == "Durum güncellendi: BEKLEMEDE")
+                        if red_sayisi >= UAT_RED_LIMIT:
+                            MT.guncelle(task["talep_id"], durum="INSAN_GEREKLI",
+                                        studio_notu=f"UAT {red_sayisi + 1}. kez reddetti "
+                                                    f"(rapor: {rapor}) — insan müdahalesi gerekli.")
+                        else:
+                            MT.guncelle(task["talep_id"], durum="BEKLEMEDE",
+                                        studio_notu=f"UAT reddetti (rapor: {rapor}); "
+                                                    "bulgular giderilmek üzere yeniden sprinte alınacak.")
+                        print(f"   ↩️  [UAT REDDİ] {task['talep_id']} onaya sunulmadı → geliştirmeye döndü ({rapor}).")
+                    else:
+                        MT.guncelle(task["talep_id"], durum="ONAY_BEKLIYOR",
+                                    studio_notu=f"Görev {task['id']} tamamlandı — "
+                                                "canlı sistemde doğrulama ve kapanış için müşteri onayı bekleniyor.")
         except Exception:
             pass
     return True

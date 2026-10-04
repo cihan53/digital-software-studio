@@ -351,6 +351,16 @@ def _proje_yolu_coz(yol: str) -> str:
     return yol
 
 
+def _onceki_uat_notu(talep: dict) -> str:
+    """UAT daha önce reddettiyse geliştirme görevine rapor yolunu ve talimatı ekler."""
+    m = re.search(r"UAT reddetti \(rapor: (\S+?)\)", talep.get("studio_notu") or "")
+    if not m:
+        return ""
+    return (f"\n\nÖNCEKİ UAT REDDİ: {m.group(1)} dosyasındaki bulguları (REDDEDİLDİ "
+            "gerekçeleri) önce oku ve hepsini gider; önceki teslimde eksik kalan, "
+            "bağlanmamış (import edilmemiş/kullanılmamış) çıktıları çalışır hale getir.")
+
+
 def talepten_dosyalar(talep: dict, limit: int = 4) -> list:
     """Talep metninde geçen ve projede VAR olan dosya yollarını döndürür.
 
@@ -671,7 +681,8 @@ def otomatik_musteri_talepleri_senkronize_et() -> int:
         dev_task = {
             "id": dev_task_id,
             "title": f"[{tid}] {t.get('baslik')}",
-            "description": f"Müşteri Talebi: {t.get('aciklama')}\nÇözüm Planı: {plan_dosyasi}",
+            "description": (f"Müşteri Talebi: {t.get('aciklama')}\nÇözüm Planı: {plan_dosyasi}"
+                            + _onceki_uat_notu(t)),
             "role": rol,
             "phase": "develop",
             "outputs": guvenli_dosyalar[:4],
@@ -692,7 +703,8 @@ def otomatik_musteri_talepleri_senkronize_et() -> int:
             ),
             "role": "uat_auditor",
             "phase": "test",
-            "outputs": ["workspace/docs/uat_kabul_raporu.md"],
+            # Talep başına ayrı rapor: tek dosyada talepler birbirini eziyordu.
+            "outputs": [f"workspace/docs/uat_kabul_raporu_{tid}.md"],
             "depends_on": [dev_task_id],
             "talep_id": tid,
         }
