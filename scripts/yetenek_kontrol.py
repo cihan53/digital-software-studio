@@ -64,28 +64,20 @@ def k_chrome() -> dict:
 
 
 def k_kesif_profili() -> dict:
-    """Keşif Chrome profilinde hedef host için oturum çerezi var mı? (değer okunmaz, yalnız varlık)"""
+    """Keşif Chrome profili hedefte oturum açık mı? Gerçek yoklama: gezgin --oturum-kontrol (headless).
+    (Oturum çerez yerine localStorage'da olabilir; çerez DB'sine bakmak yanlış alarm verir.)"""
     prof = Path(os.environ.get("STUDIO_KESIF_PROFIL") or ROOT / "workspace" / ".kesif_profil")
-    cfg = C.load_config() or {}
-    hosts = ((cfg.get("discovery") or {}).get("allow") or {}).get("hosts") or []
-    cookies = prof / "Default" / "Cookies"
-    if not cookies.exists():
-        return {"ok": False, "detay": f"profil yok: {prof}", "gerekli": "`node scripts/kesif_gezgin.mjs --login` (kullanıcı bir kez giriş yapar)", "insan": True}
-    tmp = Path("/tmp") / f"ck-{os.getpid()}.db"
+    gerekli = "`node scripts/kesif_gezgin.mjs --login` (kullanıcı bir kez giriş yapar)"
+    if not prof.exists():
+        return {"ok": False, "detay": f"profil yok: {prof}", "gerekli": gerekli, "insan": True}
+    if not shutil.which("node") or not Path(CHROME).exists():
+        return {"ok": False, "detay": "node veya Chrome yok, oturum yoklanamadı", "gerekli": "önce node22 ve chrome", "insan": True}
     try:
-        shutil.copy2(cookies, tmp)
-        c = sqlite3.connect(tmp)
-        n = 0
-        for h in hosts:
-            n += c.execute("select count(*) from cookies where host_key like ?", (f"%{h.split(':')[0]}%",)).fetchone()[0]
-        c.close()
-    except sqlite3.Error as e:
-        return {"ok": False, "detay": f"çerez okunamadı: {e}", "gerekli": "`--login` ile yeniden giriş", "insan": True}
-    finally:
-        tmp.unlink(missing_ok=True)
-    ok = n > 0
-    return {"ok": ok, "detay": f"{n} çerez ({', '.join(hosts) or 'host yok'})" if ok else "hedef host için oturum çerezi yok",
-            "gerekli": None if ok else "`node scripts/kesif_gezgin.mjs --login` (kullanıcı bir kez giriş yapar)", "insan": not ok}
+        r = subprocess.run(["node", "scripts/kesif_gezgin.mjs", "--oturum-kontrol"], cwd=ROOT, capture_output=True, text=True, timeout=90)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "detay": "oturum yoklaması zaman aşımı", "gerekli": "Chrome açık mı / profil kilitli mi kontrol et", "insan": True}
+    ok = r.returncode == 0
+    return {"ok": ok, "detay": (r.stdout.strip() or r.stderr.strip())[:120], "gerekli": None if ok else gerekli, "insan": not ok}
 
 
 YETENEKLER = {"node22": k_node22, "python3": k_python3, "git": k_git, "pnpm": k_pnpm, "chrome": k_chrome, "kesif-profili": k_kesif_profili}
