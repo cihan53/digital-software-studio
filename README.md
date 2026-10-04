@@ -292,3 +292,8 @@ Sayfa seçicileri `discovery.selectors` ile projeye göre ayarlanır. Gereksinim
 - **`node scripts/kesif_gezgin.mjs --fresh --sema`**: GET JSON yanıtlarının alan adı/tipini `<output_dir>/_api_semalari.json`
   olarak toplar. Değer saklanmaz (yalnız `status/type/severity…` gibi sözlük alanlarında en çok 12 kısa enum değeri).
 - Pano kapanış raporu artık sabit "ONAYLANDI" şablonu değil, görev durumundan üretilen bir durum raporudur.
+
+### Canlı sistem portları (`live.ports`)
+
+`workspace/studio.config.json → "live": {"ports": [3000, 8080]}` UAT/ziyaretçi görevlerinin "sistem ayakta mı" kontrolünde
+baktığı portları belirler (varsayılan 3000, 3001). Proje farkı artık `studio_board.py`'de değil config'te; dosya özelleştirilmez.
