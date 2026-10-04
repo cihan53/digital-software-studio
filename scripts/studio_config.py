@@ -52,8 +52,14 @@ DEFAULTS: dict = {
         "open_labels": ["new", "add", "create", "select", "filter", "columns", "details",
                         "view", "show", "settings", "configure", "manage", "edit", "custom"],
         "mode": "read_only",
+        # Oturum yoksa uygulamanın yönlendirdiği giriş yolu; envanterde atlanacak rotalar (regex listesi).
+        "login_path": "/login",
+        # Veri OKUYAN ama POST kullanan uç yolları (regex). Tıklama sırasında bunlara giden POST yazma sayılmaz.
+        # Yalnızca kullanıcı onayıyla doldurulur; varsayılan boş = her GET dışı istek ihlaldir.
+        "read_post_paths": [],
+        "skip_routes": [],
         "limits": {"max_units": 150, "max_actions_per_unit": 12,
-                   "max_depth": 2, "max_minutes": 90,
+                   "max_depth": 2, "max_minutes": 90, "max_sampling_actions": 300,
                    "max_off_inventory_pct": 10},
         "inventory": "workspace/docs/analiz/_envanter.txt",
         "log": "workspace/docs/analiz/_ziyaret_gunlugu.jsonl",

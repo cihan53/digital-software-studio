@@ -25,12 +25,40 @@ def slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-") or "kok"
 
 
+def _api_yontemli(r: dict) -> list[str]:
+    """Yükleme sırasında POST ile çağrılan uçlar `POST` etiketiyle işaretlenir (risk değil, yöntem bilgisi)."""
+    posts = {p.split(" ", 1)[1] for p in r.get("post_istekleri", []) if " " in p}
+    return [f"POST {a}" if a in posts else f"GET {a}" for a in r.get("api", [])]
+
+
 def liste(x, n):
     x = [str(i) for i in (x or []) if str(i).strip()]
     return ", ".join(x[:n]) + (f" (+{len(x) - n})" if len(x) > n else "")
 
 
-def alanlar(r: dict, n: int) -> dict[str, str]:
+def roller_metni(rec: dict | None) -> str:
+    """_roller.json kaydından (kesif_roller.py) okunabilir erişim özeti."""
+    if not rec:
+        return "bilinmiyor"
+    p = []
+    if rec.get("guards"):
+        p.append("guard: " + ", ".join(rec["guards"]))
+    if rec.get("only"):
+        p.append("izinli roller: " + ", ".join(rec["only"]) + (f" (yetkisizse → {rec['perm_redirect']})" if rec.get("perm_redirect") else ""))
+    if rec.get("except"):
+        p.append("yasaklı roller: " + ", ".join(rec["except"]))
+    if rec.get("menu"):
+        p.append("menü anahtarı: " + rec["menu"] + (f" (kapalıysa → {rec['forbidden']})" if rec.get("forbidden") else ""))
+    if rec.get("redirect_to"):
+        p.append(f"yönlendirir → {rec['redirect_to']}")
+    if rec.get("bayraklar"):
+        p.append("bayraklar: " + ", ".join(f"{k}={v}" for k, v in rec["bayraklar"].items()))
+    if not rec.get("only") and not rec.get("except") and not rec.get("menu"):
+        p.append("rol/menü kısıtı yok")
+    return "; ".join(p)
+
+
+def alanlar(r: dict, n: int, rol: dict | None = None) -> dict[str, str]:
     src = f"{r['url']}"
     fl = []
     if r.get("inp"):
@@ -70,27 +98,28 @@ def alanlar(r: dict, n: int) -> dict[str, str]:
             md.append(f"'{m['label']}' → modal/çekmece açılmadı")
     st = sorted({m.group(0).lower() for m in DURUM_RX.finditer(r.get("txt", ""))})
     rk = []
-    if r.get("post_istekleri"):
-        rk.append("yükleme sırasında GET dışı istek: " + liste(r["post_istekleri"], 4))
+    if r.get("tahmin"):
+        rk.append("örnek kimlik aynı kaynağın başka rotasından türetildi (tahmin); sayfanın gerçek kayıtla açıldığı doğrulanmadı")
     for m in r.get("modals", []):
         if m.get("mutating_istek"):
             rk.append(f"'{m['label']}' tıklaması yazma isteği tetikledi: " + liste(m["mutating_istek"], 3))
     out = {
         "amaç": (r.get("desc") or "bilinmiyor") + (f" ({r['birim']} → {r['yonlendirme']} yönlendirir)" if r.get("yonlendirme") and r.get("desc") else ""),
-        "roller": "bilinmiyor",
+        "roller": roller_metni(rol),
         "filtreler": "; ".join(fl) or "bilinmiyor",
         "widgetlar": "; ".join(wd) or "bilinmiyor",
         "modal ve çekmeceler": "; ".join(md) or "bilinmiyor",
         "durumlar": liste(st, n) or "bilinmiyor",
-        "api uçları": liste(r.get("api"), n) or "bilinmiyor",
+        "api uçları": liste(_api_yontemli(r), n) or "bilinmiyor",
         "riskler": "; ".join(rk) or "bilinmiyor",
     }
-    return {k: (v if v == "bilinmiyor" else f"{v} [kaynak: {src}]") for k, v in out.items()}
+    ksrc = {"roller": f"src/app/{rol['dosya']}" if rol and rol.get("dosya") else src}
+    return {k: (v if v == "bilinmiyor" else f"{v} [kaynak: {ksrc.get(k, src)}]") for k, v in out.items()}
 
 
-def render(r: dict, template: list[str], cap: int) -> str:
+def render(r: dict, template: list[str], cap: int, rol: dict | None = None) -> str:
     for n in (12, 8, 6, 4, 3, 2):
-        al = alanlar(r, n)
+        al = alanlar(r, n, rol)
         body = [f"# {(r.get('h') or [r['birim']])[0]} ({r['birim']})", "Seviye: L1", f"URL: `{r['birim']}`", ""]
         for t in template:
             body += [f"## {t}", al.get(t, "bilinmiyor"), ""]
@@ -117,6 +146,10 @@ def main(argv=None) -> int:
         for p in out.rglob("*.md"):
             if not p.name.startswith("_"):
                 p.unlink()
+    roller = {}
+    ry = out / "_roller.json"
+    if ry.exists():
+        roller = json.loads(ry.read_text(encoding="utf-8"))
     n = atlanan = 0
     for f in sorted(ham.glob("*.json")):
         if f.name.startswith("_"):
@@ -128,7 +161,7 @@ def main(argv=None) -> int:
         kume = (r["birim"].strip("/").split("/")[0] or "kok").replace(":", "")
         d = out / kume
         d.mkdir(parents=True, exist_ok=True)
-        (d / f"{slug(r['birim'])}.md").write_text(render(r, tpl, cap), encoding="utf-8")
+        (d / f"{slug(r['birim'])}.md").write_text(render(r, tpl, cap, roller.get(r["birim"])), encoding="utf-8")
         n += 1
     print(f"{n} birim yazıldı, {atlanan} birim atlandı (hata/engelli/örnek yok)")
     return 0

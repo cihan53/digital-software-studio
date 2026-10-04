@@ -15,7 +15,7 @@
  * Çıkış kodu: 0 tamam, 2 oturum yok, 3 sözleşme geçersiz, 4 sapma/ihlal.
  */
 import { spawn } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync, existsSync, appendFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, appendFileSync, readdirSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -92,6 +92,7 @@ async function sayfaAc(cdp, url) {
   return { s, sessionId, targetId, url };
 }
 
+class OturumYok extends Error {}
 const slug = (s) => s.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'kok';
 const rx = (pat) => new RegExp('^' + pat.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/:[A-Za-z0-9_]+/g, '[^/]+') + '/?$');
 
@@ -121,12 +122,21 @@ async function main() {
   const envYol = path.resolve(ROOT, d.inventory);
   if (!existsSync(envYol)) { console.error(`envanter yok: ${envYol}`); process.exit(3); }
   let rotalar = readFileSync(envYol, 'utf8').split('\n').map((l) => l.split('\t')[0].trim()).filter((l) => l.startsWith('/') && !l.includes('*'));
+  const envRx = rotalar.map(rx);            // tüm envanter: gezgin YALNIZCA bunlarla eşleşen yolları ziyaret eder
+  const envanterde = (u) => { try { const p = new URL(u).pathname; return envRx.some((x) => x.test(p)); } catch { return false; } };
+  const okuPost = (d.read_post_paths || []).map((x) => new RegExp(x));
+  const yazmaVar = () => istekler.some((x) => x.method !== 'GET' && !okuPost.some((rg) => rg.test(new URL(x.url).pathname)));
+  const atla = (d.skip_routes || []).map((x) => new RegExp(x));
+  rotalar = rotalar.filter((r) => !atla.some((x) => x.test(r)));
   if (opt('--only')) rotalar = rotalar.filter((r) => new RegExp(opt('--only')).test(r));
   const durum = flag('--fresh') || !existsSync(durumYol) ? { bitti: {} } : JSON.parse(readFileSync(durumYol, 'utf8'));
   const kaydet = () => writeFileSync(durumYol, JSON.stringify(durum, null, 1));
 
   const izin = izinSunucusu();
   const { proc, cdp } = await chromeBaslat(profil, !flag('--headed'));
+  const kapat = () => { try { proc.kill(); } catch { /* yok */ } };
+  process.on('SIGINT', () => { kapat(); process.exit(130); });
+  process.on('SIGTERM', () => { kapat(); process.exit(143); });
   const pg = await sayfaAc(cdp);
   const cikarici = readFileSync(path.join(ROOT, 'scripts/kesif_cikarici.js'), 'utf8');
   const ev = async (expr) => {
@@ -153,6 +163,7 @@ async function main() {
   const modalAcik = new RegExp('^(' + d.open_labels.join('|') + ')\\b', 'i');
 
   async function git(url) {
+    if (!envanterde(url)) throw new Error(`envanter dışı ziyaret engellendi: ${url}`);
     const kap = new Promise((r) => { const f = (m) => { if (m.sessionId === pg.sessionId && m.method === 'Page.loadEventFired') r(); }; cdp.on(f); setTimeout(r, 20000); });
     istekler = []; await pg.s('Page.navigate', { url }); await kap;
     const bas = Date.now();
@@ -166,7 +177,7 @@ async function main() {
     const bas = Date.now(); let eylem = 1;
     await git(url);
     const yol = await ev('location.pathname');
-    if (yol.startsWith('/login')) { console.error('Oturum yok: önce `node scripts/kesif_gezgin.mjs --login`'); process.exit(2); }
+    if (yol.startsWith(d.login_path) && !rota.startsWith(d.login_path)) throw new OturumYok();
     await ev(`window.__ks_cfg = ${JSON.stringify(d.selectors || {})}; ${cikarici}`);
     const ex = await ev('window.__ks.extract()');
     ex.lk.forEach((h) => { if (h.startsWith('/')) gozlenen.add(h.split('?')[0].split('#')[0]); });
@@ -183,7 +194,7 @@ async function main() {
       istekler = []; eylem++;
       let r;
       try { r = await ev(`window.__ks.probe(${JSON.stringify(b)})`); } catch (e) { r = { label: b, hata: String(e.message) }; }
-      const yazma = istekler.filter((x) => x.method !== 'GET');
+      const yazma = istekler.filter((x) => x.method !== 'GET' && !okuPost.some((rg) => rg.test(new URL(x.url).pathname)));
       if (yazma.length) { r.mutating_istek = yazma.map((x) => `${x.method} ${new URL(x.url).pathname}`); ihlal++; }
       modals.push(r);
       logla({ birim: rota, url: ulr, soru_id: 'Q2', eylem_sinifi: yazma.length ? 'mutating' : 'reversible', eylem: 'open:' + b, sonuc: r.acildi ? 'ok' : (r.sayfaya_gitti ? 'navigates' : 'no-dialog'), derinlik: 1, yeni_bulgu: r.acildi ? 1 : 0 });
@@ -194,33 +205,115 @@ async function main() {
     return { durum: 'tamam', rota, url: ulr, yonlendirme, ...ex, modals, post_istekleri: postlar, sure_ms: Date.now() - bas };
   }
 
-  async function isle(rota, url) {
+  async function isle(rota, url, tahmin = false) {
     if (durum.bitti[rota] || birim >= lim.max_units) return;
     if ((Date.now() - t0) / 60000 > lim.max_minutes) { console.log('süre limiti'); return 'dur'; }
     birim++; process.stdout.write(`[${birim}] ${rota} … `);
     let r;
-    try { r = await birimGez(rota, url); } catch (e) { r = { durum: 'hata', hata: String(e.message) }; }
+    try { r = await birimGez(rota, url); if (tahmin && r.durum === 'tamam') r.tahmin = true; } catch (e) { if (e instanceof OturumYok) throw e; r = { durum: 'hata', hata: String(e.message) }; }
     writeFileSync(path.join(ham, slug(rota) + '.json'), JSON.stringify({ birim: rota, ...r }, null, 1));
     durum.bitti[rota] = r.durum; kaydet();
     console.log(`${r.durum}${r.yonlendirme ? ' → ' + r.yonlendirme : ''}${r.modals?.length ? ` (${r.modals.filter((m) => m.acildi).length}/${r.modals.length} modal)` : ''}`);
   }
 
+  // Önceki koşulardan gözlenen bağlantıları geri yükle (devam edilen koşuda :param örneklemesi için)
+  for (const f of readdirSync(ham)) {
+    if (!f.endsWith('.json') || f.startsWith('_')) continue;
+    try { for (const h of JSON.parse(readFileSync(path.join(ham, f), 'utf8')).lk || []) if (h.startsWith('/')) gozlenen.add(h.split('?')[0].split('#')[0]); } catch { /* bozuk dosya */ }
+  }
+
+  // Satır/kart tıklamasıyla detay örneği: hedef rotanın en yakın somutlanabilir ataşından listeyi açar.
+  async function satirOrnekle(rota) {
+    const seg = rota.split('/').filter(Boolean);
+    for (let k = seg.length - 1; k >= 1; k--) {
+      const parcalar = [];
+      let tamam = true;
+      for (let j = 0; j < k && tamam; j++) {
+        if (!seg[j].startsWith(':')) { parcalar.push(seg[j]); continue; }
+        const onek = rx('/' + seg.slice(0, j + 1).join('/'));
+        const sub = [...gozlenen].find((h) => onek.test(h));
+        if (sub) parcalar.push(sub.split('/').filter(Boolean)[j]); else tamam = false;
+      }
+      if (!tamam) continue;
+      const ata = '/' + parcalar.join('/');
+      if (!envanterde(origin + ata)) continue;
+      const url = origin + ata;
+      for (let i = 0; i < 3; i++) {
+        const iz = await izin.sor(url, 'reversible', 'row-click');
+        if (!iz.ok) return null;
+        await git(url);
+        await ev(`window.__ks_cfg = ${JSON.stringify(d.selectors || {})}; ${cikarici}`);
+        istekler = [];
+        const once = await ev(`window.__ks.rowSample(${i})`);
+        let yeni = null;
+        if (once !== null) {
+          await sleep(600);
+          const bas = Date.now();
+          while (Date.now() - bas < 10000 && (inflight > 0 || Date.now() - sonAg < 1200)) await sleep(250);
+          const simdi = await ev('location.pathname').catch(() => once);
+          yeni = simdi !== once ? simdi : null;
+        }
+        logla({ birim: '~ornekleme', url, soru_id: 'Q1', eylem_sinifi: yazmaVar() ? 'mutating' : 'reversible', eylem: 'row-click:' + rota, sonuc: yeni ? 'navigates' : 'no-nav', derinlik: 1, yeni_bulgu: yeni ? 1 : 0 });
+        if (yazmaVar()) { ihlal++; return null; }
+        if (yeni) {
+          gozlenen.add(yeni);
+          if (rx(rota).test(yeni)) return yeni;
+        } else if (i === 0) break;        // aday satır yok
+      }
+    }
+    return null;
+  }
+
+  // Kimlik türetme: aynı kaynak (ilk segment) altında gözlenen bir kimliği ':param' yerine koyar.
+  // Yalnızca GET gezinmesidir; tahmin edilen birim ham kayıtta `tahmin: true` taşır ve doğrulama için işaretlenir.
+  function tahminle(rota) {
+    const seg = rota.split('/').filter(Boolean);
+    const kimlik = /^([0-9a-f]{24}|[0-9a-f]{8}-[0-9a-f-]{27}|\d+)$/i;
+    const havuz = [];
+    for (const h of gozlenen) {
+      const p = h.split('/').filter(Boolean);
+      if (p[0] === seg[0]) for (const x of p) if (kimlik.test(x) && !havuz.includes(x)) havuz.push(x);
+    }
+    if (!havuz.length) return null;
+    let n = 0;
+    return '/' + seg.map((x) => (x.startsWith(':') ? havuz[Math.min(n++, havuz.length - 1)] : x)).join('/');
+  }
+
   const statik = rotalar.filter((r) => !r.includes(':'));
   const paramli = rotalar.filter((r) => r.includes(':'));
-  for (const r of statik) if ((await isle(r, origin + r)) === 'dur') break;
-  for (let tur = 0; tur < 3; tur++) {                       // :param rotaları gözlenen bağlantılardan örneklenir
-    for (const r of paramli) {
-      if (durum.bitti[r]) continue;
-      const orn = [...gozlenen].find((h) => rx(r).test(h));
-      if (!orn) continue;
-      if ((await isle(r, origin + orn)) === 'dur') break;
+  let kod = 0;
+  try {
+    for (const r of statik) if ((await isle(r, origin + r)) === 'dur') break;
+    for (let tur = 0; tur < 3; tur++) {                     // :param rotaları gözlenen bağlantılardan, olmazsa satır tıklamasıyla örneklenir
+      for (const r of paramli) {
+        if (durum.bitti[r] && durum.bitti[r] !== 'ornek-yok') continue;
+        let orn = [...gozlenen].find((h) => rx(r).test(h));
+        if (!orn && tur > 0) orn = await satirOrnekle(r);
+        if (!orn) continue;
+        delete durum.bitti[r];
+        if ((await isle(r, origin + orn)) === 'dur') break;
+      }
     }
+    for (const r of paramli) {                              // son çare: kimlik türetme (tahmin)
+      if (durum.bitti[r] && durum.bitti[r] !== 'ornek-yok') continue;
+      const t = tahminle(r);
+      if (!t) continue;
+      const iz = await izin.sor(origin + t, 'read', 'navigate');
+      if (!iz.ok) continue;
+      delete durum.bitti[r];
+      await isle(r, origin + t, true);
+    }
+    for (const r of paramli) if (!durum.bitti[r]) { durum.bitti[r] = 'ornek-yok'; writeFileSync(path.join(ham, slug(r) + '.json'), JSON.stringify({ birim: r, durum: 'ornek-yok' })); }
+    console.log(`\nBitti: ${birim} birim, ihlal=${ihlal}. Sonraki: python3 scripts/kesif_yaz.py && python3 scripts/kesif_denetle.py`);
+    kod = ihlal ? 4 : 0;
+  } catch (e) {
+    if (e instanceof OturumYok) { console.error('Oturum yok: önce `node scripts/kesif_gezgin.mjs --login`'); kod = 2; }
+    else { console.error(e); kod = 1; }
+  } finally {
+    kaydet();
+    izin.kapat(); await cdp.send('Browser.close').catch(() => {}); proc.kill();
   }
-  for (const r of paramli) if (!durum.bitti[r]) { durum.bitti[r] = 'ornek-yok'; writeFileSync(path.join(ham, slug(r) + '.json'), JSON.stringify({ birim: r, durum: 'ornek-yok' })); }
-  kaydet();
-  console.log(`\nBitti: ${birim} birim, ihlal=${ihlal}. Sonraki: python3 scripts/kesif_yaz.py && python3 scripts/kesif_denetle.py`);
-  izin.kapat(); await cdp.send('Browser.close').catch(() => {}); proc.kill();
-  process.exit(ihlal ? 4 : 0);
+  process.exit(kod);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
