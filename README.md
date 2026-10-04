@@ -304,3 +304,11 @@ baktığı portları belirler (varsayılan 3000, 3001). Proje farkı artık `stu
   mevcut gezgine ekler, test eder, çalıştırır. Önce `python3 scripts/yetenek_kontrol.py --ihtiyac node22,chrome,kesif-profili` ile ortamı ölçer.
 - İndirme/kurulum, giriş (kimlik doğrulama) ve onay gerektiren eksikleri kendisi yapmaz: komutunu `workspace/docs/yetenek_raporu.md`'ye yazar, insan adımı olarak bırakır.
 - `python3 scripts/koruma_kontrol.py`: izin sözleşmesi dosyaları (`kesif_denetle.py`, `studio_config.py`, `insan_onayi.py`) görev tarafından değiştirildiyse hata verir.
+
+### Servisler: panel, yerel ortam, çıkış
+
+- `./basla.sh` koşucuyla birlikte web panelini de açar (pid: `workspace/.web.pid`).
+- Kontrol ekranında `q` bir çıkış menüsü açar: **e** yalnız ekranı kapat · **p** panel + yerel ortam servislerini de kapat (koşu sürer) · **h** koşuyu da durdur, her şeyi kapat.
+  `STUDIO_CIKIS=ekran|servisler|hepsi|sor` menüyü atlatır (varsayılan `sor`).
+- `./basla.sh --servisler` listeler, `--servisler-kapat` panel+ortamı, `--kapat` koşu dahil hepsini kapatır.
+  Yalnızca çalışma dizini bu projenin altındaki süreçler (ve `live.ports` dinleyicileri) kapatılır; başka projelere dokunulmaz.
