@@ -256,3 +256,15 @@ Digital Software Studio, açık kaynak güvenliğine tam uyumludur:
 ## 📄 Lisans
 
 Bu proje [MIT Lisansı](LICENSE) ile lisanslanmıştır. Dünyadaki herkes dilediği gibi kullanabilir, değiştirebilir ve kendi otonom yazılımlarını üretebilir.
+
+## Sınırlı analiz ve korumalı keşif (`workspace/studio.config.json`)
+
+Projeye özel değerler (kaynak, birim türü, keşif sözleşmesi) framework dosyalarında değil
+`workspace/studio.config.json` içinde tutulur (örnek: `scripts/studio.config.example.json`).
+Dosya yoksa eski davranış sürer.
+
+- **Bütçeli analiz:** birim başına ayrı dosya, sabit şablon, kelime tavanı, L1/L2 derinlik ve L2 kotası,
+  kanıt (`[kaynak: ...]`) zorunluluğu. Doğrulama: `python3 scripts/analiz_dogrula.py`.
+- **Korumalı keşif:** `discovery_analyst` rolü yalnızca geçerli keşif sözleşmesiyle çalışır
+  (`--only discovery_analyst`); kuyruk envanterden gelir, `read_only` mod, ziyaret günlüğü.
+  Sapma denetimi: `python3 scripts/kesif_denetle.py`.
