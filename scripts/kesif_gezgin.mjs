@@ -1,0 +1,226 @@
+#!/usr/bin/env node
+/**
+ * Melez keşif gezgini (issue #132) — LLM'siz, bağımlılıksız (Node 22 + sistemde Chrome, CDP).
+ *
+ * Keşif sözleşmesini (workspace/studio.config.json → discovery) KODLA zorlar:
+ * her ziyaret/tıklama scripts/kesif_denetle.py --sunucu ile denetlenir; yazma eylemi,
+ * yasak etiket/path ve izinsiz host asla tıklanmaz/ziyaret edilmez.
+ *
+ * Kullanım:
+ *   node scripts/kesif_gezgin.mjs --login          # görünür Chrome açar; kullanıcı BİR KEZ giriş yapar
+ *   node scripts/kesif_gezgin.mjs                  # envanteri gez (devam edilebilir)
+ *   node scripts/kesif_gezgin.mjs --only '^/admin' --headed --fresh
+ * Ortam: CHROME_PATH (varsayılan macOS Chrome). Profil: workspace/.kesif_profil (repoya girmez).
+ * Çıktı: <analysis.output_dir>/_ham/<slug>.json, discovery.log (JSONL), _ham/_durum.json
+ * Çıkış kodu: 0 tamam, 2 oturum yok, 3 sözleşme geçersiz, 4 sapma/ihlal.
+ */
+import { spawn } from 'node:child_process';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, appendFileSync } from 'node:fs';
+import { createInterface } from 'node:readline';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const args = process.argv.slice(2);
+const flag = (n) => args.includes(n);
+const opt = (n, d = null) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ---------- config (Python tek kaynak: studio_config) ----------
+function loadConfig() {
+  const py = spawn('python3', ['-c',
+    'import sys,json;sys.path.insert(0,"scripts");import studio_config as C;c=C.load_config();' +
+    'print(json.dumps({"cfg":c,"errs":C.validate_discovery(c) if c else ["workspace/studio.config.json yok"]},ensure_ascii=False))'],
+    { cwd: ROOT });
+  return new Promise((res, rej) => {
+    let o = ''; py.stdout.on('data', (d) => (o += d)); py.stderr.on('data', (d) => process.stderr.write(d));
+    py.on('close', () => { try { res(JSON.parse(o)); } catch (e) { rej(e); } });
+  });
+}
+
+// ---------- izin sunucusu ----------
+function izinSunucusu() {
+  const p = spawn('python3', ['scripts/kesif_denetle.py', '--sunucu'], { cwd: ROOT });
+  const rl = createInterface({ input: p.stdout });
+  const bekleyen = [];
+  rl.on('line', (ln) => { const r = bekleyen.shift(); if (r) r(JSON.parse(ln)); });
+  return {
+    sor: (url, sinif, eylem = '') => new Promise((r) => { bekleyen.push(r); p.stdin.write(JSON.stringify({ url, sinif, eylem }) + '\n'); }),
+    kapat: () => p.stdin.end(),
+  };
+}
+
+// ---------- minimal CDP istemcisi ----------
+class CDP {
+  constructor(ws) { this.ws = ws; this.id = 0; this.p = new Map(); this.h = []; ws.addEventListener('message', (m) => this.#msg(JSON.parse(m.data))); }
+  #msg(m) {
+    if (m.id && this.p.has(m.id)) { const { res, rej } = this.p.get(m.id); this.p.delete(m.id); m.error ? rej(new Error(m.error.message)) : res(m.result); }
+    else this.h.forEach((f) => f(m));
+  }
+  send(method, params = {}, sessionId) {
+    const id = ++this.id;
+    this.ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
+    return new Promise((res, rej) => this.p.set(id, { res, rej }));
+  }
+  on(f) { this.h.push(f); }
+}
+
+async function chromeBaslat(profil, headless) {
+  const chrome = process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+  const port = 9300 + Math.floor(Math.random() * 500);
+  mkdirSync(profil, { recursive: true });
+  const a = [`--remote-debugging-port=${port}`, `--user-data-dir=${profil}`, '--no-first-run', '--no-default-browser-check',
+    '--window-size=1440,900', ...(headless ? ['--headless=new'] : []), 'about:blank'];
+  const proc = spawn(chrome, a, { stdio: 'ignore' });
+  for (let i = 0; i < 60; i++) {
+    try {
+      const j = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
+      const ws = new WebSocket(j.webSocketDebuggerUrl);
+      await new Promise((r, e) => { ws.onopen = r; ws.onerror = e; });
+      return { proc, cdp: new CDP(ws) };
+    } catch { await sleep(250); }
+  }
+  proc.kill(); throw new Error('Chrome başlatılamadı (CHROME_PATH?)');
+}
+
+async function sayfaAc(cdp, url) {
+  const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
+  const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
+  const s = (m, p) => cdp.send(m, p, sessionId);
+  await s('Page.enable'); await s('Runtime.enable'); await s('Network.enable');
+  await s('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  return { s, sessionId, targetId, url };
+}
+
+const slug = (s) => s.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'kok';
+const rx = (pat) => new RegExp('^' + pat.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/:[A-Za-z0-9_]+/g, '[^/]+') + '/?$');
+
+async function main() {
+  const { cfg, errs } = await loadConfig();
+  if (errs.length) { console.error('[sözleşme] ' + errs.join('\n[sözleşme] ')); process.exit(3); }
+  const d = cfg.discovery, lim = d.limits;
+  const origin = cfg.source.live_url || `https://${d.allow.hosts[0]}`;
+  const profil = process.env.STUDIO_KESIF_PROFIL || path.join(ROOT, 'workspace', '.kesif_profil');
+  const outDir = path.resolve(ROOT, cfg.analysis.output_dir);
+  const ham = path.join(outDir, '_ham'); mkdirSync(ham, { recursive: true });
+  const logYol = path.resolve(ROOT, d.log);
+  const durumYol = path.join(ham, '_durum.json');
+
+  // ---- giriş modu ----
+  if (flag('--login')) {
+    const { proc, cdp } = await chromeBaslat(profil, false);
+    const pg = await sayfaAc(cdp);
+    await pg.s('Page.navigate', { url: origin });
+    console.log(`Chrome açıldı. ${origin} adresinde giriş yapın, sonra buraya dönüp Enter'a basın.`);
+    await new Promise((r) => createInterface({ input: process.stdin }).once('line', r));
+    await cdp.send('Browser.close').catch(() => {});
+    proc.kill(); return;
+  }
+
+  // ---- envanter ----
+  const envYol = path.resolve(ROOT, d.inventory);
+  if (!existsSync(envYol)) { console.error(`envanter yok: ${envYol}`); process.exit(3); }
+  let rotalar = readFileSync(envYol, 'utf8').split('\n').map((l) => l.split('\t')[0].trim()).filter((l) => l.startsWith('/') && !l.includes('*'));
+  if (opt('--only')) rotalar = rotalar.filter((r) => new RegExp(opt('--only')).test(r));
+  const durum = flag('--fresh') || !existsSync(durumYol) ? { bitti: {} } : JSON.parse(readFileSync(durumYol, 'utf8'));
+  const kaydet = () => writeFileSync(durumYol, JSON.stringify(durum, null, 1));
+
+  const izin = izinSunucusu();
+  const { proc, cdp } = await chromeBaslat(profil, !flag('--headed'));
+  const pg = await sayfaAc(cdp);
+  const cikarici = readFileSync(path.join(ROOT, 'scripts/kesif_cikarici.js'), 'utf8');
+  const ev = async (expr) => {
+    const r = await pg.s('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });
+    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || 'evaluate hatası');
+    return r.result.value;
+  };
+
+  // ağ izleme (yalnızca XHR/Fetch)
+  let inflight = 0, sonAg = Date.now(), istekler = [];
+  cdp.on((m) => {
+    if (m.sessionId !== pg.sessionId) return;
+    if (m.method === 'Network.requestWillBeSent') {
+      inflight++; sonAg = Date.now();
+      if (['XHR', 'Fetch'].includes(m.params.type)) istekler.push({ method: m.params.request.method, url: m.params.request.url });
+    }
+    if (['Network.loadingFinished', 'Network.loadingFailed'].includes(m.method)) { inflight = Math.max(0, inflight - 1); sonAg = Date.now(); }
+  });
+
+  const gozlenen = new Set();           // keşfedilen iç bağlantılar (:param örneklemesi)
+  const t0 = Date.now();
+  let ihlal = 0, birim = 0;
+  const logla = (o) => { mkdirSync(path.dirname(logYol), { recursive: true }); appendFileSync(logYol, JSON.stringify(o) + '\n'); };
+  const modalAcik = new RegExp('^(' + d.open_labels.join('|') + ')\\b', 'i');
+
+  async function git(url) {
+    const kap = new Promise((r) => { const f = (m) => { if (m.sessionId === pg.sessionId && m.method === 'Page.loadEventFired') r(); }; cdp.on(f); setTimeout(r, 20000); });
+    istekler = []; await pg.s('Page.navigate', { url }); await kap;
+    const bas = Date.now();
+    while (Date.now() - bas < 12000 && (inflight > 0 || Date.now() - sonAg < 1500)) await sleep(250);
+    await sleep(800);
+  }
+
+  async function birimGez(rota, url) {
+    const ok = await izin.sor(url, 'read', 'navigate');
+    if (!ok.ok) { console.log(`  ✗ ATLANDI (${ok.neden}) ${rota}`); return { durum: 'engellendi', neden: ok.neden }; }
+    const bas = Date.now(); let eylem = 1;
+    await git(url);
+    const yol = await ev('location.pathname');
+    if (yol.startsWith('/login')) { console.error('Oturum yok: önce `node scripts/kesif_gezgin.mjs --login`'); process.exit(2); }
+    await ev(`window.__ks_cfg = ${JSON.stringify(d.selectors || {})}; ${cikarici}`);
+    const ex = await ev('window.__ks.extract()');
+    ex.lk.forEach((h) => { if (h.startsWith('/')) gozlenen.add(h.split('?')[0].split('#')[0]); });
+    const yonlendirme = ex.path.split('?')[0] !== rota && !rx(rota).test(ex.path.split('?')[0]) ? ex.path : null;
+    const ulr = origin + ex.path;
+    logla({ birim: rota, url: ulr, soru_id: 'Q1', eylem_sinifi: 'read', eylem: 'navigate', sonuc: 'ok', derinlik: 0, yeni_bulgu: 1 });
+    const postlar = istekler.filter((r) => r.method !== 'GET').map((r) => `${r.method} ${new URL(r.url).pathname}`);
+    const modals = [];
+    const adaylar = ex.btn.filter((b) => modalAcik.test(b));
+    for (const b of adaylar) {
+      if (eylem >= lim.max_actions_per_unit - 1) { modals.push({ label: b, atlandi: 'eylem limiti' }); continue; }
+      const iz = await izin.sor(ulr, 'reversible', b);
+      if (!iz.ok) { modals.push({ label: b, atlandi: iz.neden }); continue; }
+      istekler = []; eylem++;
+      let r;
+      try { r = await ev(`window.__ks.probe(${JSON.stringify(b)})`); } catch (e) { r = { label: b, hata: String(e.message) }; }
+      const yazma = istekler.filter((x) => x.method !== 'GET');
+      if (yazma.length) { r.mutating_istek = yazma.map((x) => `${x.method} ${new URL(x.url).pathname}`); ihlal++; }
+      modals.push(r);
+      logla({ birim: rota, url: ulr, soru_id: 'Q2', eylem_sinifi: yazma.length ? 'mutating' : 'reversible', eylem: 'open:' + b, sonuc: r.acildi ? 'ok' : (r.sayfaya_gitti ? 'navigates' : 'no-dialog'), derinlik: 1, yeni_bulgu: r.acildi ? 1 : 0 });
+      if (r.sayfaya_gitti || yazma.length) { await git(ulr); await ev(`window.__ks_cfg = ${JSON.stringify(d.selectors || {})}; ${cikarici}`); }
+      if (yazma.length) break;       // yazma isteği: bu birimde tıklamayı bırak
+    }
+    logla({ birim: rota, url: ulr, soru_id: 'Q3', eylem_sinifi: 'read', eylem: 'observe-states', sonuc: 'ok', derinlik: 0, yeni_bulgu: 0 });
+    return { durum: 'tamam', rota, url: ulr, yonlendirme, ...ex, modals, post_istekleri: postlar, sure_ms: Date.now() - bas };
+  }
+
+  async function isle(rota, url) {
+    if (durum.bitti[rota] || birim >= lim.max_units) return;
+    if ((Date.now() - t0) / 60000 > lim.max_minutes) { console.log('süre limiti'); return 'dur'; }
+    birim++; process.stdout.write(`[${birim}] ${rota} … `);
+    let r;
+    try { r = await birimGez(rota, url); } catch (e) { r = { durum: 'hata', hata: String(e.message) }; }
+    writeFileSync(path.join(ham, slug(rota) + '.json'), JSON.stringify({ birim: rota, ...r }, null, 1));
+    durum.bitti[rota] = r.durum; kaydet();
+    console.log(`${r.durum}${r.yonlendirme ? ' → ' + r.yonlendirme : ''}${r.modals?.length ? ` (${r.modals.filter((m) => m.acildi).length}/${r.modals.length} modal)` : ''}`);
+  }
+
+  const statik = rotalar.filter((r) => !r.includes(':'));
+  const paramli = rotalar.filter((r) => r.includes(':'));
+  for (const r of statik) if ((await isle(r, origin + r)) === 'dur') break;
+  for (let tur = 0; tur < 3; tur++) {                       // :param rotaları gözlenen bağlantılardan örneklenir
+    for (const r of paramli) {
+      if (durum.bitti[r]) continue;
+      const orn = [...gozlenen].find((h) => rx(r).test(h));
+      if (!orn) continue;
+      if ((await isle(r, origin + orn)) === 'dur') break;
+    }
+  }
+  for (const r of paramli) if (!durum.bitti[r]) { durum.bitti[r] = 'ornek-yok'; writeFileSync(path.join(ham, slug(r) + '.json'), JSON.stringify({ birim: r, durum: 'ornek-yok' })); }
+  kaydet();
+  console.log(`\nBitti: ${birim} birim, ihlal=${ihlal}. Sonraki: python3 scripts/kesif_yaz.py && python3 scripts/kesif_denetle.py`);
+  izin.kapat(); await cdp.send('Browser.close').catch(() => {}); proc.kill();
+  process.exit(ihlal ? 4 : 0);
+}
+
+main().catch((e) => { console.error(e); process.exit(1); });
