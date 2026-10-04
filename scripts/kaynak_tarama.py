@@ -261,6 +261,20 @@ def main() -> None:
     if not kaynak.is_dir():
         sys.exit(f"[HATA] Kaynak dizin yok: {kaynak}")
     outs = scan(kaynak, Path(args.docs), args.prefix, args.max_part_kb)
+    # Ajanların referans projeyi okuyabilmesi için dizini kaydet (claude --add-dir).
+    try:
+        kayit = Path(args.docs).resolve().parent / ".kaynak_projeler.json"
+        try:
+            d = json.loads(kayit.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            d = {}
+        dizinler = list(d.get("dizinler", []))
+        if str(kaynak) not in dizinler:
+            dizinler.append(str(kaynak))
+        kayit.write_text(json.dumps({"dizinler": dizinler}, indent=2, ensure_ascii=False),
+                         encoding="utf-8")
+    except OSError:
+        pass
     for o in outs:
         print(f"[✓] {o} ({o.stat().st_size:,} bayt)")
     print("\n[i] Bu dosyalar design aşaması rollerinin girdilerine otomatik "
