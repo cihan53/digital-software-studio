@@ -208,7 +208,7 @@ while true; do
       elif [ -f "./yerel_ortam.sh" ]; then
         ./yerel_ortam.sh
       else
-        ./canli.sh
+        echo -e "${RED}✗ workspace/yerel_ortam.sh yok.${NC} Betiği S1-T1 görevi üretir; koşucuyu başlat: ./basla.sh"
       fi
       ;;
     6)

@@ -99,7 +99,10 @@ PYEOF
       elif [ -f "./yerel_ortam.sh" ]; then
         exec ./yerel_ortam.sh
       else
-        exec ./canli.sh
+        red "✗ workspace/yerel_ortam.sh yok."
+        dim "  Bu betiği panodaki S1-T1 görevi (devops_engineer) üretir; koşucuyu başlat: ./basla.sh"
+        dim "  (backend'i seç: STUDIO_BACKEND=claude STUDIO_CLAUDE_MODEL=sonnet ./basla.sh)"
+        exit 1
       fi ;;
   --test-izle)
       if [ -f "workspace/scripts/tarayici_test_izle.mjs" ]; then
