@@ -117,7 +117,7 @@ class GezginUcAnca(unittest.TestCase):
                     tiklar.append(urllib.parse.unquote(s.path.split("b=")[1]))
                     body, ct = b"{}", "application/json"
                 elif s.path.startswith("/api"):
-                    body, ct = b"{}", "application/json"
+                    body, ct = b'{"status":"Finished","owner":"Secret Name","n":3,"rows":[{"id":"6abcb8c88594b2864be38ece"}]}', "application/json"
                 elif s.path.startswith("/items/"):
                     body, ct = "<html><body><main><h1>Item</h1><p>Detay ekranı açıklaması yeterince uzun bir metindir.</p></main></body></html>".encode(), "text/html; charset=utf-8"
                 elif s.path.startswith("/login"):
@@ -141,7 +141,7 @@ class GezginUcAnca(unittest.TestCase):
                                  "skip_routes": ["^/login"], "inventory": str(t / "inv.txt"), "log": str(t / "docs" / "log.jsonl")}}
             (t / "cfg.json").write_text(json.dumps(cfg))
             env = {**os.environ, "STUDIO_CONFIG": str(t / "cfg.json"), "STUDIO_KESIF_PROFIL": str(t / "prof")}
-            r = subprocess.run(["node", "scripts/kesif_gezgin.mjs"], cwd=ROOT, env=env, capture_output=True, text=True, timeout=120)
+            r = subprocess.run(["node", "scripts/kesif_gezgin.mjs", "--sema"], cwd=ROOT, env=env, capture_output=True, text=True, timeout=120)
             srv.shutdown()
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertIn("New item", tiklar)
@@ -157,6 +157,11 @@ class GezginUcAnca(unittest.TestCase):
             self.assertFalse((t / "docs" / "_ham" / "login.json").exists())
             edit = json.loads((t / "docs" / "_ham" / "items-id-edit.json").read_text())
             self.assertEqual((edit["durum"], edit.get("tahmin")), ("tamam", True), edit)   # kimlik türetme
+            # API şeması: alan adı/tip var, DEĞER yok (enum yalnız status benzeri alanlarda)
+            sema = (t / "docs" / "_api_semalari.json").read_text()
+            self.assertIn("GET /api/items", sema)
+            self.assertNotIn("Secret Name", sema)
+            self.assertIn('"Finished"', sema)
             # Chrome profili serbest: süreç temizlendi
             ps = subprocess.run(["pgrep", "-f", str(t / "prof")], capture_output=True, text=True)
             self.assertEqual(ps.stdout.strip(), "")

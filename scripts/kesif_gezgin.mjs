@@ -17,6 +17,7 @@
 import { spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, appendFileSync, readdirSync } from 'node:fs';
 import { createInterface } from 'node:readline';
+import { infer, merge, normPath } from './kesif_sema.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -106,6 +107,9 @@ async function main() {
   const ham = path.join(outDir, '_ham'); mkdirSync(ham, { recursive: true });
   const logYol = path.resolve(ROOT, d.log);
   const durumYol = path.join(ham, '_durum.json');
+  const semaYol = path.join(outDir, '_api_semalari.json');
+  const semaAcik = flag('--sema');
+  const semalar = semaAcik && existsSync(semaYol) ? JSON.parse(readFileSync(semaYol, 'utf8')) : {};
 
   // ---- giriş modu ----
   if (flag('--login')) {
@@ -130,7 +134,7 @@ async function main() {
   rotalar = rotalar.filter((r) => !atla.some((x) => x.test(r)));
   if (opt('--only')) rotalar = rotalar.filter((r) => new RegExp(opt('--only')).test(r));
   const durum = flag('--fresh') || !existsSync(durumYol) ? { bitti: {} } : JSON.parse(readFileSync(durumYol, 'utf8'));
-  const kaydet = () => writeFileSync(durumYol, JSON.stringify(durum, null, 1));
+  const kaydet = () => { writeFileSync(durumYol, JSON.stringify(durum, null, 1)); if (semaAcik) writeFileSync(semaYol, JSON.stringify(Object.fromEntries(Object.entries(semalar).sort()), null, 1)); };
 
   const izin = izinSunucusu();
   const { proc, cdp } = await chromeBaslat(profil, !flag('--headed'));
@@ -147,9 +151,33 @@ async function main() {
 
   // ağ izleme (yalnızca XHR/Fetch)
   let inflight = 0, sonAg = Date.now(), istekler = [];
+  const istekMeta = new Map(), semaBekleyen = [];
+  let suankiBirim = '';
+  const hostIzinli = new Set(d.allow.hosts.map((h) => h.toLowerCase()));
+  async function semaYakala(requestId, meta) {
+    try {
+      const r = await pg.s('Network.getResponseBody', { requestId });
+      const j = JSON.parse(r.base64Encoded ? Buffer.from(r.body, 'base64').toString('utf8') : r.body);
+      const anahtar = `GET ${normPath(new URL(meta.url).pathname)}`;
+      const kayit = semalar[anahtar] || { durum: meta.status, ornek: 0, birimler: [], sema: undefined };
+      kayit.sema = merge(kayit.sema, infer(j));
+      kayit.ornek++;
+      if (suankiBirim && !kayit.birimler.includes(suankiBirim)) kayit.birimler.push(suankiBirim);
+      semalar[anahtar] = kayit;
+    } catch { /* gövde yok / JSON değil */ }
+  }
   cdp.on((m) => {
     if (m.sessionId !== pg.sessionId) return;
+    if (semaAcik && m.method === 'Network.responseReceived') {
+      const x = istekMeta.get(m.params.requestId);
+      if (x) { x.status = m.params.response.status; x.mime = m.params.response.mimeType; }
+    }
+    if (semaAcik && m.method === 'Network.loadingFinished') {
+      const x = istekMeta.get(m.params.requestId);
+      if (x && x.method === 'GET' && ['XHR', 'Fetch'].includes(x.type) && /json/i.test(x.mime || '') && hostIzinli.has(new URL(x.url).host.toLowerCase())) semaBekleyen.push(semaYakala(m.params.requestId, x));
+    }
     if (m.method === 'Network.requestWillBeSent') {
+      istekMeta.set(m.params.requestId, { method: m.params.request.method, url: m.params.request.url, type: m.params.type });
       inflight++; sonAg = Date.now();
       if (['XHR', 'Fetch'].includes(m.params.type)) istekler.push({ method: m.params.request.method, url: m.params.request.url });
     }
@@ -175,7 +203,9 @@ async function main() {
     const ok = await izin.sor(url, 'read', 'navigate');
     if (!ok.ok) { console.log(`  ✗ ATLANDI (${ok.neden}) ${rota}`); return { durum: 'engellendi', neden: ok.neden }; }
     const bas = Date.now(); let eylem = 1;
+    suankiBirim = rota;
     await git(url);
+    await Promise.allSettled(semaBekleyen.splice(0));
     const yol = await ev('location.pathname');
     if (yol.startsWith(d.login_path) && !rota.startsWith(d.login_path)) throw new OturumYok();
     await ev(`window.__ks_cfg = ${JSON.stringify(d.selectors || {})}; ${cikarici}`);
