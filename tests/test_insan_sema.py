@@ -84,3 +84,29 @@ class LivePorts(unittest.TestCase):
                 self.assertEqual(B.live_ports(), (3000, 3001))                        # geçersiz → varsayılan
             finally:
                 B.WORKSPACE = eski
+
+
+class Yetenek(unittest.TestCase):
+    def test_olc_ve_bilinmeyen(self):
+        import yetenek_kontrol as Y
+        r = Y.olc(["python3", "git", "yok-yetenek"])
+        self.assertTrue(r["python3"]["ok"] and r["git"]["ok"])
+        self.assertFalse(r["yok-yetenek"]["ok"])
+        self.assertFalse(r["yok-yetenek"]["insan"])
+
+    def test_profil_yoksa_insan_adimi(self):
+        import os
+        import yetenek_kontrol as Y
+        with tempfile.TemporaryDirectory() as d:
+            os.environ["STUDIO_KESIF_PROFIL"] = d
+            try:
+                r = Y.k_kesif_profili()
+            finally:
+                del os.environ["STUDIO_KESIF_PROFIL"]
+        self.assertFalse(r["ok"])
+        self.assertTrue(r["insan"])                 # giriş = insan adımı, studio kendiliğinden yapmaz
+
+    def test_koruma_degismeyen_dosya(self):
+        import koruma_kontrol as K
+        self.assertEqual(K.degisenler("HEAD", ["scripts/koruma_kontrol.py"]) is not None, True)
+        self.assertEqual(K.main(["--dosyalar", "LICENSE"]), 0)

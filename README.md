@@ -297,3 +297,10 @@ Sayfa seçicileri `discovery.selectors` ile projeye göre ayarlanır. Gereksinim
 
 `workspace/studio.config.json → "live": {"ports": [3000, 8080]}` UAT/ziyaretçi görevlerinin "sistem ayakta mı" kontrolünde
 baktığı portları belirler (varsayılan 3000, 3001). Proje farkı artık `studio_board.py`'de değil config'te; dosya özelleştirilmez.
+
+### Yetenek katmanı (studio kendi ihtiyacını analiz edip araç yazabilir)
+
+- `discovery_analyst` rolü kod okuyup yazabilir (Edit/Write + node/python3/git): eksik bir keşif yeteneğini (ör. sekme/form/çekmece okuma)
+  mevcut gezgine ekler, test eder, çalıştırır. Önce `python3 scripts/yetenek_kontrol.py --ihtiyac node22,chrome,kesif-profili` ile ortamı ölçer.
+- İndirme/kurulum, giriş (kimlik doğrulama) ve onay gerektiren eksikleri kendisi yapmaz: komutunu `workspace/docs/yetenek_raporu.md`'ye yazar, insan adımı olarak bırakır.
+- `python3 scripts/koruma_kontrol.py`: izin sözleşmesi dosyaları (`kesif_denetle.py`, `studio_config.py`, `insan_onayi.py`) görev tarafından değiştirildiyse hata verir.
