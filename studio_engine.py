@@ -68,6 +68,12 @@ def resolve_doc(name: str) -> Path:
     return ROOT / name
 
 
+def resolve_script(name: str) -> Path:
+    """Betik çözümü (yalıtım): projeye özel `workspace/scripts/<name>` öncelikli, yoksa framework `scripts/<name>`."""
+    alt = WORKSPACE / "scripts" / name
+    return alt if alt.exists() else ROOT / "scripts" / name
+
+
 def resolve_path(path_str: str) -> Path:
     """org_chart'taki göreli yolu proje köküne göre çözer.
 
@@ -2350,11 +2356,11 @@ def verify_task_execution(task: dict, sprint: dict, interactive: bool = False) -
     # 1. UAT KABUL DENETİMİ (uat_auditor veya UAT görevleri)
     if role == "uat_auditor" or "uat" in (title + " " + task.get("description", "")).lower():
         print(f"\n   🎯 [UAT KABUL DENETİM KAPISI] {task['id']} · {title}")
-        uat_script = ROOT / "scripts/uat_live_audit.mjs"
+        uat_script = resolve_script("uat_live_audit.mjs")
         if uat_script.exists():
-            print("   🚀 Canlı UAT denetimi yürütülüyor (scripts/uat_live_audit.mjs)...")
+            print(f"   🚀 Canlı UAT denetimi yürütülüyor ({uat_script.relative_to(ROOT)})...")
             try:
-                res = subprocess.run("node scripts/uat_live_audit.mjs", shell=True, cwd=ROOT, capture_output=True, text=True, timeout=30)
+                res = subprocess.run(["node", str(uat_script)], cwd=ROOT, capture_output=True, text=True, timeout=30)
                 if res.returncode == 0:
                     print("   ✅ [UAT BAŞARILI] Canlı sistem ve kullanıcı yolculukları %100 doğrulandı!")
                     note_parts.append("canlı UAT kabul testleri geçti")

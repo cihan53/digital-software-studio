@@ -55,12 +55,18 @@ Kullanıcı **"bunu çöz"**, **"bu hatayı gider"**, **"bunu yap"** veya herhan
 
 Studio ile bir proje geliştirilirken **projeye ait tüm üretilen dosyalar,
 geçici durum ve runtime artefaktları `workspace/` altında yaşar.** Repo
-kökü yalnızca framework dosyalarını ve kullanıcı dokümanlarını (AGENTS.md,
-README, proje_kapsami.md, org_chart.json vb.) barındırır.
+kökü yalnızca framework dosyalarını (sync ile güncellenir) ve genel dokümanları
+(AGENTS.md, README) barındırır. **YALITIM KURALI:** projeye özel HER dosya `workspace/`
+altında yaşar, framework dosyalarının üzerine yazılmaz; bu sayede framework güncellemesi
+(`sync_studio.sh`) projeye hiçbir şekilde dokunmaz:
+`workspace/docs/proje_kapsami.md`, `workspace/docs/org_chart.json`, `workspace/studio.config.json`,
+`workspace/scripts/<ad>` (framework betiğinin projeye özel sürümü: `workspace/scripts/` öncelikli çözülür,
+örn. `uat_live_audit.mjs`, `tarayici_test_izle.mjs`) ve projeye ait tüm betikler.
 
 | Konum | İçerik |
 |---|---|
-| `workspace/studio.db` | Tek doğruluk kaynağı (pano, talepler, kota, audit) |
+| `workspace/studio.db` | Tek doğruluk kaynağı (pano, talepler, kota, audit); git'e girmez, `workspace/pano_snapshot.json` (`scripts/pano_snapshot.py export`) takip edilir |
+| `workspace/scripts/` | Projeye özel betikler ve framework betiklerinin proje override'ları |
 | `workspace/logs/` | pipeline.log ve diğer süreç logları |
 | `workspace/.trace/` | Çağrı izleri (current.json, index.jsonl, NNNN.json) |
 | `workspace/.control/` | Kontrol bayrakları (pause/stop/skip/...) |
