@@ -8,6 +8,8 @@
 #   ./basla.sh --izle       sadece kontrol ekranını açar
 #   ./basla.sh --durum      tek satırlık durum özeti (ekran açmadan)
 #   ./basla.sh --web        web arayüzünü başlatır (panel + müşteri odası, :8090)
+#   ./basla.sh --kapat      koşuyu durdurur + panel ve yerel ortam servislerini kapatır
+#   ./basla.sh --servisler-kapat   yalnız panel ve yerel ortam servislerini kapatır (koşu sürer)
 #
 #   ./basla.sh --musteri    müşteri denetim masasını (istek/şikayet) açar
 #   ./basla.sh --onayla     günlük kota dolduğunda bir tur daha izin ver
@@ -406,6 +408,15 @@ PYEOF
       grn "Durdurma istendi — çalışan çağrı bitince koşucu çıkacak."
       dim "Hemen kesmek için: ./basla.sh --oldur"
       exit 0 ;;
+  --kapat)
+      $PY scripts/servis_kapat.py kapat --panel --ortam --kosucu
+      exit 0 ;;
+  --servisler-kapat)
+      $PY scripts/servis_kapat.py kapat --panel --ortam
+      exit 0 ;;
+  --servisler)
+      $PY scripts/servis_kapat.py liste
+      exit 0 ;;
   --oldur|--hard-stop)
       ok_msg=$($PY -c "import studio_board as B; ok, m = B.hard_stop(); print(('OK|' if ok else 'NO|') + m)")
       case "$ok_msg" in
@@ -667,6 +678,7 @@ elif lsof -iTCP:"$WEB_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
 else
   mkdir -p workspace/logs
   nohup $PY studio_web.py > workspace/logs/web.log 2>&1 &
+  echo $! > workspace/.web.pid
   sleep 1
   if kill -0 $! 2>/dev/null; then
     grn "✓ Web paneli: http://$WEB_HOST:$WEB_PORT/panel"
@@ -675,6 +687,6 @@ else
   fi
 fi
 echo
-dim "Kontrol ekranı açılıyor — çıkmak için 'q' (koşu arka planda devam eder)"
+dim "Kontrol ekranı açılıyor — çıkmak için 'q' (çıkışta servisleri de kapatmayı seçebilirsin; koşu arka planda devam eder)"
 sleep 2
 exec $PY studio_ctl.py

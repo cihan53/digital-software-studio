@@ -356,6 +356,40 @@ def handle(key: str) -> str:
     return ""
 
 
+def servis_kapat(panel=True, ortam=True, kosucu=False) -> str:
+    """scripts/servis_kapat.py üzerinden servisleri kapatır; kısa bir özet döndürür."""
+    try:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import servis_kapat as SK
+        log = SK.kapat(panel=panel, ortam=ortam, kosucu=kosucu)
+        return "; ".join(log) if log else "kapatılacak servis yoktu"
+    except Exception as e:  # kapanış hiçbir zaman çıkışı engellemesin
+        return f"servisler kapatılamadı: {e}"
+
+
+def cikis_sec(fd, old_attrs) -> bool:
+    """'q' çıkış menüsü. True → çık, False → vazgeç.
+    STUDIO_CIKIS=ekran|servisler|hepsi|sor (varsayılan sor): menüyü atlayıp doğrudan o seçimi uygular."""
+    mod = os.environ.get("STUDIO_CIKIS", "sor").lower()
+    if mod == "sor":
+        os.system("clear")
+        print(f"{BOLD}Çıkış{RESET}\n")
+        print(f"  {BOLD}e{RESET}  yalnız bu ekranı kapat   (koşu, panel ve ortam açık kalır)")
+        print(f"  {BOLD}p{RESET}  panel + ortam servislerini de kapat   (koşu arka planda sürer)")
+        print(f"  {BOLD}h{RESET}  koşuyu da durdur ve her şeyi kapat")
+        print(f"  {BOLD}Enter/Esc{RESET}  vazgeç\n")
+        k = ""
+        while not k:
+            k = getkey(30.0) or "esc"
+        mod = {"e": "ekran", "p": "servisler", "h": "hepsi"}.get(k.lower(), "vazgec")
+    if mod == "vazgec":
+        return False
+    if mod in ("servisler", "hepsi"):
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_attrs)
+        print("\n" + servis_kapat(panel=True, ortam=True, kosucu=(mod == "hepsi")))
+    return True
+
+
 def main():
     if not sys.stdin.isatty():
         print(render())
@@ -372,7 +406,9 @@ def main():
             print(render(msg))
             k = getkey(2.0)
             if k == "q":
-                break
+                if cikis_sec(fd, old):
+                    break
+                continue
             if k:
                 out = handle(k)
                 if out:
