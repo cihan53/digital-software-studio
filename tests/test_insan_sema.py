@@ -110,3 +110,23 @@ class Yetenek(unittest.TestCase):
         import koruma_kontrol as K
         self.assertEqual(K.degisenler("HEAD", ["scripts/koruma_kontrol.py"]) is not None, True)
         self.assertEqual(K.main(["--dosyalar", "LICENSE"]), 0)
+
+
+class KosucuDayanikliligi(unittest.TestCase):
+    def test_yerel_ortam_cikti_izni_ve_workspace_disi_red(self):
+        import studio_engine as E
+        self.assertEqual(E.check_output_path("yerel_ortam.sh").name, "yerel_ortam.sh")      # planlayıcı kuralı
+        with self.assertRaises(ValueError):
+            E.check_output_path("baska/dosya.sh")                                           # hâlâ reddedilir
+
+    def test_updater_calistirma_izni_korur(self):
+        import stat
+        import tempfile as _t
+        import studio_updater as U
+        with _t.TemporaryDirectory() as d:
+            kaynak = Path(d) / "k.sh"
+            kaynak.write_text("#!/bin/sh\n")
+            kaynak.chmod(0o755)
+            hedef = Path(d) / "alt" / "h.sh"
+            self.assertTrue(U.dosya_guncelle(hedef, kaynak))
+            self.assertTrue(hedef.stat().st_mode & stat.S_IXUSR)
