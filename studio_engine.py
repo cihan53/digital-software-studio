@@ -527,7 +527,7 @@ def synthesize_role(org: dict, role_id: str) -> dict:
         outputs = ["workspace/docs/test_raporu.md", "workspace/docs/bug_raporlari.md"]
         prompt = (
             f"Sen dinamik olarak ölçeklenmiş uzman '{title}' ({role_id}) testçi rolüsün.\n"
-            f"Görevin: Çalışan sistem (localhost:3000 ve 3001) üzerinde kullanıcı kabul kriterlerine, "
+            f"Görevin: Çalışan sistem (localhost:" + " ve ".join(str(p) for p in B.live_ports()) + ") üzerinde kullanıcı kabul kriterlerine, "
             f"ekran envanterine ve kullanıcı akışlarına göre GERÇEK ZİYARETÇİ gözüyle her ekranı, butonu, "
             f"linki ve formu denetlemektir. Mock testlerle yetinmez, DOM'u ve ağ isteklerini zorlarsın. "
             f"Bulduğun her aksaklığı ve eksikliği açıkça raporlarsın."

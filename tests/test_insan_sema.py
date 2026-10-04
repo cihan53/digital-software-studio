@@ -66,3 +66,21 @@ class Sema(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LivePorts(unittest.TestCase):
+    def test_varsayilan_ve_config(self):
+        import json as _j
+        import tempfile as _t
+        eski = B.WORKSPACE
+        with _t.TemporaryDirectory() as d:
+            B.WORKSPACE = Path(d)
+            try:
+                self.assertEqual(B.live_ports(), (3000, 3001))                        # config yok
+                (Path(d) / "studio.config.json").write_text(_j.dumps({"live": {"ports": [3000, 8080]}}))
+                self.assertEqual(B.live_ports(), (3000, 8080))
+                self.assertEqual(sorted(B.live_status()), [3000, 8080])
+                (Path(d) / "studio.config.json").write_text(_j.dumps({"live": {"ports": ["x"]}}))
+                self.assertEqual(B.live_ports(), (3000, 3001))                        # geçersiz → varsayılan
+            finally:
+                B.WORKSPACE = eski
