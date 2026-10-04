@@ -1,0 +1,110 @@
+"""kesif_yaz + izin etiketleri + gezgin uçtan uca güvenlik testi (issue #132)."""
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import textwrap
+import threading
+import unittest
+import urllib.parse
+import http.server
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "scripts"))
+import studio_config as C  # noqa: E402
+import kesif_denetle as K  # noqa: E402
+import kesif_yaz as Y  # noqa: E402
+import analiz_dogrula as A  # noqa: E402
+
+D = C._merge(C.DEFAULTS, {"discovery": {"allow": {"hosts": ["h.io"]}}})["discovery"]
+CHROME = os.environ.get("CHROME_PATH", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+
+RAW = {"birim": "/items", "durum": "tamam", "url": "https://h.io/items", "desc": "Kayıtları listeler ve yönetir, uzun açıklama.",
+       "h": ["Items"], "wid": ["w-1"], "btn": ["New item", "Clear Filters"], "tabs": [], "th": ["Name", "Status"], "inp": ["Search"],
+       "sel": 1, "pick": 0, "api": ["/api/items"], "cv": 0, "txt": "No items found",
+       "modals": [{"label": "New item", "acildi": True, "tur": "modal", "baslik": "Add", "alanlar": ["Name"], "butonlar": ["Close", "Add"]},
+                  {"label": "Add user", "atlandi": "yasak etiket"}],
+       "post_istekleri": []}
+
+
+class IzinEtiket(unittest.TestCase):
+    def test_yasak_etiketler(self):
+        for lab in ("Save changes", "Delete", "Bulk Merge", "Export CSV", "Refresh Data"):
+            self.assertFalse(K.izin("https://h.io/x", "reversible", lab, D)[0], lab)
+        for lab in ("New Team", "Add widget", "Filter"):
+            self.assertTrue(K.izin("https://h.io/x", "reversible", lab, D)[0], lab)
+
+
+class Yaz(unittest.TestCase):
+    def test_sablon_kanit_ve_tavan(self):
+        cfg = C._merge(C.DEFAULTS, {})
+        txt = Y.render(RAW, cfg["analysis"]["template"], cfg["analysis"]["max_words_l1"])
+        self.assertIn("## modal ve çekmeceler", txt)
+        self.assertIn("tıklanmadı (yasak etiket)", txt)
+        self.assertIn("[kaynak: https://h.io/items]", txt)
+        self.assertIn("## roller\nbilinmiyor", txt)          # gözlenmeyen alan uydurulmaz
+        with tempfile.TemporaryDirectory() as t:
+            p = Path(t) / "a.md"
+            p.write_text(txt, encoding="utf-8")
+            errs, lv = A.check_file(p, cfg["analysis"])
+            self.assertEqual((errs, lv), ([], "L1"))
+
+
+SITE = """<html><title>Home</title><body><main><h1>Home</h1><p>Bu sayfa ana özet ekranıdır ve test amaçlıdır, uzun açıklama.</p>
+<button id=n>New item</button><button id=s>Save all</button><button id=d>Delete</button>
+<div id=dlg role=dialog style="display:none"><h2>Add Item</h2><input placeholder="Title"><button aria-label=Close>x</button><button id=a>Add</button></div></main>
+<script>
+window.__tik=[];
+for (const b of document.querySelectorAll('button')) b.addEventListener('click',()=>{fetch('/tik?b='+b.textContent)});
+document.getElementById('n').onclick=()=>{dlg.style.display='block'};
+document.querySelector('[aria-label=Close]').onclick=()=>{dlg.style.display='none'};
+fetch('/api/items');</script></body></html>"""
+
+
+@unittest.skipUnless(shutil.which("node") and Path(CHROME).exists(), "node/Chrome yok")
+class GezginUcAnca(unittest.TestCase):
+    def test_yalniz_guvenli_butonlar_tiklanir(self):
+        tiklar = []
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_GET(s):
+                if s.path.startswith("/tik"):
+                    tiklar.append(urllib.parse.unquote(s.path.split("b=")[1]))
+                    body, ct = b"{}", "application/json"
+                elif s.path.startswith("/api"):
+                    body, ct = b"{}", "application/json"
+                else:
+                    body, ct = SITE.encode(), "text/html; charset=utf-8"
+                s.send_response(200); s.send_header("content-type", ct); s.end_headers(); s.wfile.write(body)
+
+            def log_message(*a):
+                pass
+
+        srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+        port = srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        with tempfile.TemporaryDirectory() as t:
+            t = Path(t)
+            (t / "inv.txt").write_text("/home\n")
+            cfg = {"source": {"live_url": f"http://127.0.0.1:{port}"},
+                   "analysis": {"output_dir": str(t / "docs")},
+                   "discovery": {"goal": "g", "questions": ["q"], "allow": {"hosts": [f"127.0.0.1:{port}"]},
+                                 "inventory": str(t / "inv.txt"), "log": str(t / "docs" / "log.jsonl")}}
+            (t / "cfg.json").write_text(json.dumps(cfg))
+            env = {**os.environ, "STUDIO_CONFIG": str(t / "cfg.json"), "STUDIO_KESIF_PROFIL": str(t / "prof")}
+            r = subprocess.run(["node", "scripts/kesif_gezgin.mjs"], cwd=ROOT, env=env, capture_output=True, text=True, timeout=120)
+            srv.shutdown()
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("New item", tiklar)
+            for yasak in ("Save all", "Delete", "Add"):
+                self.assertNotIn(yasak, tiklar, f"yasak/dialog-içi buton tıklandı: {yasak}")
+            raw = json.loads((t / "docs" / "_ham" / "home.json").read_text())
+            self.assertTrue(raw["modals"][0]["acildi"])
+            self.assertTrue(raw["modals"][0]["kapandi"])
+
+
+if __name__ == "__main__":
+    unittest.main()

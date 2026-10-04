@@ -48,7 +48,22 @@ def izin(url: str, eylem_sinifi: str, eylem: str, d: dict) -> tuple[bool, str]:
         return False, "mutating eylem yasak (read_only mod)"
     if eylem and eylem.lower() in [x.lower() for x in d["deny"].get("actions") or []]:
         return False, f"yasak eylem: {eylem}"
+    for lab in d["deny"].get("labels") or []:
+        if eylem and re.search(rf"\b{re.escape(lab)}\b", eylem, re.I):
+            return False, f"yasak etiket: {eylem} ({lab})"
     return True, "ok"
+
+
+def sunucu(d: dict) -> None:
+    """stdin'den JSON satırı ({url,sinif,eylem}) okur, stdout'a {ok,neden} yazar.
+    Gezginin tek süreçle izin sorgulaması içindir (kural kaynağı tek: izin())."""
+    for ln in sys.stdin:
+        ln = ln.strip()
+        if not ln:
+            continue
+        q = json.loads(ln)
+        ok, neden = izin(q.get("url", ""), q.get("sinif", "read"), q.get("eylem", ""), d)
+        print(json.dumps({"ok": ok, "neden": neden}, ensure_ascii=False), flush=True)
 
 
 def load_inventory(path: Path) -> list[re.Pattern] | None:
@@ -127,6 +142,7 @@ def main(argv=None) -> int:
     ap.add_argument("--config", default=None)
     ap.add_argument("--log", default=None)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--sunucu", action="store_true", help="stdin'den izin sorguları yanıtla")
     a = ap.parse_args(argv)
     cfg = C.load_config(Path(a.config) if a.config else None)
     if not cfg:
@@ -137,6 +153,9 @@ def main(argv=None) -> int:
         print("\n".join(f"[sözleşme] {e}" for e in errs), file=sys.stderr)
         return 1
     d = cfg["discovery"]
+    if a.sunucu:
+        sunucu(d)
+        return 0
     inv = load_inventory(C.ROOT / d["inventory"])
     rep = denetle(read_log(Path(a.log) if a.log else C.ROOT / d["log"]), d, inv)
     if a.json:
