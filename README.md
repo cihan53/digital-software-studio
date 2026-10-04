@@ -283,3 +283,12 @@ python3 scripts/analiz_dogrula.py && python3 scripts/kesif_denetle.py
 Gezgin her ziyareti/tıklamayı `kesif_denetle.py --sunucu` ile sözleşmeye karşı denetler; yalnızca görünür ve
 dialog dışındaki `discovery.open_labels` butonlarına tıklar, `deny.labels` (save, delete, merge, export …) asla.
 Sayfa seçicileri `discovery.selectors` ile projeye göre ayarlanır. Gereksinim: Node 22 + sistemde Chrome (`CHROME_PATH`).
+
+### İnsan onay kapısı ve API şema keşfi
+
+- **`role: human` görevleri** koşucu tarafından asla çalıştırılmaz; bağımlılıkları bitince `READY`'de bekler.
+  `python3 scripts/insan_onayi.py list | approve <ID> --not "..." | reject <ID> --not "..."` ile bir insan onaylar;
+  onay kaydı (kim/ne zaman/not) görevin `.md` çıktısına yazılır ve audit'e düşer.
+- **`node scripts/kesif_gezgin.mjs --fresh --sema`**: GET JSON yanıtlarının alan adı/tipini `<output_dir>/_api_semalari.json`
+  olarak toplar. Değer saklanmaz (yalnız `status/type/severity…` gibi sözlük alanlarında en çok 12 kısa enum değeri).
+- Pano kapanış raporu artık sabit "ONAYLANDI" şablonu değil, görev durumundan üretilen bir durum raporudur.
