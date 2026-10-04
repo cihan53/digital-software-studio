@@ -62,7 +62,10 @@ def _simdi() -> str:
 def _agent() -> dict:
     """org_chart.json'daki musteri_temsilcisi rolü; yoksa varsayılan."""
     try:
-        org = json.loads((ROOT / "org_chart.json").read_text(encoding="utf-8"))
+        org_yol = ROOT / "workspace" / "docs" / "org_chart.json"      # yalıtım: projeye özel dosya workspace/docs/ öncelikli
+        if not org_yol.exists():
+            org_yol = ROOT / "org_chart.json"
+        org = json.loads(org_yol.read_text(encoding="utf-8"))
         for a in org.get("hierarchy", []):
             if a.get("id") == ROL_ID:
                 return a

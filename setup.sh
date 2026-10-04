@@ -67,13 +67,16 @@ fi
 
 # 4. Proje İsterleri Dosyası Kontrolü
 echo -e "\n${BOLD}4. Proje Kapsamı Dosyası Denetleniyor...${NC}"
-if [ ! -f "proje_kapsami.md" ]; then
+# Yalıtım: projeye özel dosyalar workspace/ altında yaşar (framework dosyaları sync ile güncellenir, bunlara dokunmaz).
+mkdir -p workspace/docs
+KAPSAM="workspace/docs/proje_kapsami.md"
+if [ ! -f "$KAPSAM" ] && [ ! -f "proje_kapsami.md" ]; then
     if [ -f "proje_kapsami.template.md" ]; then
-        cp proje_kapsami.template.md proje_kapsami.md
-        echo -e "${GREEN}✓ proje_kapsami.template.md dosyasından yeni proje_kapsami.md oluşturuldu.${NC}"
+        cp proje_kapsami.template.md "$KAPSAM"
+        echo -e "${GREEN}✓ proje_kapsami.template.md dosyasından yeni $KAPSAM oluşturuldu.${NC}"
     fi
 else
-    echo -e "${GREEN}✓ proje_kapsami.md mevcut.${NC}"
+    echo -e "${GREEN}✓ proje kapsamı mevcut.${NC}"
 fi
 
 # Çalıştırma izinleri
@@ -83,7 +86,7 @@ echo -e "\n${CYAN}════════════════════�
 echo -e "${GREEN}${BOLD}✓ KURULUM TAMAMLANDI! Stüdyonuz çalışmaya hazır.${NC}"
 echo -e "${CYAN}══════════════════════════════════════════════════════════════════════${NC}"
 echo -e "\n${BOLD}Nasıl Başlatılır?${NC}"
-echo -e "  1. Projenizi tarif edin:  ${CYAN}nano proje_kapsami.md${NC}"
+echo -e "  1. Projenizi tarif edin:  ${CYAN}nano workspace/docs/proje_kapsami.md${NC}"
 echo -e "  2. Stüdyoyu başlatın:     ${CYAN}./basla.sh${NC}"
 echo -e "  3. İlerlemeyi izleyin:    ${CYAN}./basla.sh --izle${NC}"
 echo -e "  4. Müşteri masasını açın: ${CYAN}./musteri.sh${NC}"

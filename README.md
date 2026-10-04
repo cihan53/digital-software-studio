@@ -312,3 +312,16 @@ baktığı portları belirler (varsayılan 3000, 3001). Proje farkı artık `stu
   `STUDIO_CIKIS=ekran|servisler|hepsi|sor` menüyü atlatır (varsayılan `sor`).
 - `./basla.sh --servisler` listeler, `--servisler-kapat` panel+ortamı, `--kapat` koşu dahil hepsini kapatır.
   Yalnızca çalışma dizini bu projenin altındaki süreçler (ve `live.ports` dinleyicileri) kapatılır; başka projelere dokunulmaz.
+
+### Yalıtım: projeye özel her şey `workspace/` altında
+
+Kök yalnızca framework dosyalarını taşır; `./sync_studio.sh --studio-guncelle` bunları AYNEN yazar. Projeye özel dosyalar:
+
+| Dosya | Yer |
+|---|---|
+| Proje kapsamı / org şeması | `workspace/docs/proje_kapsami.md`, `workspace/docs/org_chart.json` (kökte olanlar geriye uyumlu okunur) |
+| Yapılandırma | `workspace/studio.config.json` (kaynak, analiz/keşif sözleşmesi, `live.ports`) |
+| Betik override'ı | `workspace/scripts/<ad>`: aynı adlı framework betiğinin yerine geçer (örn. `uat_live_audit.mjs`, `tarayici_test_izle.mjs`); yoksa `scripts/<ad>` |
+| Projeye ait betikler | `workspace/scripts/` |
+
+`protected_files` mekanizması bu sayede gereksizleşir; override'lar güncellemeden etkilenmez.
