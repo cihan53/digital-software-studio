@@ -52,6 +52,9 @@ DEFAULTS: dict = {
         "open_labels": ["new", "add", "create", "select", "filter", "columns", "details",
                         "view", "show", "settings", "configure", "manage", "edit", "custom"],
         "mode": "read_only",
+        # Oturum yoksa uygulamanın yönlendirdiği giriş yolu; envanterde atlanacak rotalar (regex listesi).
+        "login_path": "/login",
+        "skip_routes": [],
         "limits": {"max_units": 150, "max_actions_per_unit": 12,
                    "max_depth": 2, "max_minutes": 90,
                    "max_off_inventory_pct": 10},

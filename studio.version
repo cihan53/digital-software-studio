@@ -14,6 +14,7 @@
     "scripts/kalite_kapilari.py",
     "scripts/kesif_denetle.py",
     "scripts/kesif_yaz.py",
+    "scripts/kesif_roller.py",
     "scripts/kesif_cikarici.js",
     "scripts/kesif_gezgin.mjs",
     "scripts/studio.config.example.json",
