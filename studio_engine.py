@@ -1819,10 +1819,40 @@ def _yazma_yetkisi(tools: list | None) -> bool:
     return False
 
 
+def _kesif_sozlesmesi_gecerli(agent_id: str) -> bool:
+    """Keşif rolü, geçerli bir keşif sözleşmesi olmadan ÇALIŞMAZ (issue #130)."""
+    SC, scfg = _studio_config()
+    errs = ["workspace/studio.config.json yok"] if not scfg else SC.validate_discovery(scfg)
+    if errs:
+        print(f"\n---> [ATLANDI] {agent_id}: keşif sözleşmesi geçersiz:")
+        for e in errs:
+            print(f"       - {e}")
+        return False
+    return True
+
+
+def _studio_config():
+    """scripts/studio_config.py + workspace/studio.config.json (issue #130).
+    Modül veya config yoksa None → eski davranış (geriye uyumlu)."""
+    try:
+        scripts_dir = str(ROOT / "scripts")
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        import studio_config as SC
+        return SC, SC.load_config(WORKSPACE / "studio.config.json")
+    except (ImportError, ValueError) as e:
+        print(f"    [uyarı] studio.config.json okunamadı: {e}")
+        return None, None
+
+
 def build_prompts(agent: dict, target: str, siblings: list[str], brief: str,
                   inputs_text: str, revision_note: str = "",
                   tools: list | None = None) -> tuple[str, str]:
-    system = agent["system_prompt"] + SYSTEM_SUFFIX
+    SC, scfg = _studio_config()
+    system = (SC.render(agent["system_prompt"], scfg) if SC else agent["system_prompt"]) + SYSTEM_SUFFIX
+    if SC and scfg:
+        system += SC.rules_block(scfg, analysis=bool(agent.get("unit_analysis")),
+                                 discovery=bool(agent.get("discovery")))
     if not _yazma_yetkisi(tools):
         system += NO_WRITE_RULE
 
@@ -2005,6 +2035,8 @@ def execute_pipeline(org: dict, brief: str, args):
             continue
         if agent_id == PLANNER_ID:
             # Pano şema doğrulaması gerektirir; run_planner() üzerinden üretilir.
+            continue
+        if agent.get("discovery") and not _kesif_sozlesmesi_gecerli(agent_id):
             continue
         outputs_exist = all(resolve_path(p).exists() for p in agent["outputs"])
         if agent_id in state["completed_steps"] and outputs_exist and not args.only:
