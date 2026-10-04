@@ -102,7 +102,11 @@ PYEOF
         exec ./canli.sh
       fi ;;
   --test-izle)
-      node scripts/tarayici_test_izle.mjs
+      if [ -f "workspace/scripts/tarayici_test_izle.mjs" ]; then
+        node workspace/scripts/tarayici_test_izle.mjs
+      else
+        node scripts/tarayici_test_izle.mjs
+      fi
       exit 0 ;;
   --incele|--review)
       $PY studio_engine.py --review
