@@ -98,6 +98,8 @@ def alanlar(r: dict, n: int, rol: dict | None = None) -> dict[str, str]:
             md.append(f"'{m['label']}' → modal/çekmece açılmadı")
     st = sorted({m.group(0).lower() for m in DURUM_RX.finditer(r.get("txt", ""))})
     rk = []
+    if r.get("tahmin"):
+        rk.append("örnek kimlik aynı kaynağın başka rotasından türetildi (tahmin); sayfanın gerçek kayıtla açıldığı doğrulanmadı")
     for m in r.get("modals", []):
         if m.get("mutating_istek"):
             rk.append(f"'{m['label']}' tıklaması yazma isteği tetikledi: " + liste(m["mutating_istek"], 3))
