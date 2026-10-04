@@ -50,7 +50,7 @@ RESPECT_CALENDAR = os.getenv("STUDIO_RESPECT_CALENDAR", "0") == "1"
 ALLOWED_OUTPUT_ROOTS = (WORKSPACE,)
 # Tek istisna: kullanıcının elle düzenlediği, rollerin zenginleştirdiği canlı
 # kapsam dokümanı proje kökünde durabilir (geriye dönük uyumluluk).
-ALLOWED_OUTPUT_FILES = {ROOT / "proje_kapsami.md", ROOT / "yerel_ortam.sh"}
+ALLOWED_OUTPUT_FILES = {ROOT / "proje_kapsami.md"}
 DOC_DIR = WORKSPACE / "docs"
 # Proje dokümanları workspace kuralı gereği workspace/docs/ altında yaşar;
 # kökte bulunanlar geriye dönük olarak desteklenir.
