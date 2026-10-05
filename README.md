@@ -387,3 +387,10 @@ Devops, web ve test görevleri aynı uygulama dizinini kullanır: `planlama.dizi
 Dokümanlar sekmesinde `.html` dokümanlar (tasarım önizlemesi vb.) **yeni sekmede** açılır: `/api/dokuman-html` yalnız `workspace/` altı `.html` sunar; `Content-Security-Policy: sandbox` ile opak origin'de çalışır (panel API'sine erişemez, ağ yok). Onaylar sekmesindeki önizlemede de "↗ Yeni sekmede aç" bağlantısı vardır.
 
 Günlük kota/bütçe dolunca koşucu **çıkmaz**: `[⏸ KOTA ONAYI BEKLENİYOR]` ile bekler, panelden ya da `./basla.sh --onayla` ile onay gelince (veya gece sıfırlanınca) kaldığı yerden devam eder. Durdurma isteği çıkarır; azami bekleme `STUDIO_KOTA_BEKLEME_SN` (varsayılan 6 saat).
+
+### Render kapısı ve Önizleme
+
+**Render kapısı** (`scripts/render_kapisi.mjs`, bağımlılıksız; headless Chrome'u CDP ile sürer): HTTP 200 sayfanın doğru çizildiği anlamına gelmez. Kapı her rotada konsol hatası / `[Vue warn]` / çözülemeyen bileşen / hydration uyuşmazlığı / 5xx / boş sayfa ve eksik çatı (header, nav, main) arar; ekran görüntüleri `workspace/docs/ekran_goruntuleri/`, rapor `workspace/docs/render_raporu.md`. UAT ve ziyaretçi-test görevlerinde otomatik koşar; başarısızlık mevcut talep/telafi akışına girer. Chrome ya da canlı sistem yoksa atlanır (çıkış 3, `CHROME_PATH` ile yol verilebilir).
+Ayar `workspace/uat_checklist.json` (hepsi isteğe bağlı): `rotalar` (yoksa uygulama dizinindeki `pages/` dosyalarından türetilir), `giris` (`rota`, `doldur`: {seçici: değer}, `tikla`; test/mock hesabı), `cati` (`secici`, `haric`), `yoksay`.
+
+**Önizleme** (panel: 🌐 Önizleme): üretim derlemesini (`build` + `preview`, `onizleme.port` ya da dev portun +1'i; `workspace/onizleme.sh` ile özelleştirilebilir) başlatır. Geliştirme sunucusu (`🖥 Yerel Ortam`) ajanlara, önizleme müşteriye gösterilir; Docker yalnız sürüm çıktısıdır, günlük çalışmada gerekmez.

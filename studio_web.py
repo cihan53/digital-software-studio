@@ -362,16 +362,22 @@ def _yo():
     return YO
 
 
-def ortam_ozet() -> dict:
+def _profil(v) -> str:
+    return v if v in ("yerel_ortam", "onizleme") else "yerel_ortam"
+
+
+def ortam_ozet(profil: str = "yerel_ortam") -> dict:
     YO = _yo()
-    return {"ok": True, **YO.durum(ROOT), "log": YO.log_oku(ROOT)}
+    profil = _profil(profil)
+    return {"ok": True, **YO.durum(ROOT, profil=profil), "log": YO.log_oku(ROOT, profil=profil)}
 
 
 def ortam_islem(body: dict) -> dict:
     YO = _yo()
     islem = (body.get("islem") or "").strip()
+    profil = _profil(body.get("profil"))
     f = {"baslat": YO.baslat, "durdur": YO.durdur, "yeniden": YO.yeniden}.get(islem)
-    return f(ROOT) if f else {"ok": False, "mesaj": "bilinmeyen işlem"}
+    return f(ROOT, profil=profil) if f else {"ok": False, "mesaj": "bilinmeyen işlem"}
 
 
 def _bg():
@@ -710,7 +716,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/brief-gorusme":
             return self._json(_bg().ozet())
         if path == "/api/ortam":
-            return self._json(ortam_ozet())
+            return self._json(ortam_ozet(q.get("profil", ["yerel_ortam"])[0]))
         if path == "/api/onaylar":
             return self._json(onaylar())
         if path == "/api/gorsel":
