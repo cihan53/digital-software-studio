@@ -79,6 +79,11 @@ else
     echo -e "${GREEN}✓ proje kapsamı mevcut.${NC}"
 fi
 
+# Depo hijyeni: .gitignore/.gitattributes yönetilen blokları (git deposu varsa)
+if [ -d .git ] && [ -f scripts/depo_hijyeni.py ]; then
+    python3 scripts/depo_hijyeni.py --uygula || true
+fi
+
 # Çalıştırma izinleri
 chmod +x basla.sh musteri.sh setup.sh studio_schedule.sh 2>/dev/null || true
 
