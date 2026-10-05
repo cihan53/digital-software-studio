@@ -350,3 +350,13 @@ ve JSON gövdeyle kabul edilir; panel varsayılan olarak yalnız 127.0.0.1'e ba�
 Kısa, insani bir `proje_kapsami.md` yazın; **müşteri temsilcisi, ürün sahibi ve CTO** sırayla TEK soru sorar, siz kendi sözlerinizle cevaplarsınız.
 Cevaplar rol etiketiyle (`<!-- rol: ... -->`) brief'in "Görüşmeden eklenenler" bölümüne **sizin sözlerinizle** işlenir; rol yalnız konu başlığı ve kısa bir not ekler, yeni olgu uydurmaz.
 Durum `workspace/docs/brief_gorusme.json`'dadır; LLM yoksa yedek sorular kullanılır.
+
+### Deney kolları (`scripts/deney_kur.py`)
+
+Aynı girdi paketiyle (brief, org_chart, keşif/ekran analizleri, planlama ayarı) birden çok yalıtılmış proje klasörü kurar; farklı olan yalnız backend/model/porttur (claude / gemini=agy / devin).
+Her kolda framework `git clone` edilir (`origin` → `framework`, push kapalı), `workspace/calistir.sh` hazırlanır, **servis başlatılmaz**.
+
+```bash
+python3 scripts/deney_kur.py kur --kaynak <proje> --hedef <ana dizin> --onek <ad> --brief <brief.md> [--github-sahip <kullanıcı>] [--plan]
+python3 scripts/deney_kur.py esitle --kaynak-kol <dizin> --hedefler <dizin>,<dizin> [--plan]   # brief görüşmesi sonrası son brief'i kopyalar, girdi hash tablosunu basar
+```
