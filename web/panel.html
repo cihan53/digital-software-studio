@@ -635,6 +635,8 @@ async function briefPost(b){ return await(await fetch('/api/brief-gorusme',{meth
 async function briefYukle(){
   const d=await(await fetch('/api/brief-gorusme')).json();
   const k=document.getElementById('brief-akis');
+  if(!(d.turlar||[]).length && d.durum!=='tamam' && !window._briefOto){   // ilk soru kullanıcı tıklamadan gelir
+    window._briefOto=true; k.innerHTML='<div class="soluk">Müşteri temsilcisi ilk sorusunu hazırlıyor…</div>'; await briefSoru(); return; }
   k.innerHTML=(d.turlar||[]).map(t=>`<div style="margin:10px 0">
     <div class="onay-kutu"><b>${esc(BRIEF_ROL[t.rol]||t.rol)}</b><div>${esc(t.soru)}</div>
       ${(t.secenekler||[]).length?`<div class="soluk">Örn: ${t.secenekler.map(esc).join(' · ')}</div>`:''}</div>
