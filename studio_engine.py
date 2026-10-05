@@ -1634,6 +1634,21 @@ def strip_fence(text: str) -> str:
     return m.group(1) if m else text
 
 
+_ARTEFAKT_SON = re.compile(r"(?:\s*</(?:antml:)?(?:parameter|invoke|function_calls)>)+\s*$")
+_ARTEFAKT_ACILIS = re.compile(r"<(?:antml:)?(?:parameter|invoke|function_calls)\b")
+
+
+def temizle_arac_artefakti(metin: str, ad: str = "") -> str:
+    """Modelin araç çağrısından dosya sonuna sızan kapanış etiketlerini (</parameter></invoke>...) siler (issue #197).
+    İçerikte açılış etiketi de varsa (etiketleri anlatan bir doküman) dokunulmaz."""
+    if _ARTEFAKT_ACILIS.search(metin):
+        return metin
+    yeni = _ARTEFAKT_SON.sub("", metin)
+    if yeni != metin:
+        print(f"  [!] {ad or 'çıktı'}: sonuna sızan araç-çağrısı etiketleri temizlendi.", file=sys.stderr)
+    return yeni
+
+
 HISTORY_DIR = WORKSPACE / ".history"
 
 
@@ -1649,6 +1664,7 @@ def write_single_file(path_str: str, content: str) -> list[Path]:
         shutil.copy2(out, HISTORY_DIR / f"{out.stem}.{n:02d}{out.suffix}")
     if out.suffix.lower() != ".md":
         content = strip_fence(content)
+    content = temizle_arac_artefakti(content, path_str)
     out.write_text(content.rstrip() + "\n", encoding="utf-8")
     return [out]
 
@@ -1681,7 +1697,7 @@ def write_multi_file(dir_str: str, content: str) -> list[Path]:
             continue
 
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(strip_fence(body).rstrip() + "\n", encoding="utf-8")
+        target.write_text(temizle_arac_artefakti(strip_fence(body), raw_name).rstrip() + "\n", encoding="utf-8")
         written.append(target)
     return written
 
