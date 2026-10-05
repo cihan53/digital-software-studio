@@ -220,11 +220,16 @@ def _incele_yollari(aciklama: str) -> list[str]:
 
 def _dosya_meta(yol: str) -> dict:
     p = ROOT / yol
-    m = {"yol": yol, "tur": p.suffix.lstrip("."), "var": p.is_file(), "kb": 0, "bilinmiyor": 0}
+    m = {"yol": yol, "tur": p.suffix.lstrip("."), "var": p.is_file(), "kb": 0, "bilinmiyor": 0, "varsayim": 0, "okunamadi": False}
     if p.is_file():
         m["kb"] = round(p.stat().st_size / 1024, 1)
         if p.suffix == ".md":
-            m["bilinmiyor"] = len(_BILINMIYOR_RX.findall(p.read_text(encoding="utf-8", errors="replace")))
+            metin = p.read_text(encoding="utf-8", errors="replace")
+            m["bilinmiyor"] = len(_BILINMIYOR_RX.findall(metin))
+            satirlar = [ln.strip() for ln in metin.splitlines() if ln.strip().startswith(">") and "Varsayım" in ln]
+            m["varsayim"] = len(satirlar)
+            # Doküman girdilerin okunamadığını beyan ediyorsa: tahminle yazılmıştır, onaydan önce uyarı gösterilir
+            m["okunamadi"] = any(re.search(r"okunamad[ıi]|okuma izni|okuyamad[ıi]m|erişemedim", ln, re.I) for ln in satirlar)
     return m
 
 

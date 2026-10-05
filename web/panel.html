@@ -628,12 +628,14 @@ async function onayYukle(zorla){
     document.getElementById('onay-liste').innerHTML=L.map(o=>{
       const bekler=o.durum==='READY', bitti=o.durum==='DONE';
       const dos=(o.dosyalar||[]).map((f,i)=>`<details class="onay-dosya" ${bekler&&i===0?'open':''} ontoggle="onayDosyaYukle(this)" data-yol="${esc(f.yol)}" data-tur="${esc(f.tur)}">
-        <summary><b>${f.tur==='html'?'🖼 Görsel önizleme':'📄'}</b> ${esc(f.yol.split('/').slice(-2).join('/'))} <span class="soluk">· ${f.var?f.kb+' KB':'DOSYA YOK'}${f.bilinmiyor?` · ⚠ ${f.bilinmiyor} alan "bilinmiyor"`:''}</span></summary>
+        <summary><b>${f.tur==='html'?'🖼 Görsel önizleme':'📄'}</b> ${esc(f.yol.split('/').slice(-2).join('/'))} <span class="soluk">· ${f.var?f.kb+' KB':'DOSYA YOK'}${f.bilinmiyor?` · ⚠ ${f.bilinmiyor} alan "bilinmiyor"`:''}${f.varsayim?` · ${f.varsayim} varsayım`:''}</span>${f.okunamadi?' <span class="rozet r-FAILED">GİRDİ OKUNAMAMIŞ — tahminle yazılmış</span>':''}</summary>
         <div class="onay-icerik soluk">Yükleniyor…</div></details>`).join('')||'<div class="soluk">İncelenecek dosya bulunamadı.</div>';
       const evet=(o.onaylanirsa||[]).map(x=>`<li><span class="rozet r-TODO">${esc(x.rol)}</span> ${esc(x.baslik)} <span class="soluk">→ ${esc((x.ciktilar||[]).join(', '))}</span></li>`).join('')||'<li class="soluk">Bu kapıya bağlı görev yok.</li>';
       const hayir=(o.reddedilirse||[]).map(x=>`<li><span class="rozet r-TODO">${esc(x.rol)}</span> ${esc(x.baslik)}</li>`).join('')||'<li class="soluk">—</li>';
+      const uyari=(o.dosyalar||[]).some(f=>f.okunamadi)?`<div class="onay-kutu" style="border:1px solid #b91c1c"><b>⚠ Dikkat:</b> Bu kapının tasarım dokümanı, ekran analizlerini <b>okuyamadığını</b> belirtiyor; içeriği gözlemlere değil tahmine dayanıyor. Onaylamak yerine <b>Reddet (revizyon iste)</b> öneririz.</div>`:'';
       return `<div class="kart" style="margin-bottom:14px">
         <div style="font-size:1.05em"><b>${esc(o.id)}</b> · ${esc(o.baslik)} <span class="rozet r-${bitti?'DONE':(bekler?'FAILED':'TODO')}">${bitti?'ONAYLANDI':(bekler?'ONAY BEKLİYOR':'HENÜZ HAZIR DEĞİL')}</span></div>
+        ${uyari}
         <div class="onay-kutu"><b>Neye onay veriyorsunuz?</b><div class="soluk">${esc(o.aciklama)}</div></div>
         <div class="onay-iki">
           <div class="onay-kutu"><b>✅ Onaylarsanız şunlar başlar</b><ul>${evet}</ul></div>
