@@ -1242,7 +1242,7 @@ def progress(board: dict) -> dict:
 
 # ---------------------------------------------------------------- yerel ortam
 # UAT/ziyaretçi testleri yerel geliştirme sistemine ihtiyaç duyar (yerel_ortam.sh):
-# frontend localhost:3000 (Nuxt), backend localhost:3001 (Fastify).
+# Portlar projeye göre değişir: workspace/studio.config.json → live.ports.
 LIVE_PORTS = (3000, 3001)      # varsayılan; proje farkı workspace/studio.config.json → live.ports ile verilir
 
 
@@ -1585,7 +1585,7 @@ def ledger_check(tahmini_maliyet: float) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 # Framework güncelleme bildirimi
 # ---------------------------------------------------------------------------
-# Bir proje (elektriklioto-gemini vb.) digital-software-studio'yu kullanırken
+# Bir proje digital-software-studio'yu kullanırken
 # framework'te yeni sürüm çıkıp çıkmadığını buradan öğrenir. Sonuç
 # workspace/.studio_update_check.json'a TTL'li yazılır — ctl/web/motor aynı
 # önbelleği paylaşır, her render'da ağa çıkılmaz.

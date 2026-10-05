@@ -1,4 +1,5 @@
 """Çerçeve projeden bağımsız olmalı: başka projenin sabit kuralları yok (issue #201)."""
+import re
 import sys
 import tempfile
 import unittest
@@ -10,6 +11,10 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import studio_engine as E
 
 YASAK = ("stationRoutes", "operatorRoutes", "/stations", "/operators", "PostGIS", "Fastify", "Canlı Harita", "src/frontend", "npm run migrate")
+# Tüm çerçeve kaynaklarında (testler, README ve sürüm geçmişi hariç) bulunmaması gereken projeye özel sözcükler (issue #203)
+YASAK_TUM = ("elektriklioto", "cpo_", "epdk", "voltrun", "curl_input", "stationmap", "stationdetail", "postgis", "fastify",
+             "istasyon", "stationroutes", "operatorroutes", "/api/v1/stations", "cpanel", "bbox", "gadm")
+MUAF = ("tests/", "README.md", "AGENTS.md", "studio.version", "workspace/")
 
 
 class CercevGenel(unittest.TestCase):
@@ -17,6 +22,22 @@ class CercevGenel(unittest.TestCase):
         kaynak = (ROOT / "studio_engine.py").read_text(encoding="utf-8")
         for k in YASAK:
             self.assertNotIn(k, kaynak, f"studio_engine.py projeye özel sözcük taşıyor: {k}")
+
+    def test_tum_cerceve_projeden_bagimsiz(self):
+        import subprocess
+        dosyalar = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True).stdout.split("\n")
+        ihlal = []
+        for f in dosyalar:
+            if not f or f.startswith(MUAF) or not (ROOT / f).is_file():
+                continue
+            try:
+                metin = (ROOT / f).read_text(encoding="utf-8").lower()
+            except (UnicodeDecodeError, OSError):
+                continue
+            ihlal += [f"{f}: {k}" for k in YASAK_TUM if k in metin]
+            if re.search(r"harita(?!sı)", metin):                          # 'yol haritası' (roadmap) serbest
+                ihlal.append(f"{f}: harita")
+        self.assertEqual(ihlal, [], "çerçevede projeye özel sözcükler var")
 
     def _calistir(self, cfg, app_ts, nuxt=None):
         d = Path(tempfile.mkdtemp())
