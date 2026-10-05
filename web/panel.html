@@ -123,6 +123,7 @@
   <div class="sekme" data-t="talep" onclick="sekmeAc('talep')">📥 Talepler</div>
   <div class="sekme" data-t="faz" onclick="sekmeAc('faz')">🗺 Fazlar</div>
   <div class="sekme" data-t="brief" onclick="sekmeAc('brief')">💬 Brief Görüşmesi</div>
+  <div class="sekme" data-t="ortam" onclick="sekmeAc('ortam')">🖥 Yerel Ortam</div>
   <div class="sekme" data-t="dok" onclick="sekmeAc('dok')">📚 Dokümanlar</div>
   <div class="sekme" data-t="onay" onclick="sekmeAc('onay')">✅ Onaylar <span id="onay-sayi" class="rozet r-FAILED gizli"></span></div>
 </div>
@@ -134,6 +135,21 @@
       son sırayı framework bağımlılık ve faz kurallarıyla belirler.</div>
     <div class="filtre" id="pano-filtre"></div>
     <div id="pano">Yükleniyor…</div>
+  </section>
+
+  <section id="s-ortam" class="gizli">
+    <div class="onay-kutu">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <b id="ortam-durum">…</b><span id="ortam-portlar"></span>
+        <span style="flex:1"></span>
+        <button id="ortam-b" onclick="ortamIslem('baslat')">▶ Başlat</button>
+        <button id="ortam-y" onclick="ortamIslem('yeniden')">↻ Yeniden başlat</button>
+        <button id="ortam-d" onclick="ortamIslem('durdur')">■ Durdur</button>
+      </div>
+      <div id="ortam-not" class="soluk" style="margin-top:6px"></div>
+    </div>
+    <div class="soluk" style="margin:10px 0 4px">Log: <span id="ortam-logyol"></span></div>
+    <pre id="ortam-log" style="min-height:300px;max-height:60vh;overflow-y:auto"></pre>
   </section>
 
   <section id="s-dok" class="gizli">
@@ -223,10 +239,10 @@ function modalKapat(){ document.getElementById('modal').classList.add('gizli'); 
 
 function sekmeAc(t){
   document.querySelectorAll('.sekme').forEach(x=>x.classList.toggle('aktif', x.dataset.t===t));
-  for (const s of ['pano','canli','audit','cagri','talep','faz','brief','onay','dok'])
+  for (const s of ['pano','canli','audit','cagri','talep','faz','brief','onay','dok','ortam'])
     document.getElementById('s-'+s).classList.toggle('gizli', s!==t);
   if(t==='audit') auditYukle(); if(t==='cagri') cagriYukle();
-  if(t==='talep') talepYukle(); if(t==='canli') canliYukle(); if(t==='faz') fazYukle(); if(t==='onay') onayYukle(true); if(t==='brief') briefYukle(); if(t==='dok') dokYukle();
+  if(t==='talep') talepYukle(); if(t==='canli') canliYukle(); if(t==='faz') fazYukle(); if(t==='onay') onayYukle(true); if(t==='brief') briefYukle(); if(t==='dok') dokYukle(); if(t==='ortam') ortamYukle();
 }
 let aktifSekme='pano';
 
@@ -714,6 +730,28 @@ async function dokAc(yol){
     k.innerHTML=h;
   } else if(d.tur==='html'){ k.innerHTML='<iframe sandbox></iframe>'; k.firstChild.srcdoc=d.icerik; }
   else { let t=d.icerik; if(d.tur==='json'){ try{ t=JSON.stringify(JSON.parse(t),null,2); }catch(e){} } k.innerHTML='<pre class="md-kod"></pre>'; k.firstChild.textContent=t; }
+}
+// ---------- yerel ortam (başlat/durdur + log) ----------
+let ortamZaman=null;
+async function ortamYukle(){
+  clearTimeout(ortamZaman);
+  try{
+    const d=await(await fetch('/api/ortam')).json();
+    const AD={calisiyor:'🟢 Çalışıyor',kismen:'🟡 Kısmen açık',baslatiliyor:'🟡 Başlatılıyor…',durdu:'⚪ Durdu'};
+    document.getElementById('ortam-durum').textContent=AD[d.durum]||d.durum;
+    document.getElementById('ortam-portlar').innerHTML=(d.portlar||[]).map(p=>p.acik?`<a href="${p.url}" target="_blank" rel="noopener">:${p.port} ✓</a>`:`<span class="soluk">:${p.port} kapalı</span>`).join(' · ');
+    document.getElementById('ortam-logyol').textContent=d.log_yolu||'';
+    const var_=d.betik_var, cal=d.durum!=='durdu';
+    document.getElementById('ortam-b').disabled=!var_||cal; document.getElementById('ortam-y').disabled=!var_; document.getElementById('ortam-d').disabled=!cal;
+    document.getElementById('ortam-not').textContent=var_?('Betik: '+d.betik):'workspace/yerel_ortam.sh henüz yok. Pano görevi (devops, S1-T1) üretince bu düğmeler açılır.';
+    const pre=document.getElementById('ortam-log'), alta=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;
+    if(pre.textContent!==d.log){ pre.textContent=d.log||'(log boş)'; if(alta) pre.scrollTop=pre.scrollHeight; }
+  }catch(e){ document.getElementById('ortam-durum').textContent='Okunamadı: '+e; }
+  if(!document.getElementById('s-ortam').classList.contains('gizli')) ortamZaman=setTimeout(ortamYukle,3000);
+}
+async function ortamIslem(i){
+  const r=await(await fetch('/api/ortam',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({islem:i})})).json();
+  toast(r.mesaj||(r.ok?'Tamam':'Hata')); ortamYukle();
 }
 let onaySig='';
 async function onayYukle(zorla){
