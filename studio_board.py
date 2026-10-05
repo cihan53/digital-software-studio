@@ -1262,11 +1262,14 @@ def live_status() -> dict:
     """Canlı ortam portlarının durumu: {port: bool}."""
     out = {}
     for port in live_ports():
-        try:
-            with socket.create_connection(("127.0.0.1", port), timeout=0.4):
-                out[port] = True
-        except OSError:
-            out[port] = False
+        out[port] = False
+        for host in ("127.0.0.1", "::1"):          # nuxt dev macOS'ta localhost'u ::1'e bağlayabilir (#198)
+            try:
+                with socket.create_connection((host, port), timeout=0.4):
+                    out[port] = True
+                    break
+            except OSError:
+                continue
     return out
 
 
