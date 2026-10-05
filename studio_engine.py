@@ -2655,6 +2655,31 @@ def self_healing_code_check(target: str) -> tuple[bool, str]:
     return True, ""
 
 
+KOTA_BEKLEME_SN = int(os.getenv("STUDIO_KOTA_BEKLEME_SN", str(6 * 3600)))
+
+
+def kota_onayi_bekle(tahmin: float, azami_sn: int | None = None, aralik: float = 5.0) -> bool:
+    """Bütçe/kota onayı beklenirken koşucu ÇIKMAZ: kota açılınca (onay ya da gece sıfırlanması) True döner ve iş sürer.
+    stop/force bayrağı ya da azami süre dolarsa False (koşucu çıkar). Issue #215."""
+    azami = KOTA_BEKLEME_SN if azami_sn is None else azami_sn
+    bas = time.time()
+    son_hatirlat = bas
+    while time.time() - bas < azami:
+        time.sleep(aralik)
+        if B.is_set("stop") or B.is_set("force"):
+            print("\n[DURDURULDU] kota onayı beklenirken durdurma isteği alındı.")
+            return False
+        izin, _ = B.ledger_check(tahmin)
+        if izin:
+            print("\n[✓] Kota onaylandı/açıldı; iş kaldığı yerden sürüyor.")
+            return True
+        if time.time() - son_hatirlat > 600:
+            print("[⏸ KOTA ONAYI BEKLENİYOR] (panel → kota onayı ya da ./basla.sh --onayla)")
+            son_hatirlat = time.time()
+    print("\n[!] Kota onayı zaman aşımına uğradı; koşucu çıkıyor.")
+    return False
+
+
 def _pending_control(task_id: str) -> str:
     """İki çağrı ARASINDA bakılan kontrol bayrakları.
 
@@ -3372,7 +3397,12 @@ def run_board(org: dict, brief: str, once: bool = False,
                 print(f"\n[ONAY BEKLENİYOR] {sebep}")
                 print(f"  Bugün: {d['gorev']}/{mg} görev, ${d['maliyet']:.2f}/${mb:.2f}")
                 print(f"  Sıradaki: {task['id']} · {task['title'][:50]} (~${tahmin:.2f})")
-                print("  Devam etmek için:  ./basla.sh --onayla")
+                print("  Devam etmek için:  ./basla.sh --onayla  (ya da panelden kota onayı)")
+                if once:
+                    break
+                if kota_onayi_bekle(tahmin):
+                    board = B.load()
+                    continue
                 break
             # Kota açıldıysa (onay/gece sıfırlanması) bayat bayrağı temizle
             if B.is_set("onay_bekliyor"):
