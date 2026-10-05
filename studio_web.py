@@ -739,12 +739,14 @@ class Handler(BaseHTTPRequestHandler):
 
     # ------------------------------------------------ POST
     def _yazma_guvenligi(self):
-        """Yazma isteği yalnız aynı kaynaktan ve JSON gövdeyle kabul edilir; ihlalde hazır yanıtı döndürür (yoksa None)."""
+        """Yazma isteği yalnız aynı kaynaktan ve JSON gövdeyle kabul edilir; ihlalde yanıtı gönderir ve True döndürür (çağıran işlemeyi bırakmalı); yoksa None."""
         origin = self.headers.get("Origin")
         if origin and urlparse(origin).netloc != self.headers.get("Host", ""):
-            return self._json({"ok": False, "mesaj": "farklı kaynaktan istek reddedildi"}, 403)
+            self._json({"ok": False, "mesaj": "farklı kaynaktan istek reddedildi"}, 403)
+            return True
         if "application/json" not in (self.headers.get("Content-Type") or ""):
-            return self._json({"ok": False, "mesaj": "Content-Type application/json olmalı"}, 400)
+            self._json({"ok": False, "mesaj": "Content-Type application/json olmalı"}, 400)
+            return True
         return None
 
     def do_POST(self):
