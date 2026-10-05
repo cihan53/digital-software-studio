@@ -182,6 +182,64 @@ def cagri_detay(seq: int) -> dict | None:
     return rec
 
 
+def _io():
+    """scripts/insan_onayi.py (onay mantığı CLI ile ortak)."""
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import insan_onayi as IO
+    return IO
+
+
+def onaylar() -> dict:
+    """İnsan onay kapıları: bekleyenler önce. Her kapı için incelenecek dosyalar (bağımlı görevlerin .md çıktıları)."""
+    IO = _io()
+    try:
+        board = B.load()
+    except FileNotFoundError:
+        return {"ok": False, "mesaj": "Pano henüz yok.", "onaylar": []}
+    B.refresh(board)
+    tum = {t["id"]: t for _, t in B.all_tasks(board)}
+    out = []
+    for sp, t in B.all_tasks(board):
+        if not B.is_human(t):
+            continue
+        deps = [tum[d] for d in t.get("depends_on", []) if d in tum]
+        incele = [o for d in deps for o in d.get("outputs", []) if o.endswith((".md", ".json", ".txt"))]
+        yol = IO.kayit_yolu(t)
+        kayit = ""
+        if yol.exists():
+            kayit = yol.read_text(encoding="utf-8", errors="replace")[-900:]
+        out.append({"id": t["id"], "sprint": sp["id"], "baslik": t["title"], "aciklama": t.get("description", ""),
+                    "durum": t["status"], "bagimliliklar": [{"id": d["id"], "durum": d["status"]} for d in deps],
+                    "incele": incele, "kayit": kayit, "not": t.get("note", "")})
+    sira = {"READY": 0, "TODO": 1, "DONE": 2}
+    out.sort(key=lambda x: (sira.get(x["durum"], 1), x["sprint"], x["id"]))
+    return {"ok": True, "onaylar": out, "bekleyen": sum(1 for x in out if x["durum"] == "READY")}
+
+
+def onay_dosya(yol: str) -> dict:
+    """Panelde gösterilecek doküman: yalnız workspace/ altında .md/.json/.txt (yol kaçışı engellenir)."""
+    p = (ROOT / yol).resolve()
+    try:
+        p.relative_to((ROOT / "workspace").resolve())
+    except ValueError:
+        return {"ok": False, "mesaj": "yalnız workspace/ altındaki dosyalar görüntülenir"}
+    if p.suffix not in (".md", ".json", ".txt") or not p.is_file():
+        return {"ok": False, "mesaj": "dosya yok veya desteklenmeyen tür"}
+    return {"ok": True, "yol": yol, "icerik": p.read_text(encoding="utf-8", errors="replace")[:200_000]}
+
+
+def onay_ver(body: dict) -> dict:
+    IO = _io()
+    karar = body.get("karar")
+    board = B.load()
+    B.refresh(board)
+    ok, msg = IO.karar_ver(board, (body.get("id") or "").strip(), karar, (body.get("not") or "").strip(),
+                           (body.get("kim") or "").strip() or None)
+    if ok:
+        B.request("reload", kaynak="web")
+    return {"ok": ok, "mesaj": msg}
+
+
 def kontrol(body: dict) -> dict:
     aks = body.get("aksiyon", "")
     if aks == "duraklat":
@@ -480,6 +538,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "pano": B.load()})
             except FileNotFoundError:
                 return self._json({"ok": False, "mesaj": "Pano henüz yok."})
+        if path == "/api/onaylar":
+            return self._json(onaylar())
+        if path == "/api/onay-dosya":
+            return self._json(onay_dosya(q.get("yol", [""])[0]))
         if path == "/api/canli":
             return self._json(canli())
         if path == "/api/audit":
@@ -542,6 +604,19 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/kontrol":
             try:
                 return self._json(kontrol(body))
+            except Exception as e:
+                return self._json({"ok": False, "mesaj": str(e)}, 500)
+
+        if path == "/api/onay":
+            # Yazma işlemi: yalnız aynı kaynaktan (panel sayfası) ve JSON gövdeyle kabul edilir.
+            origin = self.headers.get("Origin")
+            host = self.headers.get("Host", "")
+            if origin and urlparse(origin).netloc != host:
+                return self._json({"ok": False, "mesaj": "farklı kaynaktan istek reddedildi"}, 403)
+            if "application/json" not in (self.headers.get("Content-Type") or ""):
+                return self._json({"ok": False, "mesaj": "Content-Type application/json olmalı"}, 400)
+            try:
+                return self._json(onay_ver(body))
             except Exception as e:
                 return self._json({"ok": False, "mesaj": str(e)}, 500)
 
