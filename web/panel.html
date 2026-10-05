@@ -111,6 +111,7 @@
   <div class="sekme" data-t="cagri" onclick="sekmeAc('cagri')">🧠 İşlem Logları</div>
   <div class="sekme" data-t="talep" onclick="sekmeAc('talep')">📥 Talepler</div>
   <div class="sekme" data-t="faz" onclick="sekmeAc('faz')">🗺 Fazlar</div>
+  <div class="sekme" data-t="brief" onclick="sekmeAc('brief')">💬 Brief Görüşmesi</div>
   <div class="sekme" data-t="onay" onclick="sekmeAc('onay')">✅ Onaylar <span id="onay-sayi" class="rozet r-FAILED gizli"></span></div>
 </div>
 <div class="icerik">
@@ -166,6 +167,19 @@
     </tr></thead><tbody id="faz"></tbody></table>
   </section>
 
+  <section id="s-brief" class="gizli">
+    <div class="ipucu">Proje kapsamını (brief) birlikte genişletelim: müşteri temsilcisi, ürün sahibi ve CTO sırayla <b>tek bir soru</b> sorar; siz kendi sözlerinizle cevaplarsınız.
+      Cevaplarınız rol etiketiyle <code>proje_kapsami.md</code>'ye işlenir. Dilediğiniz zaman bitirebilirsiniz.</div>
+    <div id="brief-akis" class="kart"></div>
+    <div class="onay-eylem">
+      <textarea id="brief-cevap" rows="3" placeholder="Cevabınızı kendi sözlerinizle yazın…" style="flex:1;min-width:260px"></textarea>
+      <button class="onay-btn ok" onclick="briefCevap()">Gönder</button>
+      <button class="onay-btn" onclick="briefSoru()">Sıradaki soru</button>
+      <button class="onay-btn" onclick="briefBitir()">Görüşmeyi bitir</button>
+      <button class="onay-btn" onclick="onayDosyaAc('workspace/docs/proje_kapsami.md')">Brief'i göster</button>
+    </div>
+  </section>
+
   <section id="s-onay" class="gizli">
     <div class="ipucu">İnsan onay kapıları: tasarımı/çıktıyı inceleyip <b>onaylayın</b> ya da <b>reddedin</b> (ret için gerekçe zorunlu).
       Karar, kapının onay kaydına (kim/ne zaman/not) yazılır ve audit'e düşer; onaylanınca bağlı görevler koşucu tarafından otomatik başlar.</div>
@@ -190,10 +204,10 @@ function modalKapat(){ document.getElementById('modal').classList.add('gizli'); 
 
 function sekmeAc(t){
   document.querySelectorAll('.sekme').forEach(x=>x.classList.toggle('aktif', x.dataset.t===t));
-  for (const s of ['pano','canli','audit','cagri','talep','faz','onay'])
+  for (const s of ['pano','canli','audit','cagri','talep','faz','brief','onay'])
     document.getElementById('s-'+s).classList.toggle('gizli', s!==t);
   if(t==='audit') auditYukle(); if(t==='cagri') cagriYukle();
-  if(t==='talep') talepYukle(); if(t==='canli') canliYukle(); if(t==='faz') fazYukle(); if(t==='onay') onayYukle(true);
+  if(t==='talep') talepYukle(); if(t==='canli') canliYukle(); if(t==='faz') fazYukle(); if(t==='onay') onayYukle(true); if(t==='brief') briefYukle();
 }
 let aktifSekme='pano';
 
@@ -594,6 +608,30 @@ async function fazIlerlet(){
   toast(d.mesaj); fazYukle(); talepYukle();
 }
 
+
+
+// ---------- brief görüşmesi ----------
+const BRIEF_ROL={musteri_temsilcisi:'Müşteri Temsilcisi',product_owner:'Ürün Sahibi',cto:'CTO'};
+async function briefPost(b){ return await(await fetch('/api/brief-gorusme',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})).json(); }
+async function briefYukle(){
+  const d=await(await fetch('/api/brief-gorusme')).json();
+  const k=document.getElementById('brief-akis');
+  k.innerHTML=(d.turlar||[]).map(t=>`<div style="margin:10px 0">
+    <div class="onay-kutu"><b>${esc(BRIEF_ROL[t.rol]||t.rol)}</b><div>${esc(t.soru)}</div>
+      ${(t.secenekler||[]).length?`<div class="soluk">Örn: ${t.secenekler.map(esc).join(' · ')}</div>`:''}</div>
+    ${t.cevap!=null?`<div class="onay-kutu" style="margin-left:40px;background:rgba(30,215,96,.12)"><b>Siz</b><div>${esc(t.cevap)}</div>
+      ${t.not?`<div class="soluk">↳ ${esc(BRIEF_ROL[t.rol]||t.rol)} notu: ${esc(t.not)}</div>`:''}</div>`:''}</div>`).join('')
+    ||'<div class="soluk">Henüz soru yok. "Sıradaki soru"ya basın; müşteri temsilcisi ile başlıyoruz.</div>';
+  if(d.durum==='tamam') k.innerHTML+='<div class="onay-kutu"><b>Görüşme tamamlandı.</b> Brief güncel: '+esc(d.brief_yol)+' ('+d.brief_kb+' KB)</div>';
+}
+async function briefSoru(){ const d=await briefPost({islem:'soru'}); if(d.bitti) toast('Roller brief\'i yeterli buluyor.'); briefYukle(); }
+async function briefCevap(){
+  const el=document.getElementById('brief-cevap'); const c=el.value.trim();
+  if(!c){toast('Önce cevabınızı yazın.');return;}
+  const d=await briefPost({islem:'cevap',cevap:c}); toast(d.ok?'Cevabınız brief\'e işlendi.':d.mesaj);
+  if(d.ok){ el.value=''; await briefYukle(); briefSoru(); }
+}
+async function briefBitir(){ if(!confirm('Görüşme bitirilsin mi?'))return; await briefPost({islem:'bitir'}); briefYukle(); }
 
 // ---------- insan onayları ----------
 function mdHtml(src){
