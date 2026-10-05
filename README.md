@@ -383,3 +383,5 @@ Devops, web ve test görevleri aynı uygulama dizinini kullanır: `planlama.dizi
 ### Çerçeve projeden bağımsızdır
 
 Çerçeve dosyaları (motor, betikler, şablon roller, panel) hiçbir projeye özel yol, alan, teknoloji ya da rota içermez; `tests/test_cerceve_genel.py` bunu denetler. Projeye özel her şey `workspace/` altındadır: `studio.config.json` (`live.ports`, `planlama.dizinler.*`, `kalite.*`), `workspace/uat_checklist.json` (genel UAT/ziyaretçi betikleri için rota ve kontrol listesi) ve `workspace/scripts/<ad>` (aynı adlı çerçeve betiğinin yerine geçen proje betikleri).
+
+Dokümanlar sekmesinde `.html` dokümanlar (tasarım önizlemesi vb.) **yeni sekmede** açılır: `/api/dokuman-html` yalnız `workspace/` altı `.html` sunar; `Content-Security-Policy: sandbox` ile opak origin'de çalışır (panel API'sine erişemez, ağ yok). Onaylar sekmesindeki önizlemede de "↗ Yeni sekmede aç" bağlantısı vardır.
