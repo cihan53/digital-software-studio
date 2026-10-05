@@ -65,7 +65,14 @@ def karar_ver(board: dict, gorev_id: str, karar: str, not_: str = "", kim: str |
     if karar == "approve":
         B.mark(board, gorev_id, B.DONE, f"insan onayı: {kim}")
     else:
-        B.mark(board, gorev_id, B.READY, f"REDDEDİLDİ ({kim}): {not_}")
+        # Ret = revizyon: bağımlı (insan olmayan) görevler geri bildirimle yeniden çalışır; kapı bunların bitmesini bekler.
+        for d in t.get("depends_on", []):
+            _, dt = B.find_task(board, d)
+            if dt is not None and not B.is_human(dt):
+                dt["description"] = (dt.get("description", "") + f"\n\nREVİZYON İSTEĞİ ({kim}): {not_.strip()}").strip()
+                B.mark(board, d, B.TODO, f"revizyon istendi ({kim})")
+        B.mark(board, gorev_id, B.TODO, f"REDDEDİLDİ ({kim}): {not_}")
+        B.refresh(board)
     B.save(board)
     B.audit("insan", "onay" if karar == "approve" else "ret", gorev_id=gorev_id, detay={"kim": kim, "not": not_})
     try:
