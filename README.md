@@ -344,3 +344,9 @@ ve JSON gövdeyle kabul edilir; panel varsayılan olarak yalnız 127.0.0.1'e ba�
 `studio.config.json → planlama.uretici = "birim"` iken `--replan`, LLM planlayıcı yerine keşif envanterinden deterministik pano üretir
 (`python3 scripts/birim_envanteri.py` sonra `python3 scripts/plan_birim.py --dry-run | --yaz`). Modül başına tasarım → **insan kapısı** → mock → ekran → parite;
 `Girdi:`/`İncele:` satırları, isteğe bağlı HTML önizleme, genel kabuk ve son kabul sprint'i. Ayarlar: `planlama {parca, html_onizleme, insan_kapisi, atla_modulleri, sprint_birim, sprintler, kurallar, roller, dizinler}`.
+
+### Brief görüşmesi (panel: 💬 Brief Görüşmesi)
+
+Kısa, insani bir `proje_kapsami.md` yazın; **müşteri temsilcisi, ürün sahibi ve CTO** sırayla TEK soru sorar, siz kendi sözlerinizle cevaplarsınız.
+Cevaplar rol etiketiyle (`<!-- rol: ... -->`) brief'in "Görüşmeden eklenenler" bölümüne **sizin sözlerinizle** işlenir; rol yalnız konu başlığı ve kısa bir not ekler, yeni olgu uydurmaz.
+Durum `workspace/docs/brief_gorusme.json`'dadır; LLM yoksa yedek sorular kullanılır.

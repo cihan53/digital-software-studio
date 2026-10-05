@@ -315,6 +315,27 @@ def gorsel_oku(yol: str):
     return p.read_bytes(), ""
 
 
+def _bg():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import brief_gorusme as BG
+    return BG
+
+
+def brief_islem(body: dict) -> dict:
+    """Brief görüşmesi: islem = soru | cevap | bitir | sifirla."""
+    BG = _bg()
+    islem = body.get("islem")
+    if islem == "soru":
+        return {"ok": True, **BG.soru_uret()}
+    if islem == "cevap":
+        return BG.cevapla(str(body.get("cevap") or ""))
+    if islem == "bitir":
+        return BG.bitir()
+    if islem == "sifirla":
+        return BG.sifirla()
+    return {"ok": False, "mesaj": "bilinmeyen işlem"}
+
+
 def onay_ver(body: dict) -> dict:
     IO = _io()
     karar = body.get("karar")
@@ -625,6 +646,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "pano": B.load()})
             except FileNotFoundError:
                 return self._json({"ok": False, "mesaj": "Pano henüz yok."})
+        if path == "/api/brief-gorusme":
+            return self._json(_bg().ozet())
         if path == "/api/onaylar":
             return self._json(onaylar())
         if path == "/api/gorsel":
@@ -688,6 +711,15 @@ class Handler(BaseHTTPRequestHandler):
                    MIME.get(hedef.suffix, "application/octet-stream"))
 
     # ------------------------------------------------ POST
+    def _yazma_guvenligi(self):
+        """Yazma isteği yalnız aynı kaynaktan ve JSON gövdeyle kabul edilir; ihlalde hazır yanıtı döndürür (yoksa None)."""
+        origin = self.headers.get("Origin")
+        if origin and urlparse(origin).netloc != self.headers.get("Host", ""):
+            return self._json({"ok": False, "mesaj": "farklı kaynaktan istek reddedildi"}, 403)
+        if "application/json" not in (self.headers.get("Content-Type") or ""):
+            return self._json({"ok": False, "mesaj": "Content-Type application/json olmalı"}, 400)
+        return None
+
     def do_POST(self):
         u = urlparse(self.path)
         path = u.path
@@ -701,14 +733,20 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/onay":
             # Yazma işlemi: yalnız aynı kaynaktan (panel sayfası) ve JSON gövdeyle kabul edilir.
-            origin = self.headers.get("Origin")
-            host = self.headers.get("Host", "")
-            if origin and urlparse(origin).netloc != host:
-                return self._json({"ok": False, "mesaj": "farklı kaynaktan istek reddedildi"}, 403)
-            if "application/json" not in (self.headers.get("Content-Type") or ""):
-                return self._json({"ok": False, "mesaj": "Content-Type application/json olmalı"}, 400)
+            hata = self._yazma_guvenligi()
+            if hata:
+                return hata
             try:
                 return self._json(onay_ver(body))
+            except Exception as e:
+                return self._json({"ok": False, "mesaj": str(e)}, 500)
+
+        if path == "/api/brief-gorusme":
+            hata = self._yazma_guvenligi()
+            if hata:
+                return hata
+            try:
+                return self._json(brief_islem(body))
             except Exception as e:
                 return self._json({"ok": False, "mesaj": str(e)}, 500)
 
