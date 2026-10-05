@@ -44,5 +44,26 @@ class AracArtefakti(unittest.TestCase):
             E.check_output_path, E.WORKSPACE = eski_out, eski_ws
 
 
+class DosyaIsaretleyici(unittest.TestCase):
+    def test_uc_ve_daha_fazla_esit_isareti(self):
+        for ayrac in ("===", "=====", "========"):
+            m = E.FILE_MARKER.findall(f"{ayrac} FILE: app/a.ts {ayrac}\nx\n{ayrac} FILE: b/c.vue {ayrac}\ny\n")
+            self.assertEqual(m, ["app/a.ts", "b/c.vue"], ayrac)
+
+    def test_normal_satir_isaretleyici_sayilmaz(self):
+        self.assertEqual(E.FILE_MARKER.findall("== FILE: a.ts ==\nconst a = '=== FILE: x ===' + 1\n"), [])
+
+    def test_bes_esit_isaretli_cok_dosyali_cikti_ayrilir(self):
+        eski = E.check_output_path
+        d = Path(tempfile.mkdtemp())
+        try:
+            E.check_output_path = lambda p: (d / "web").resolve()
+            ya = E.write_multi_file("web/", "===== FILE: app/a.ts =====\nexport const a = 1\n===== FILE: app/b.ts =====\nexport const b = 2\n")
+            self.assertEqual(sorted(f.name for f in ya), ["a.ts", "b.ts"])
+            self.assertNotIn("FILE:", (d / "web/app/a.ts").read_text())
+        finally:
+            E.check_output_path = eski
+
+
 if __name__ == "__main__":
     unittest.main()
