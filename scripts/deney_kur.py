@@ -200,10 +200,10 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     if a.cmd == "kur":
         ds = []
-        for i, ad in enumerate(a.kollar.split(",")):
+        for ad in a.kollar.split(","):
             if ad not in KOLLAR:
                 raise SystemExit(f"[HATA] bilinmeyen kol: {ad} ({', '.join(KOLLAR)})")
-            d = kol_kur(ad, i, a)
+            d = kol_kur(ad, list(KOLLAR).index(ad), a)   # port sırası kola sabit (tek kol yeniden kurulsa da çakışmaz)
             ds.append(d)
             print(f"✓ {d}")
         print(tablo(ds))
