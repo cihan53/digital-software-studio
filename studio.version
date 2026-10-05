@@ -21,6 +21,7 @@
     "scripts/depo_hijyeni.py",
     "scripts/plan_birim.py",
     "scripts/brief_gorusme.py",
+    "scripts/deney_kur.py",
     "scripts/birim_envanteri.py",
     "scripts/koruma_kontrol.py",
     "scripts/yetenek_kontrol.py",
