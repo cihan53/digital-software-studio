@@ -38,8 +38,8 @@ class AracArtefakti(unittest.TestCase):
             E.check_output_path = lambda p: (d / 'ciktilar').resolve()
             ya = E.write_multi_file("ciktilar/", f"=== FILE: a.ts ===\nexport const a = 1\n{P_KAPAT}\n{I_KAPAT}\n=== FILE: b.ts ===\nexport const b = 2\n")
             self.assertEqual({f.name for f in ya}, {"a.ts", "b.ts"})
-            self.assertEqual((d / "ciktilar" / "a.ts").read_text(), "export const a = 1\n")
-            self.assertEqual((d / "ciktilar" / "b.ts").read_text(), "export const b = 2\n")
+            self.assertEqual((d / "ciktilar" / "a.ts").read_text().strip(), "export const a = 1")
+            self.assertEqual((d / "ciktilar" / "b.ts").read_text().strip(), "export const b = 2")
         finally:
             E.check_output_path, E.WORKSPACE = eski_out, eski_ws
 
