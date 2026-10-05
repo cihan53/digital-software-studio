@@ -146,3 +146,20 @@ class PanelOnay(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DosyaMeta(unittest.TestCase):
+    def test_varsayim_ve_okunamadi_isaretlenir(self):
+        d = Path(tempfile.mkdtemp())
+        eski = W.ROOT
+        try:
+            W.ROOT = d
+            (d / "workspace").mkdir()
+            (d / "workspace" / "a.md").write_text("> **Varsayım:** `x.md` bu görevde okunamadı (okuma izni yok).\n> **Varsayım:** B bilinmiyor.\nbilinmiyor\n")
+            (d / "workspace" / "b.md").write_text("> **Varsayım:** kapsam dar.\n")
+            a, b = W._dosya_meta("workspace/a.md"), W._dosya_meta("workspace/b.md")
+            self.assertEqual((a["varsayim"], a["okunamadi"], a["bilinmiyor"]), (2, True, 1))
+            self.assertEqual((b["varsayim"], b["okunamadi"]), (1, False))
+        finally:
+            W.ROOT = eski
+            shutil.rmtree(d, ignore_errors=True)

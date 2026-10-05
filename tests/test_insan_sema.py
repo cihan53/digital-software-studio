@@ -154,3 +154,30 @@ class Yalitim(unittest.TestCase):
                 self.assertEqual(E.resolve_script("a.mjs"), Path(d) / "workspace" / "scripts" / "a.mjs")  # override kazanır
             finally:
                 E.WORKSPACE, E.ROOT = eskiw, eskir
+
+
+class GorevGirdileri(unittest.TestCase):
+    def test_girdi_satiri_dosya_dizin_okur_disari_cikmaz(self):
+        import tempfile as _t
+        import studio_engine as E
+        with _t.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "workspace" / "docs" / "ekranlar" / "m").mkdir(parents=True)
+            (root / "workspace" / "docs" / "ekranlar" / "m" / "a.md").write_text("ALAN-A")
+            (root / "workspace" / "docs" / "ekranlar" / "m" / "_gizli.md").write_text("GIZLI")
+            (root / "workspace" / "docs" / "t.json").write_text('{"x":1}')
+            (root / "disari.md").write_text("DISARI")
+            metin = E.gorev_girdileri("Aç. Girdi: workspace/docs/ekranlar/m, workspace/docs/t.json, ../disari.md, disari.md", root)
+            self.assertIn("ALAN-A", metin)
+            self.assertIn('{"x":1}', metin)
+            self.assertNotIn("GIZLI", metin)                 # _ ile başlayanlar alınmaz
+            self.assertNotIn("DISARI", metin)                # workspace dışı yol okunmaz
+            self.assertEqual(E.gorev_girdileri("girdi yok", root), "")
+
+    def test_okunamadi_beyani_yakalanir(self):
+        import studio_engine as E
+        d = "Tasarla. Girdi: workspace/docs/a.md"
+        self.assertTrue(E._girdi_beyani_hatasi(d, "> **Varsayım:** `a.md` bu görevde okunamadı (okuma izni yok)."))
+        self.assertTrue(E._girdi_beyani_hatasi(d, "GİRDİ-EKSİK: workspace/docs/a.md\n..."))
+        self.assertFalse(E._girdi_beyani_hatasi(d, "> **Varsayım:** modal alanları bilinmiyor, ikinci tur keşif."))
+        self.assertFalse(E._girdi_beyani_hatasi("Girdi yok görevi", "okunamadı"))   # Girdi: yoksa kapı çalışmaz
