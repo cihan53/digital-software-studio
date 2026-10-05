@@ -260,6 +260,13 @@ def onaylar() -> dict:
             if y not in yollar:
                 yollar.append(y)
         dosyalar = [_dosya_meta(y) for y in yollar]
+        gorseller = []                                   # ekran dokümanına karşılık gelen referans ekran görüntüleri (_gorsel/<ad>.png)
+        for y in yollar:
+            pp = Path(y)
+            if pp.suffix == ".md" and "ekranlar" in pp.parts:
+                png = Path(*pp.parts[:pp.parts.index("ekranlar") + 1]) / "_gorsel" / (pp.stem + ".png")
+                if (ROOT / png).is_file():
+                    gorseller.append({"yol": str(png), "ad": pp.stem})
         yol = IO.kayit_yolu(t)
         kayit = yol.read_text(encoding="utf-8", errors="replace")[-900:] if yol.exists() else ""
         etki, gor, kuyruk = [], {t["id"]}, [t["id"]]          # onaylanınca zincirleme başlayacak görevler (dolaylı bağımlılar dahil)
@@ -271,7 +278,7 @@ def onaylar() -> dict:
                     etki.append({"id": x["id"], "baslik": x["title"], "rol": x["role"], "ciktilar": x.get("outputs", []), "durum": x["status"]})
         out.append({"id": t["id"], "sprint": sp["id"], "baslik": t["title"], "aciklama": _aciklama_temiz(t.get("description", "")),
                     "durum": t["status"], "bagimliliklar": [{"id": d["id"], "baslik": d["title"], "rol": d["role"], "durum": d["status"]} for d in deps],
-                    "dosyalar": dosyalar, "incele": yollar, "kayit": kayit, "not": t.get("note", ""),
+                    "dosyalar": dosyalar, "gorseller": gorseller, "incele": yollar, "kayit": kayit, "not": t.get("note", ""),
                     "onaylanirsa": etki,
                     "reddedilirse": [{"id": d["id"], "baslik": d["title"], "rol": d["role"]} for d in deps]})
     sira = {"READY": 0, "TODO": 1, "DONE": 2}
@@ -289,6 +296,18 @@ def onay_dosya(yol: str) -> dict:
     if p.suffix not in (".md", ".html", ".json", ".txt") or not p.is_file():
         return {"ok": False, "mesaj": "dosya yok veya desteklenmeyen tür"}
     return {"ok": True, "yol": yol, "tur": p.suffix.lstrip("."), "icerik": p.read_text(encoding="utf-8", errors="replace")[:400_000]}
+
+
+def gorsel_oku(yol: str):
+    """Referans ekran görüntüsü: yalnız workspace/ altında .png. (bayt, hata) döndürür."""
+    p = (ROOT / yol).resolve()
+    try:
+        p.relative_to((ROOT / "workspace").resolve())
+    except ValueError:
+        return None, "yalnız workspace/ altı"
+    if p.suffix != ".png" or not p.is_file():
+        return None, "görsel yok"
+    return p.read_bytes(), ""
 
 
 def onay_ver(body: dict) -> dict:
@@ -603,6 +622,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "mesaj": "Pano henüz yok."})
         if path == "/api/onaylar":
             return self._json(onaylar())
+        if path == "/api/gorsel":
+            veri, hata = gorsel_oku(q.get("yol", [""])[0])
+            if veri is None:
+                return self._json({"ok": False, "mesaj": hata}, 404)
+            return self._send(200, veri, "image/png")
         if path == "/api/onay-dosya":
             return self._json(onay_dosya(q.get("yol", [""])[0]))
         if path == "/api/canli":
