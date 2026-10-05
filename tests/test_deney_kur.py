@@ -88,10 +88,15 @@ class DeneyKur(unittest.TestCase):
         self.assertIn("workspace/docs/proje_kapsami.md", izl)         # proje dosyaları izlenir
         self.assertNotIn("workspace/studio.db", izl)
 
-    def test_sifir_kurulum_analiz_kopyalamaz(self):
+    def _sifir_kur(self):
+        if (self.tmp / "sifir-devin").exists():
+            return
         r = subprocess.run([sys.executable, str(ARAC), "kur", "--sifir", "--kaynak-yol", str(self.tmp / "kaynak"), "--canli-url", "https://x.example", "--tur", "angular-spa",
                             "--hedef", str(self.tmp), "--onek", "sifir", "--brief", str(self.brief), "--kollar", "devin", "--framework-url", str(ROOT)], capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_sifir_kurulum_analiz_kopyalamaz(self):
+        self._sifir_kur()
         d = self.tmp / "sifir-devin"
         self.assertFalse((d / "workspace/docs/ekranlar").exists())
         self.assertFalse((d / "workspace/docs/org_chart.json").exists())
@@ -108,13 +113,31 @@ class DeneyKur(unittest.TestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("zaten var", r.stdout + r.stderr)
 
-    def test_esitle_briefi_kopyalar_hash_tablosu(self):
-        c, g = self.tmp / "deney-claude", self.tmp / "deney-gemini"
+    def test_esitle_yalniz_briefi_tasir_baslamis_kolu_atlar(self):
+        c = self.tmp / "deney-claude"
         (c / "workspace/docs/proje_kapsami.md").write_text("Görüşmeyle genişlemiş brief.\n", encoding="utf-8")
-        r = subprocess.run([sys.executable, str(ARAC), "esitle", "--kaynak-kol", str(c), "--hedefler", str(g)], capture_output=True, text=True)
+        (c / "workspace/docs/analiz.md").write_text("claude analizi", encoding="utf-8")
+        (c / "workspace/studio.config.json").write_text('{"gizli": 1}', encoding="utf-8")
+        self._sifir_kur()
+        h = self.tmp / "sifir-devin"
+        r = subprocess.run([sys.executable, str(ARAC), "esitle", "--kaynak-kol", str(c), "--hedefler", str(h)], capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual((g / "workspace/docs/proje_kapsami.md").read_text(encoding="utf-8"), "Görüşmeyle genişlemiş brief.\n")
-        self.assertIn("✓", r.stdout)
+        self.assertEqual((h / "workspace/docs/proje_kapsami.md").read_text(encoding="utf-8"), "Görüşmeyle genişlemiş brief.\n")
+        self.assertFalse((h / "workspace/docs/analiz.md").exists())                     # analiz taşınmaz
+        self.assertNotIn("gizli", (h / "workspace/studio.config.json").read_text())      # config taşınmaz
+        # başlamış kol (üretilmiş doküman var) atlanır
+        (h / "workspace/docs/uretim.md").write_text("x")
+        (c / "workspace/docs/proje_kapsami.md").write_text("ikinci\n", encoding="utf-8")
+        r = subprocess.run([sys.executable, str(ARAC), "esitle", "--kaynak-kol", str(c), "--hedefler", str(h)], capture_output=True, text=True)
+        self.assertIn("başlamış", r.stdout)
+        self.assertEqual((h / "workspace/docs/proje_kapsami.md").read_text(encoding="utf-8"), "Görüşmeyle genişlemiş brief.\n")
+        # dış dosyadan eşitleme
+        dis = self.tmp / "ortak.md"
+        dis.write_text("dış brief\n", encoding="utf-8")
+        h2 = self.tmp / "sifir-devin"
+        (h2 / "workspace/docs/uretim.md").unlink()
+        r = subprocess.run([sys.executable, str(ARAC), "esitle", "--kaynak-dosya", str(dis), "--hedefler", str(h2)], capture_output=True, text=True)
+        self.assertEqual((h2 / "workspace/docs/proje_kapsami.md").read_text(encoding="utf-8"), "dış brief\n")
 
 
 if __name__ == "__main__":
