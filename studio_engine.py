@@ -2100,6 +2100,24 @@ def run_planner(org: dict, brief: str, force: bool = False) -> dict:
         print("  [i] Mevcut pano kullanılıyor. Yeniden planlamak için --replan.")
         return B.load()
 
+    # planlama.uretici = "birim": keşif envanterinden deterministik plan (LLM planlayıcı kaba pano üretir; bkz. scripts/plan_birim.py)
+    SC, scfg = _studio_config()
+    if scfg and (scfg.get("planlama") or {}).get("uretici") == "birim":
+        try:
+            import plan_birim as PB
+            board = B.normalize(PB.uret(scfg))
+            errs = B.validate(board)
+            if errs:
+                sys.exit("[HATA] birim planı geçersiz:\n  " + "\n  ".join(errs[:10]))
+            B.board_reset()
+            B.refresh(board)
+            B.save(board)
+            B.audit("engine", "plan_birim", detay={"ozet": PB.ozet(board)})
+            print(f"  [✓] Birim envanterinden plan üretildi: {PB.ozet(board)}")
+            return B.load()
+        except FileNotFoundError as e:
+            print(f"  [!] Birim planı üretilemedi ({e}); LLM planlayıcıya dönülüyor. Önce: node scripts/kesif_gezgin.mjs && python3 scripts/birim_envanteri.py")
+
     backend, model, effort, tools = resolve_engine(agent)
     inputs_text = collect_inputs(agent)
     print(f"\n---> {agent['title']} ({PLANNER_ID})  [{backend}/{model or 'varsayılan'}]")
