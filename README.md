@@ -325,3 +325,10 @@ Kök yalnızca framework dosyalarını taşır; `./sync_studio.sh --studio-gunce
 | Projeye ait betikler | `workspace/scripts/` |
 
 `protected_files` mekanizması bu sayede gereksizleşir; override'lar güncellemeden etkilenmez.
+
+### Panel: insan onayları
+
+Panelde **✅ Onaylar** sekmesi bekleyen insan kapılarını listeler (sekme rozeti = bekleyen sayısı). Her kapıda bağımlı görevlerin
+çıktıları (ör. tasarım dokümanı) panelden okunur; not yazıp **Onayla** / **Reddet** (ret için gerekçe zorunlu). Karar onay kaydına
+(kim/ne zaman/not) yazılır ve audit'e düşer; onaylanan kapının bağlı görevlerini koşucu kendiliğinden başlatır. Yazma isteği yalnız aynı kaynaktan
+ve JSON gövdeyle kabul edilir; panel varsayılan olarak yalnız 127.0.0.1'e bağlıdır.

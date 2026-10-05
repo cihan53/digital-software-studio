@@ -48,6 +48,33 @@ def kayit_yaz(task: dict, karar: str, kim: str, not_: str) -> Path:
     return p
 
 
+def karar_ver(board: dict, gorev_id: str, karar: str, not_: str = "", kim: str | None = None, force: bool = False) -> tuple[bool, str]:
+    """İnsan kapısını onayla/reddet (CLI ve web paneli ortak kullanır). (başarılı, mesaj) döndürür."""
+    s, t = B.find_task(board, gorev_id)
+    if t is None or not B.is_human(t):
+        return False, f"[HATA] '{gorev_id}' bir insan onay görevi değil."
+    if t["status"] != B.READY and not force:
+        return False, f"[HATA] '{gorev_id}' henüz hazır değil (durum {t['status']}): bağımlı görevler bitmeli."
+    if karar not in ("approve", "reject"):
+        return False, "[HATA] karar approve veya reject olmalı."
+    if karar == "reject" and not (not_ or "").strip():
+        return False, "[HATA] ret için gerekçe (not) zorunlu."
+    kim = (kim or kim_mi()).strip()[:80] or kim_mi()
+    etiket = "ONAYLANDI" if karar == "approve" else "REDDEDİLDİ"
+    yol = kayit_yaz(t, etiket, kim, not_)
+    if karar == "approve":
+        B.mark(board, gorev_id, B.DONE, f"insan onayı: {kim}")
+    else:
+        B.mark(board, gorev_id, B.READY, f"REDDEDİLDİ ({kim}): {not_}")
+    B.save(board)
+    B.audit("insan", "onay" if karar == "approve" else "ret", gorev_id=gorev_id, detay={"kim": kim, "not": not_})
+    try:
+        goster = str(yol.relative_to(ROOT))
+    except ValueError:                       # çıktı proje dışında mutlak yol olabilir
+        goster = str(yol)
+    return True, f"{gorev_id}: {etiket} ({kim}) → {goster}"
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sp = ap.add_subparsers(dest="cmd", required=True)
@@ -68,27 +95,9 @@ def main(argv=None) -> int:
         for s, t in gk:
             print(f"{t['id']:10} {t['status']:8} {s['id']} · {t['title']}")
         return 0
-    s, t = B.find_task(board, a.id)
-    if t is None or not B.is_human(t):
-        print(f"[HATA] '{a.id}' bir insan onay görevi değil.", file=sys.stderr)
-        return 1
-    if t["status"] != B.READY and not a.force:
-        print(f"[HATA] '{a.id}' henüz hazır değil (durum {t['status']}): bağımlı görevler bitmeli. --force ile geçilebilir.", file=sys.stderr)
-        return 1
-    kim = a.kim or kim_mi()
-    if a.cmd == "reject" and not a.not_:
-        print("[HATA] ret için --not (gerekçe) zorunlu.", file=sys.stderr)
-        return 1
-    karar = "ONAYLANDI" if a.cmd == "approve" else "REDDEDİLDİ"
-    yol = kayit_yaz(t, karar, kim, a.not_)
-    if a.cmd == "approve":
-        B.mark(board, a.id, B.DONE, f"insan onayı: {kim}")
-    else:
-        B.mark(board, a.id, B.READY, f"REDDEDİLDİ ({kim}): {a.not_}")
-    B.save(board)
-    B.audit("insan", "onay" if a.cmd == "approve" else "ret", gorev_id=a.id, detay={"kim": kim, "not": a.not_})
-    print(f"{a.id}: {karar} ({kim}) → {yol.relative_to(ROOT)}")
-    return 0
+    ok, msg = karar_ver(board, a.id, "approve" if a.cmd == "approve" else "reject", a.not_, a.kim, a.force)
+    print(msg, file=sys.stderr if not ok else sys.stdout)
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

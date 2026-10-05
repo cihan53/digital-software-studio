@@ -92,6 +92,7 @@
   <div class="sekme" data-t="cagri" onclick="sekmeAc('cagri')">🧠 İşlem Logları</div>
   <div class="sekme" data-t="talep" onclick="sekmeAc('talep')">📥 Talepler</div>
   <div class="sekme" data-t="faz" onclick="sekmeAc('faz')">🗺 Fazlar</div>
+  <div class="sekme" data-t="onay" onclick="sekmeAc('onay')">✅ Onaylar <span id="onay-sayi" class="rozet r-FAILED gizli"></span></div>
 </div>
 <div class="icerik">
   <div id="aktif" class="kart aktif-kart gizli"></div>
@@ -145,6 +146,12 @@
       <th>ID</th><th>Faz</th><th>Durum</th><th>Kilit</th><th>Hedef Tarih</th><th>Önkoşul</th>
     </tr></thead><tbody id="faz"></tbody></table>
   </section>
+
+  <section id="s-onay" class="gizli">
+    <div class="ipucu">İnsan onay kapıları: tasarımı/çıktıyı inceleyip <b>onaylayın</b> ya da <b>reddedin</b> (ret için gerekçe zorunlu).
+      Karar, kapının onay kaydına (kim/ne zaman/not) yazılır ve audit'e düşer; onaylanınca bağlı görevler koşucu tarafından otomatik başlar.</div>
+    <div id="onay-liste">Yükleniyor…</div>
+  </section>
 </div>
 
 <div id="toast" class="bildirim gizli"></div>
@@ -164,10 +171,10 @@ function modalKapat(){ document.getElementById('modal').classList.add('gizli'); 
 
 function sekmeAc(t){
   document.querySelectorAll('.sekme').forEach(x=>x.classList.toggle('aktif', x.dataset.t===t));
-  for (const s of ['pano','canli','audit','cagri','talep','faz'])
+  for (const s of ['pano','canli','audit','cagri','talep','faz','onay'])
     document.getElementById('s-'+s).classList.toggle('gizli', s!==t);
   if(t==='audit') auditYukle(); if(t==='cagri') cagriYukle();
-  if(t==='talep') talepYukle(); if(t==='canli') canliYukle(); if(t==='faz') fazYukle();
+  if(t==='talep') talepYukle(); if(t==='canli') canliYukle(); if(t==='faz') fazYukle(); if(t==='onay') onayYukle();
 }
 let aktifSekme='pano';
 
@@ -568,9 +575,53 @@ async function fazIlerlet(){
   toast(d.mesaj); fazYukle(); talepYukle();
 }
 
+
+// ---------- insan onayları ----------
+async function onayYukle(){
+  try{
+    const d=await(await fetch('/api/onaylar')).json();
+    const r=document.getElementById('onay-sayi');
+    r.textContent=d.bekleyen||''; r.classList.toggle('gizli', !d.bekleyen);
+    if(document.getElementById('s-onay').classList.contains('gizli')) return;
+    const L=(d.onaylar||[]);
+    document.getElementById('onay-liste').innerHTML=L.map(o=>{
+      const bekler=o.durum==='READY', bitti=o.durum==='DONE';
+      const dosyalar=(o.incele||[]).map(y=>`<a href="#" onclick="onayDosyaAc('${esc(y)}');return false">📄 ${esc(y.split('/').pop())}</a>`).join(' · ');
+      const bag=(o.bagimliliklar||[]).map(b=>`<span class="rozet r-${b.durum}">${esc(b.id)}</span>`).join(' ');
+      return `<div class="kart" style="margin-bottom:10px">
+        <div><b>${esc(o.id)}</b> · ${esc(o.baslik)} <span class="rozet r-${bitti?'DONE':(bekler?'FAILED':'TODO')}">${bitti?'ONAYLANDI':(bekler?'ONAY BEKLİYOR':'HENÜZ HAZIR DEĞİL')}</span></div>
+        <div class="soluk" style="margin:6px 0">${esc(o.aciklama)}</div>
+        <div style="margin:6px 0">İncele: ${dosyalar||'<span class="soluk">(dosya yok)</span>'}</div>
+        <div class="soluk" style="margin:4px 0">Bağımlı görevler: ${bag||'—'}</div>
+        ${o.kayit?`<details><summary class="soluk">Önceki kararlar</summary><pre>${esc(o.kayit)}</pre></details>`:''}
+        ${bekler?`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <input id="not-${esc(o.id)}" placeholder="Not / gerekçe" style="flex:1;min-width:220px">
+          <button onclick="onayVer('${esc(o.id)}','approve')">✅ Onayla</button>
+          <button onclick="onayVer('${esc(o.id)}','reject')">⛔ Reddet</button></div>`:''}
+      </div>`;
+    }).join('')||'<div class="soluk">İnsan onay kapısı yok.</div>';
+  }catch(e){}
+}
+async function onayDosyaAc(yol){
+  const d=await(await fetch('/api/onay-dosya?yol='+encodeURIComponent(yol))).json();
+  document.getElementById('modal-ic').innerHTML=`<h3>${esc(yol)}</h3>
+    <pre style="white-space:pre-wrap;max-height:70vh;overflow:auto">${esc(d.ok?d.icerik:d.mesaj)}</pre>
+    <button onclick="modalKapat()">Kapat</button>`;
+  document.getElementById('modal').classList.remove('gizli');
+}
+async function onayVer(id,karar){
+  const n=(document.getElementById('not-'+id)||{}).value||'';
+  if(karar==='reject'&&!n.trim()){toast('Ret için gerekçe yazın.');return;}
+  if(!confirm((karar==='approve'?'ONAYLANACAK: ':'REDDEDİLECEK: ')+id+'\nDevam?'))return;
+  const d=await(await fetch('/api/onay',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:id,karar:karar,not:n})})).json();
+  toast(d.mesaj); onayYukle();
+}
+
 // ---------- döngü ----------
-ozetYukle(); panoYukle();
+ozetYukle(); panoYukle(); onayYukle();
 setInterval(ozetYukle,2500);
+setInterval(onayYukle,5000);
 setInterval(()=>{ if(aktifSekme==='pano')panoYukle(); if(aktifSekme==='canli')canliYukle();
   if(aktifSekme==='audit')auditYukle(); if(aktifSekme==='faz')fazYukle(); },3000);
 document.querySelectorAll('.sekme').forEach(x=>x.addEventListener('click',()=>aktifSekme=x.dataset.t));
