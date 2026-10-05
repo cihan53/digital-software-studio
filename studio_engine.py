@@ -2561,6 +2561,65 @@ def _pending_control(task_id: str) -> str:
     return ""
 
 
+_GIRDI_RX = re.compile(r"Girdi:\s*([^\n]+)")
+_OKUNAMADI_RX = re.compile(r"(okunamad[ıi]|okuma izni|okuyamad[ıi]m|erişim izni yok|erişemedim|could not read|cannot read)", re.I)
+GIREDI_TOPLAM_LIMIT = 260_000
+GIREDI_DOSYA_LIMIT = 70_000
+
+
+def gorev_girdileri(description: str, root: Path | None = None) -> str:
+    """Görev açıklamasındaki `Girdi: yol1, yol2` satırlarını (dosya, dizin veya glob; yalnız workspace/ altı)
+    göreve GÖREV GİRDİSİ olarak okur. Araçsız roller de bu içeriği doğrudan görür (boyut sınırlı)."""
+    root = (root or ROOT).resolve()
+    ws = root / "workspace"
+    dosyalar: list[Path] = []
+    for m in _GIRDI_RX.finditer(description or ""):
+        for y in m.group(1).split(","):
+            y = y.strip().strip("`").rstrip(".")
+            if not y:
+                continue
+            adaylar = sorted(root.glob(y)) if "*" in y else [root / y]
+            for p in adaylar:
+                try:
+                    p = p.resolve()
+                    p.relative_to(ws)
+                except (ValueError, OSError):
+                    continue
+                if p.is_dir():
+                    dosyalar += [f for f in sorted(p.rglob("*")) if f.is_file() and f.suffix in (".md", ".json", ".txt", ".html")
+                                 and not f.name.startswith("_")][:25]
+                elif p.is_file():
+                    dosyalar.append(p)
+    gorulen, bloklar, toplam = set(), [], 0
+    for f in dosyalar:
+        if f in gorulen:
+            continue
+        gorulen.add(f)
+        metin = f.read_text(encoding="utf-8", errors="replace")[:GIREDI_DOSYA_LIMIT]
+        if toplam + len(metin) > GIREDI_TOPLAM_LIMIT:
+            bloklar.append(f"===== GÖREV GİRDİSİ ATLANDI (boyut sınırı): {f.relative_to(root)} =====")
+            continue
+        toplam += len(metin)
+        bloklar.append(f"===== GÖREV GİRDİSİ: {f.relative_to(root)} =====\n{metin}")
+    if not bloklar:
+        return ""
+    return ("\n".join(bloklar) + "\n\nYukarıdaki GÖREV GİRDİLERİ sana verilmiştir ve okunabilirdir. Bunları 'okunamadı/okuma izni yok' diye "
+            "varsayımla geçiştirme; kullan. Gerçekten eksik bir girdi varsa çıktının ilk satırına `GİRDİ-EKSİK: <yol>` yaz.\n")
+
+
+def _girdi_beyani_hatasi(description: str, output: str) -> bool:
+    """Görev girdileri (Girdi:) verilmişken çıktı 'okunamadı/okuma izni yok' ya da GİRDİ-EKSİK beyanı taşıyorsa True."""
+    if "Girdi:" not in (description or ""):
+        return False
+    for ln in (output or "").splitlines():
+        t = ln.strip()
+        if t.startswith("GİRDİ-EKSİK"):
+            return True
+        if (t.startswith(">") or "Varsayım" in t) and _OKUNAMADI_RX.search(t):
+            return True
+    return False
+
+
 def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
                  interactive: bool = False) -> bool:
     """Panodaki tek bir görevi yürütür. Başarılıysa True."""
@@ -2592,6 +2651,7 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
         print(f"     [!] {e}", file=sys.stderr)
         return False
 
+    inputs_text += "\n\n" + gorev_girdileri(task.get("description", ""))
     task_brief = (
         f"\n--- BU GÖREV ---\n"
         f"Sprint: {sprint['id']} — {sprint['name']}\n"
@@ -2655,6 +2715,14 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
             B.mark(board, task["id"], B.FAILED, str(e)[:200])
             git_auto_commit(f"studio: görev FAILED — {task['id']}")
             print(f"     [!] {e}", file=sys.stderr)
+            return False
+
+        # Girdi okunamadı beyanı: görev girdileri verildiyse çıktının 'okunamadı' diye varsayımla geçiştirmesi kabul edilmez.
+        if _girdi_beyani_hatasi(task.get("description", ""), output):
+            B.mark(board, task["id"], B.FAILED, "girdi okunamadı beyanı: çıktı yazılmadı (GİRDİ-EKSİK / okunamadı)")
+            B.audit("engine", "girdi_beyani", gorev_id=task["id"], detay={"hedef": target})
+            git_auto_commit(f"studio: görev FAILED — {task['id']}")
+            print(f"     [!] {task['id']}: çıktı girdilerin okunamadığını beyan ediyor; yazılmadı, görev FAILED.", file=sys.stderr)
             return False
 
         # İyileştirme Motoru: Otomatik hata denetimi ve kendini onarma döngüsü (Self-Healing Loop)
