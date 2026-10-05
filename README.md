@@ -358,7 +358,7 @@ Her kolda framework `git clone` edilir (`origin` → `framework`, push kapalı),
 
 ```bash
 python3 scripts/deney_kur.py kur --kaynak <proje> --hedef <ana dizin> --onek <ad> --brief <brief.md> [--github-sahip <kullanıcı>] [--plan]
-python3 scripts/deney_kur.py esitle --kaynak-kol <dizin> --hedefler <dizin>,<dizin> [--plan]   # brief görüşmesi sonrası son brief'i kopyalar, girdi hash tablosunu basar
+python3 scripts/deney_kur.py esitle (--kaynak-kol <dizin> | --kaynak-dosya <brief.md>) --hedefler <dizin>,<dizin>   # yalnız proje_kapsami.md taşınır; başlamış kola dokunmaz
 ```
 
 ### Dokümanlar sekmesi (panel: 📚 Dokümanlar)

@@ -3,7 +3,7 @@
 
   python3 scripts/deney_kur.py kur --kaynak <mevcut proje> --hedef <ana dizin> --onek oobeya-ui-vue-studio \\
         --brief <tohum brief.md> [--kollar claude,gemini,devin] [--framework-url URL] [--github-sahip cihan53] [--plan]
-  python3 scripts/deney_kur.py esitle --kaynak-kol <dizin> --hedefler <dizin>,<dizin> [--plan]    # son brief'i diğer kollara kopyalar
+  python3 scripts/deney_kur.py esitle (--kaynak-kol <dizin> | --kaynak-dosya <brief.md>) --hedefler <dizin>,<dizin>   # yalnız proje_kapsami.md taşınır
 
 Kol başına: framework `git clone` (origin → `framework`, push kapalı), kaynak projeden org_chart + keşif/ekran analizleri + kaynak taramaları + config kopyası,
 kola özgü backend/model/port (`workspace/calistir.sh`, `workspace/deney.json`), depo hijyeni, ilk commit, isteğe bağlı özel GitHub deposu.
@@ -155,26 +155,41 @@ def tablo(dizinler: list[Path]) -> str:
     return "\n".join(satir)
 
 
+def basladi_mi(h: Path) -> str:
+    """Kol çalışmaya başlamışsa nedenini döndürür (boşsa temiz): brief dışında doküman üretilmiş ya da görev ilerlemiş."""
+    diger = [f.name for f in (h / "workspace/docs").glob("*") if f.name != "proje_kapsami.md"]
+    if diger:
+        return "workspace/docs içinde üretilmiş dosyalar var: " + ", ".join(sorted(diger)[:3])
+    db = h / "workspace/studio.db"
+    if db.exists():
+        import sqlite3
+        c = sqlite3.connect(db)
+        if c.execute("select name from sqlite_master where name='pano_gorevleri'").fetchone():
+            n = c.execute("select count(*) from pano_gorevleri where durum not in ('TODO','READY')").fetchone()[0]
+            if n:
+                return f"{n} görev ilerlemiş"
+    return ""
+
+
 def esitle(a) -> None:
-    kay = Path(a.kaynak_kol)
-    for h in [Path(x) for x in a.hedefler.split(",")]:
-        if (h / "workspace/studio.db").exists():
-            import sqlite3
-            c = sqlite3.connect(h / "workspace/studio.db")
-            basladi = c.execute("select count(*) from pano_gorevleri where durum not in ('TODO','READY')").fetchone()[0] if c.execute(
-                "select name from sqlite_master where name='pano_gorevleri'").fetchone() else 0
-            if basladi and a.plan:
-                print(f"[!] {h.name}: görevler başlamış ({basladi}); plan yeniden üretilmedi.")
-                continue
-        shutil.copy2(kay / "workspace/docs/proje_kapsami.md", h / "workspace/docs/proje_kapsami.md")
-        src = json.loads((kay / "workspace/studio.config.json").read_text(encoding="utf-8"))
-        cfgp = h / "workspace/studio.config.json"
-        cfg = json.loads(cfgp.read_text(encoding="utf-8"))
-        cfg["planlama"] = src.get("planlama", cfg.get("planlama"))
-        cfgp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        if a.plan:
-            plan_uret(h)
-    print(tablo([kay] + [Path(x) for x in a.hedefler.split(",")]))
+    """Kollar arasında taşınan TEK şey proje_kapsami.md'dir; analiz, plan, config ve org_chart kopyalanmaz."""
+    if bool(a.kaynak_kol) == bool(a.kaynak_dosya):
+        raise SystemExit("[HATA] --kaynak-kol ya da --kaynak-dosya (yalnız biri) verilmeli.")
+    kaynak = Path(a.kaynak_dosya) if a.kaynak_dosya else Path(a.kaynak_kol) / "workspace/docs/proje_kapsami.md"
+    if not kaynak.is_file():
+        raise SystemExit(f"[HATA] brief yok: {kaynak}")
+    hedefler = [Path(x) for x in a.hedefler.split(",") if x]
+    for h in hedefler:
+        neden = basladi_mi(h)
+        if neden:
+            print(f"[!] {h.name}: başlamış ({neden}); brief değiştirilmedi.")
+            continue
+        shutil.copy2(kaynak, h / "workspace/docs/proje_kapsami.md")
+        sh("git", "add", "workspace/docs/proje_kapsami.md", cwd=h)
+        sh("git", "commit", "-q", "-m", "chore: ortak proje kapsamı eşitlendi", cwd=h, check=False)
+    for d in ([Path(a.kaynak_kol)] if a.kaynak_kol else []) + hedefler:
+        print(f"{d.name:34} brief={sha(d / 'workspace/docs/proje_kapsami.md')}")
+    print(f"{'kaynak':34} brief={sha(kaynak)}")
 
 
 def main(argv=None) -> int:
@@ -194,9 +209,9 @@ def main(argv=None) -> int:
     k.add_argument("--canli-url", default="", help="--sifir: canlı referans URL")
     k.add_argument("--tur", default="", help="--sifir: kaynak türü (örn. angular-spa)")
     e = sp.add_parser("esitle")
-    e.add_argument("--kaynak-kol", required=True)
+    e.add_argument("--kaynak-kol", default="", help="brief'in alınacağı kol dizini")
+    e.add_argument("--kaynak-dosya", default="", help="ya da proje dışındaki ortak brief dosyası")
     e.add_argument("--hedefler", required=True)
-    e.add_argument("--plan", action="store_true")
     a = ap.parse_args(argv)
     if a.cmd == "kur":
         ds = []
