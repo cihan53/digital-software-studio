@@ -7,7 +7,7 @@
 
 Kol başına: framework `git clone` (origin → `framework`, push kapalı), kaynak projeden org_chart + keşif/ekran analizleri + kaynak taramaları + config kopyası,
 kola özgü backend/model/port (`workspace/calistir.sh`, `workspace/deney.json`), depo hijyeni, ilk commit, isteğe bağlı özel GitHub deposu.
-Süreci (koşucu, panel, ortam) kullanıcı `workspace/calistir.sh` ile başlatır.
+Kullanıcı `workspace/calistir.sh` ile yalnız paneli açar (brief görüşmesi), `calistir.sh --baslat` ile koşucuyu başlatır.
 """
 from __future__ import annotations
 
@@ -81,7 +81,12 @@ export STUDIO_BACKEND="{kol["backend"]}"
 {model}export STUDIO_WEB_PORT="{p["panel"]}"
 export NUXT_PORT="{p["nuxt"]}" BACKEND_PORT="{p["backend"]}" MOCK_PORT="{p["mock"]}"
 echo "[{ad}] backend={kol["backend"]} panel=http://127.0.0.1:{p["panel"]}/panel nuxt={p["nuxt"]}"
-exec ./basla.sh "$@"
+if [ "$1" = "--baslat" ]; then
+  shift
+  exec ./basla.sh "$@"            # koşucu + panel: brief görüşmesi BİTTİKTEN sonra
+fi
+echo "[{ad}] Yalnız panel açılıyor (koşucu BAŞLAMAZ). Brief Görüşmesi bitince: ./workspace/calistir.sh --baslat"
+exec ./basla.sh --web
 '''
     f = d / "workspace" / "calistir.sh"
     f.write_text(s, encoding="utf-8", newline="\n")
