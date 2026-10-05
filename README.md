@@ -338,3 +338,9 @@ ve JSON gövdeyle kabul edilir; panel varsayılan olarak yalnız 127.0.0.1'e ba�
 `python3 scripts/depo_hijyeni.py` (rapor) / `--uygula`: yalıtım modeline uygun yönetilen `.gitignore` ve `.gitattributes` blokları
 (db, loglar, ham keşif verisi, görseller, trace ayrıntısı, framework dosyaları git dışı; `workspace/` altındaki proje dosyaları içeride) ve izlenen artıkların
 `git rm --cached` ile temizliği. `setup.sh` bunu otomatik çalıştırır. Otomatik commit öncesi `workspace/pano_snapshot.json` yenilenir (`studio.db` git dışı olduğu için).
+
+### Birim-envanteri tabanlı plan üretici
+
+`studio.config.json → planlama.uretici = "birim"` iken `--replan`, LLM planlayıcı yerine keşif envanterinden deterministik pano üretir
+(`python3 scripts/birim_envanteri.py` sonra `python3 scripts/plan_birim.py --dry-run | --yaz`). Modül başına tasarım → **insan kapısı** → mock → ekran → parite;
+`Girdi:`/`İncele:` satırları, isteğe bağlı HTML önizleme, genel kabuk ve son kabul sprint'i. Ayarlar: `planlama {parca, html_onizleme, insan_kapisi, atla_modulleri, sprint_birim, sprintler, kurallar, roller, dizinler}`.

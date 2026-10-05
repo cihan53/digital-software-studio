@@ -37,6 +37,20 @@ DEFAULTS: dict = {
         "stop_after_no_new": 5,
         "output_dir": "workspace/docs/analiz",
     },
+    # Birim-envanteri tabanlı plan üretici (scripts/plan_birim.py). uretici="birim" ise `--replan` LLM planlayıcı yerine bunu kullanır.
+    "planlama": {
+        "uretici": "llm",                      # "llm" | "birim"
+        "parca": 8,                            # tasarım/ekran görevi başına en çok birim
+        "html_onizleme": True,                 # tasarımcıdan statik HTML önizleme iste (panelde görsel onay)
+        "insan_kapisi": True,                  # modül başına tasarım onayı (role: human)
+        "atla_modulleri": [],                  # planlanmayacak modüller (ör. kabukta yapılan hata sayfaları)
+        "sprint_birim": 30,                    # otomatik sprint dağıtımında sprint başına yaklaşık birim
+        "sprintler": [],                       # elle: [{"ad": "...", "moduller": ["a", "b"]}]; boşsa otomatik dengeli dağıtım
+        "kurallar": [],                        # her modül görevine eklenen proje kuralları (metin listesi)
+        "roller": {"tasarim": "ui_designer", "mock": "backend_engineer", "ekran": "web_engineer", "parite": "qa_lead"},
+        "dizinler": {"tasarim": "workspace/docs/tasarim", "onay": "workspace/docs/onaylar",
+                     "mock": "workspace/src/backend/mock", "ekran": "workspace/src/web/modules", "parite": "workspace/tests/parite"},
+    },
     "discovery": {
         "goal": "",
         "questions": [],
