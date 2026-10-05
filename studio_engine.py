@@ -533,7 +533,7 @@ def synthesize_role(org: dict, role_id: str) -> dict:
             "workspace/docs/kabul_kriterleri.md",
             "workspace/docs/ekran_envanteri.md",
             "workspace/docs/ux_akislari.md",
-            "workspace/src/frontend/",
+            _uygulama_dizini() + "/",
             "workspace/src/backend/"
         ]
         outputs = ["workspace/docs/test_raporu.md", "workspace/docs/bug_raporlari.md"]
@@ -2463,8 +2463,8 @@ def verify_task_execution(task: dict, sprint: dict, interactive: bool = False) -
             rel_dir = "workspace/src/backend"
             test_cmd = "npm test"
             install_cmd = "npm install"
-        elif "web" in desc_lower or "frontend" in desc_lower or "harita" in desc_lower or "ssr" in desc_lower:
-            rel_dir = "workspace/src/frontend"
+        elif "web" in desc_lower or "frontend" in desc_lower or "ssr" in desc_lower:
+            rel_dir = _uygulama_dizini()
             test_cmd = "npm test"
             install_cmd = "yarn install --ignore-engines || npm install"
         elif "mobile" in desc_lower or "flutter" in desc_lower:
@@ -2534,7 +2534,6 @@ def verify_task_execution(task: dict, sprint: dict, interactive: bool = False) -
         compose_file = ROOT / "workspace/infra/docker-compose.yml"
         if compose_file.exists():
             print("       👉 Docker Servisleri : cd workspace/infra && docker compose up -d")
-            print("       👉 Migration Çalıştır: cd workspace/infra && npm run migrate")
             if interactive:
                 ans = input("   [?] Docker compose yapılandırması doğrulansın mı? (e/h): ").strip().lower()
                 if ans == "e":
@@ -2551,48 +2550,65 @@ def verify_task_execution(task: dict, sprint: dict, interactive: bool = False) -
     return "; ".join(note_parts) if note_parts else ""
 
 
+def _uygulama_dizini() -> str:
+    """Web uygulaması dizini: planlama.dizinler.uygulama (varsayılan workspace/src/web) — bkz. scripts/uygulama_dizini.py."""
+    try:
+        import uygulama_dizini as UD
+        return UD.dizin(_studio_config()[1])
+    except Exception:
+        return "workspace/src/web"
+
+
 def print_sprint_action_summary(sprint: dict):
-    """Sprint tamamlandığında terminale canlı test için eylem rehberi basar."""
+    """Sprint tamamlandığında terminale canlı test için eylem rehberi basar (projeden bağımsız: live.ports + yerel_ortam.sh)."""
     sid = sprint.get("id", "S?")
     sname = sprint.get("name", "")
     print("\n" + "=" * 70)
     print(f"  🚀 SPRINT {sid} TAMAMLANDI — GELİŞTİRİCİ CANLI TEST REHBERİ")
     print(f"  📦 {sname}")
     print("=" * 70)
-    print("  Canlı sistemi kendi yerel terminalinizde test etmek için adımlar:\n")
-    print("  1. Veritabanını Başlatın (PostGIS):")
-    print("     cd workspace/infra && docker compose up -d\n")
-    print("  2. Backend API'yi Başlatın (Fastify, Port 3001):")
-    print("     cd workspace/src/backend && npm install && npm run dev")
-    print("     👉 Swagger UI: http://localhost:3001/documentation\n")
-    print("  3. Web Arayüzünü Başlatın (Nuxt 3, Port 3000):")
-    print("     cd workspace/src/frontend && yarn install --ignore-engines && yarn dev")
-    print("     👉 Canlı Harita: http://localhost:3000\n")
-    print("  4. Otomatik Testleri Koşturun:")
-    print("     cd workspace/src/backend && npm test")
-    print("     cd workspace/src/frontend && yarn test")
+    betik = next((p for p in ("workspace/yerel_ortam.sh", "yerel_ortam.sh") if (ROOT / p).is_file()), None)
+    try:
+        portlar = list(B.live_ports())
+    except Exception:
+        portlar = []
+    if betik:
+        print("  Canlı sistemi yerel terminalinizde test etmek için:\n")
+        print(f"  1. Yerel ortamı başlatın: ./{betik}   (ya da panel → 🖥 Yerel Ortam)")
+        for p in portlar:
+            print(f"     👉 http://localhost:{p}")
+        print("  2. Otomatik testler: uygulama dizininde `npm test` / `pnpm test` (package.json scripts)")
+    else:
+        print("  workspace/yerel_ortam.sh henüz yok; pano görevi (devops) üretince yerel ortam panelden başlatılabilir.")
     print("=" * 70 + "\n")
 
 
+def _kalite_cfg() -> dict:
+    """studio.config.json -> kalite: {kritik_rotalar: [{ad, isaretler: [...]}], nuxt_host_kontrolu: bool}. Varsayılan: denetim yok."""
+    try:
+        return (_studio_config()[1] or {}).get("kalite") or {}
+    except Exception:
+        return {}
+
+
 def self_healing_code_check(target: str) -> tuple[bool, str]:
-    """Üretilen kodun derlenebilirliğini ve kritik rotaların sağlamlığını denetler."""
+    """Üretilen kodun derlenebilirliğini ve (config'te tanımlıysa) kritik rotaların sağlamlığını denetler. Projeye özel sabit kural içermez."""
     target_path = ROOT / target
     if not target_path.exists():
         return True, ""
+    kcfg = _kalite_cfg()
 
     # 1. Backend Denetimleri
     if "backend" in target:
-        # A) Kritik Rota Regresyon Denetimi
+        # A) Kritik Rota Regresyon Denetimi — yalnız kalite.kritik_rotalar tanımlıysa
         app_ts = target_path / "src/app.ts"
-        if app_ts.exists():
+        rotalar = kcfg.get("kritik_rotalar") or []
+        if rotalar and app_ts.exists():
             content = app_ts.read_text(encoding="utf-8")
-            missing_routes = []
-            if "stationRoutes" not in content and "/stations" not in content:
-                missing_routes.append("İstasyon Rotaları (/stations)")
-            if "operatorRoutes" not in content and "/operators" not in content:
-                missing_routes.append("Operatör Rotaları (/operators)")
-            if missing_routes:
-                return False, f"Regresyon Hatası: Önceki sprintlerin kritik rotaları silinmiş: {', '.join(missing_routes)}. app.ts dosyasında stationRoutes ve operatorRoutes mutlaka korunmalıdır."
+            eksik = [r.get("ad", "?") for r in rotalar if not any(i in content for i in (r.get("isaretler") or []))]
+            if eksik:
+                return False, (f"Regresyon Hatası: Önceki sprintlerin kritik rotaları silinmiş: {', '.join(eksik)}. "
+                               f"app.ts dosyasında bu rotalar korunmalıdır (kalite.kritik_rotalar).")
 
         # B) TypeScript Derleme Denetimi
         if (target_path / "tsconfig.json").exists() and (target_path / "node_modules").exists():
@@ -2605,13 +2621,12 @@ def self_healing_code_check(target: str) -> tuple[bool, str]:
             except Exception:
                 pass
 
-    # 2. Frontend Denetimleri
-    elif "frontend" in target:
-        nuxt_cfg = target_path / "nuxt.config.ts"
-        if nuxt_cfg.exists():
+    # 2. Frontend Denetimleri — nuxt.config.* içeren her dizin; host kontrolü yalnız kalite.nuxt_host_kontrolu açıksa
+    elif kcfg.get("nuxt_host_kontrolu"):
+        for nuxt_cfg in sorted(target_path.glob("nuxt.config.*")):
             content = nuxt_cfg.read_text(encoding="utf-8")
             if "127.0.0.1" not in content and "devServer" not in content:
-                return False, "Yapılandırma Uyarısı: nuxt.config.ts içinde devServer host '127.0.0.1' olarak tanımlanmalıdır (IPv6 HMR çakışmasını önlemek için)."
+                return False, f"Yapılandırma Uyarısı: {nuxt_cfg.name} içinde devServer host '127.0.0.1' olarak tanımlanmalıdır (IPv6 HMR çakışmasını önlemek için)."
 
     return True, ""
 
@@ -2816,7 +2831,7 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
                     f"{user}\n\n"
                     f"--- OTOMATİK İYİLEŞTİRME VE DÜZELTME TALEBİ ---\n"
                     f"Ürettiğin kodda şu kritik hata oluştu:\n{err_msg}\n\n"
-                    f"Lütfen mevcut çalışan rotaları (/stations, /operators vb.) ve paketleri koruyarak bu hatayı düzelt ve dosyaları eksiksiz yeniden üret."
+                    f"Lütfen mevcut çalışan kodu ve paketleri koruyarak yalnızca bu hatayı düzelt ve dosyaları eksiksiz yeniden üret."
                 )
                 try:
                     output = query_claude(system, repair_user, backend, model, effort, meta, tools)
@@ -3034,7 +3049,7 @@ def autonomous_gap_review_and_phasing(org: dict, brief: str, board: dict) -> int
                     "description": "Ziyaretçi testinde bulunan buton tepkisizlikleri, eksik rota veya durum hatalarının giderilmesi",
                     "role": "web_engineer",
                     "phase": "develop",
-                    "outputs": ["workspace/src/frontend/"],
+                    "outputs": [_uygulama_dizini() + "/"],
                     "depends_on": [f"{s_id}-T2"]
                 },
                 {
