@@ -60,6 +60,17 @@
   .onay-icerik { margin-top: 8px; max-height: 70vh; overflow: auto; }
   .onay-onizleme { width: 100%; height: 70vh; border: 1px solid rgba(127,127,127,.3); border-radius: 6px; background: #fff; }
   .md h2,.md h3,.md h4,.md h5 { margin: 14px 0 6px; } .md p { margin: 6px 0; } .md ul { margin: 6px 0 6px 20px; }
+  .dok-duzen { display: grid; grid-template-columns: 300px 1fr; gap: 14px; align-items: start; }
+  .dok-yan { position: sticky; top: 8px; max-height: 82vh; overflow-y: auto; border: 1px solid rgba(127,127,127,.3); border-radius: 8px; padding: 8px; font-size: .88em; }
+  .dok-yan input { width: 100%; box-sizing: border-box; margin-bottom: 6px; }
+  .dok-yan summary { cursor: pointer; font-weight: 600; padding: 2px 0; } .dok-yan details details { margin-left: 10px; }
+  .dok-yan .dok-d { display: block; padding: 2px 6px; margin-left: 10px; border-radius: 4px; cursor: pointer; word-break: break-all; } .dok-yan .dok-d:hover { background: rgba(127,127,127,.15); }
+  .dok-yan .dok-d.sec { background: rgba(30,215,96,.22); }
+  .dok-oku { border: 1px solid rgba(127,127,127,.3); border-radius: 8px; padding: 14px 18px; min-width: 0; }
+  .dok-yol { font-size: .8em; opacity: .7; margin-bottom: 8px; word-break: break-all; }
+  .md-doc img { max-width: 100%; border: 1px solid rgba(127,127,127,.3); border-radius: 6px; margin: 6px 0; } .md-doc blockquote { margin: 8px 0; padding: 4px 12px; border-left: 3px solid rgba(30,215,96,.7); opacity: .9; }
+  .md-doc a { color: inherit; text-decoration: underline; cursor: pointer; } .md-doc iframe { width: 100%; height: 70vh; border: 1px solid rgba(127,127,127,.3); }
+  @media (max-width: 900px) { .dok-duzen { grid-template-columns: 1fr; } .dok-yan { position: static; max-height: 40vh; } }
   .md-tablo { border-collapse: collapse; margin: 8px 0; font-size: .92em; } .md-tablo th,.md-tablo td { border: 1px solid rgba(127,127,127,.3); padding: 4px 8px; text-align: left; vertical-align: top; }
   .md-kod { background: rgba(127,127,127,.12); padding: 8px; border-radius: 6px; overflow: auto; }
   .onay-eylem { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; position: sticky; bottom: 0; background: inherit; padding: 8px 0; }
@@ -112,6 +123,7 @@
   <div class="sekme" data-t="talep" onclick="sekmeAc('talep')">📥 Talepler</div>
   <div class="sekme" data-t="faz" onclick="sekmeAc('faz')">🗺 Fazlar</div>
   <div class="sekme" data-t="brief" onclick="sekmeAc('brief')">💬 Brief Görüşmesi</div>
+  <div class="sekme" data-t="dok" onclick="sekmeAc('dok')">📚 Dokümanlar</div>
   <div class="sekme" data-t="onay" onclick="sekmeAc('onay')">✅ Onaylar <span id="onay-sayi" class="rozet r-FAILED gizli"></span></div>
 </div>
 <div class="icerik">
@@ -122,6 +134,13 @@
       son sırayı framework bağımlılık ve faz kurallarıyla belirler.</div>
     <div class="filtre" id="pano-filtre"></div>
     <div id="pano">Yükleniyor…</div>
+  </section>
+
+  <section id="s-dok" class="gizli">
+    <div class="dok-duzen">
+      <aside class="dok-yan"><input id="dok-ara" placeholder="Ara (ad / klasör)…" oninput="dokCiz()"><div id="dok-agac">Yükleniyor…</div></aside>
+      <article class="dok-oku"><div id="dok-yol" class="dok-yol"></div><div id="dok-icerik" class="md-doc"><div class="ipucu">Soldan bir doküman seçin. Analizler, tasarımlar, ekran dokümanları ve referans görselleri burada okunur (salt-okuma).</div></div></article>
+    </div>
   </section>
 
   <section id="s-canli" class="gizli">
@@ -204,10 +223,10 @@ function modalKapat(){ document.getElementById('modal').classList.add('gizli'); 
 
 function sekmeAc(t){
   document.querySelectorAll('.sekme').forEach(x=>x.classList.toggle('aktif', x.dataset.t===t));
-  for (const s of ['pano','canli','audit','cagri','talep','faz','brief','onay'])
+  for (const s of ['pano','canli','audit','cagri','talep','faz','brief','onay','dok'])
     document.getElementById('s-'+s).classList.toggle('gizli', s!==t);
   if(t==='audit') auditYukle(); if(t==='cagri') cagriYukle();
-  if(t==='talep') talepYukle(); if(t==='canli') canliYukle(); if(t==='faz') fazYukle(); if(t==='onay') onayYukle(true); if(t==='brief') briefYukle();
+  if(t==='talep') talepYukle(); if(t==='canli') canliYukle(); if(t==='faz') fazYukle(); if(t==='onay') onayYukle(true); if(t==='brief') briefYukle(); if(t==='dok') dokYukle();
 }
 let aktifSekme='pano';
 
@@ -634,10 +653,19 @@ async function briefCevap(){
 async function briefBitir(){ if(!confirm('Görüşme bitirilsin mi?'))return; await briefPost({islem:'bitir'}); briefYukle(); }
 
 // ---------- insan onayları ----------
-function mdHtml(src){
+function dokCoz(taban,rel){   // taban: açık dokümanın yolu; rel: göreli yol -> workspace/... normalize
+  const p=(rel.startsWith('/')?rel.slice(1):taban.replace(/[^/]*$/,'')+rel).split('/'), o=[];
+  for(const x of p){ if(x==='..') o.pop(); else if(x&&x!=='.') o.push(x); } return o.join('/'); }
+function mdHtml(src,taban){
   // Güvenli minimal markdown: önce HTML kaçışlanır; başlık, liste, tablo, kod bloğu, kalın, satır içi kod.
   const lines=String(src).replace(/\r/g,'').split('\n'); let h='', liste=false, kod=false, tablo=[];
-  const il=t=>esc(t).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>');
+  const il=t=>{ const yer=[];   // resim ve bağlantılar önce yer tutucuya alınır, sonra metin kaçışlanır
+    t=String(t).replace(/(!?)\[([^\]]*)\]\(([^)\s]+)\)/g,(_,r,a,u)=>{ let h;
+      if(taban&&!/^[a-z]+:|^#/i.test(u)){ const y=dokCoz(taban,decodeURI(u.split('#')[0]));
+        h=r?`<img alt="${esc(a)}" loading="lazy" src="/api/gorsel?yol=${encodeURIComponent(y)}">`:`<a onclick="dokAc('${esc(y).replace(/'/g,"&#39;")}')">${esc(a)}</a>`; }
+      else if(/^https?:/i.test(u)&&!r) h=`<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(a)}</a>`;
+      else h=esc(a); yer.push(h); return '\u0001'+(yer.length-1)+'\u0001'; });
+    return esc(t).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/\u0001(\d+)\u0001/g,(_,i)=>yer[+i]); };
   const bitirTablo=()=>{ if(!tablo.length)return; const rows=tablo.filter(r=>!/^\s*\|?\s*:?-{2,}/.test(r)).map(r=>r.replace(/^\s*\||\|\s*$/g,'').split('|').map(c=>il(c.trim())));
     h+='<table class="md-tablo"><thead><tr>'+(rows[0]||[]).map(c=>`<th>${c}</th>`).join('')+'</tr></thead><tbody>'+rows.slice(1).map(r=>'<tr>'+r.map(c=>`<td>${c}</td>`).join('')+'</tr>').join('')+'</tbody></table>'; tablo=[]; };
   for(const ln of lines){
@@ -647,10 +675,43 @@ function mdHtml(src){
     let m;
     if((m=ln.match(/^(#{1,4})\s+(.*)/))){ if(liste){h+='</ul>';liste=false;} h+=`<h${m[1].length+1} class="md-h">${il(m[2])}</h${m[1].length+1}>`; }
     else if((m=ln.match(/^\s*[-*]\s+(.*)/))||(m=ln.match(/^\s*\d+\.\s+(.*)/))){ if(!liste){h+='<ul>';liste=true;} h+=`<li>${il(m[1])}</li>`; }
+    else if(/^\s*>\s?/.test(ln)){ if(liste){h+='</ul>';liste=false;} h+=`<blockquote>${il(ln.replace(/^\s*>\s?/,''))}</blockquote>`; }
     else if(!ln.trim()){ if(liste){h+='</ul>';liste=false;} }
     else { if(liste){h+='</ul>';liste=false;} h+=`<p>${il(ln)}</p>`; }
   }
   bitirTablo(); if(liste)h+='</ul>'; if(kod)h+='</pre>'; return h;
+}
+// ---------- dokümanlar (salt-okuma görüntüleyici) ----------
+let dokListe=[], dokSec='';
+async function dokYukle(){
+  try{ const d=await(await fetch('/api/dokumanlar')).json(); dokListe=d.dosyalar||[]; dokCiz(); }
+  catch(e){ document.getElementById('dok-agac').textContent='Yüklenemedi: '+e; }
+}
+function dokCiz(){
+  const q=(document.getElementById('dok-ara').value||'').toLowerCase(), kok={a:{},d:[]};
+  for(const f of dokListe){ if(q&&!f.yol.toLowerCase().includes(q)) continue;
+    const parc=f.yol.replace(/^workspace\/docs\//,'').split('/'); let n=kok;
+    for(const p of parc.slice(0,-1)){ n=(n.a[p]=n.a[p]||{a:{},d:[]}); } n.d.push({ad:parc[parc.length-1],f}); }
+  const ikon=t=>({md:'📄',html:'🌐',json:'🧾',txt:'📝'}[t]||'🖼');
+  const ciz=(n,acik)=>Object.keys(n.a).sort().map(k=>`<details ${acik||q?'open':''}><summary>📁 ${esc(k)}</summary>${ciz(n.a[k],false)}</details>`).join('')
+    +n.d.sort((x,y)=>x.ad.localeCompare(y.ad)).map(x=>`<span class="dok-d ${x.f.yol===dokSec?'sec':''}" title="${esc(x.f.yol)}" onclick="dokAc('${esc(x.f.yol).replace(/'/g,"&#39;")}')">${ikon(x.f.tur)} ${esc(x.ad)}</span>`).join('');
+  document.getElementById('dok-agac').innerHTML=ciz(kok,true)||'<div class="ipucu">Doküman yok.</div>';
+}
+async function dokAc(yol){
+  dokSec=yol; if(document.getElementById('s-dok').classList.contains('gizli')) sekmeAc('dok'); dokCiz();
+  const k=document.getElementById('dok-icerik'); document.getElementById('dok-yol').textContent=yol;
+  const tur=(yol.split('.').pop()||'').toLowerCase();
+  if(['png','jpg','jpeg','gif','webp'].includes(tur)){ k.innerHTML=`<img alt="" src="/api/gorsel?yol=${encodeURIComponent(yol)}">`; return; }
+  k.textContent='Yükleniyor…';
+  const d=await(await fetch('/api/onay-dosya?yol='+encodeURIComponent(yol))).json();
+  if(!d.ok){ k.textContent=d.mesaj||'Açılamadı'; return; }
+  if(d.tur==='md'){
+    let h=mdHtml(d.icerik,yol);   // ekran dokümanının referans görüntüsü varsa en üstte göster
+    const m=yol.match(/^(.*\/ekranlar)\/(?:.*\/)?([^/]+)\.md$/), png=m&&`${m[1]}/_gorsel/${m[2]}.png`;
+    if(png&&dokListe.some(f=>f.yol===png)) h=`<div class="ipucu">Referans ekran görüntüsü</div><img alt="referans" src="/api/gorsel?yol=${encodeURIComponent(png)}">`+h;
+    k.innerHTML=h;
+  } else if(d.tur==='html'){ k.innerHTML='<iframe sandbox></iframe>'; k.firstChild.srcdoc=d.icerik; }
+  else { let t=d.icerik; if(d.tur==='json'){ try{ t=JSON.stringify(JSON.parse(t),null,2); }catch(e){} } k.innerHTML='<pre class="md-kod"></pre>'; k.firstChild.textContent=t; }
 }
 let onaySig='';
 async function onayYukle(zorla){

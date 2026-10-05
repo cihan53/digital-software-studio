@@ -303,16 +303,41 @@ def onay_dosya(yol: str) -> dict:
     return {"ok": True, "yol": yol, "tur": p.suffix.lstrip("."), "icerik": p.read_text(encoding="utf-8", errors="replace")[:400_000]}
 
 
+_GORSEL_TURLERI = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp"}   # svg bilinçli yok (betik taşıyabilir)
+_DOK_TURLERI = {".md", ".html", ".json", ".txt"} | set(_GORSEL_TURLERI)
+_DOK_ATLA = {"_ham", "node_modules", ".git"}
+
+
 def gorsel_oku(yol: str):
-    """Referans ekran görüntüsü: yalnız workspace/ altında .png. (bayt, hata) döndürür."""
+    """Görsel: yalnız workspace/ altında png/jpg/gif/webp. (bayt, mime, hata) döndürür."""
     p = (ROOT / yol).resolve()
     try:
         p.relative_to((ROOT / "workspace").resolve())
     except ValueError:
-        return None, "yalnız workspace/ altı"
-    if p.suffix != ".png" or not p.is_file():
-        return None, "görsel yok"
-    return p.read_bytes(), ""
+        return None, "", "yalnız workspace/ altı"
+    if p.suffix.lower() not in _GORSEL_TURLERI or not p.is_file():
+        return None, "", "görsel yok"
+    return p.read_bytes(), _GORSEL_TURLERI[p.suffix.lower()], ""
+
+
+def dokumanlar(taban: str = "workspace/docs") -> dict:
+    """Panel 'Dokümanlar' sekmesi: workspace/docs altındaki üretilmiş doküman ve görsellerin düz listesi (salt-okuma)."""
+    kok = (ROOT / "workspace").resolve()
+    dizin = (ROOT / taban).resolve()
+    try:
+        dizin.relative_to(kok)
+    except ValueError:
+        return {"ok": False, "mesaj": "yalnız workspace/ altı", "dosyalar": []}
+    out = []
+    if dizin.is_dir():
+        for f in sorted(dizin.rglob("*")):
+            if len(out) >= 4000:
+                break
+            if not f.is_file() or f.suffix.lower() not in _DOK_TURLERI or any(x in _DOK_ATLA for x in f.relative_to(dizin).parts):
+                continue
+            out.append({"yol": f.relative_to(ROOT.resolve()).as_posix(), "tur": f.suffix.lower().lstrip("."), "kb": round(f.stat().st_size / 1024, 1),
+                        "zaman": int(f.stat().st_mtime)})
+    return {"ok": True, "taban": taban, "dosyalar": out}
 
 
 def _bg():
@@ -651,10 +676,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/onaylar":
             return self._json(onaylar())
         if path == "/api/gorsel":
-            veri, hata = gorsel_oku(q.get("yol", [""])[0])
+            veri, mime, hata = gorsel_oku(q.get("yol", [""])[0])
             if veri is None:
                 return self._json({"ok": False, "mesaj": hata}, 404)
-            return self._send(200, veri, "image/png")
+            return self._send(200, veri, mime)
+        if path == "/api/dokumanlar":
+            return self._json(dokumanlar())
         if path == "/api/onay-dosya":
             return self._json(onay_dosya(q.get("yol", [""])[0]))
         if path == "/api/canli":

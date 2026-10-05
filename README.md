@@ -360,3 +360,9 @@ Her kolda framework `git clone` edilir (`origin` → `framework`, push kapalı),
 python3 scripts/deney_kur.py kur --kaynak <proje> --hedef <ana dizin> --onek <ad> --brief <brief.md> [--github-sahip <kullanıcı>] [--plan]
 python3 scripts/deney_kur.py esitle --kaynak-kol <dizin> --hedefler <dizin>,<dizin> [--plan]   # brief görüşmesi sonrası son brief'i kopyalar, girdi hash tablosunu basar
 ```
+
+### Dokümanlar sekmesi (panel: 📚 Dokümanlar)
+
+`workspace/docs` altındaki üretilmiş analiz, tasarım ve ekran dokümanlarını panelde gezilebilir ağaç + markdown görüntüleyici ile okursunuz (salt-okuma).
+Ekran dokümanlarının üstünde referans ekran görüntüsü (`_gorsel/<ad>.png`) gösterilir; markdown içindeki resimler ve dokümanlar arası bağlantılar çalışır, `.html` dokümanlar korumalı iframe'de açılır.
+Yalnız `workspace/` altı okunur; `_ham/` (yerel, PII içerebilir) ve `.svg` (betik taşıyabilir) listelenmez.
