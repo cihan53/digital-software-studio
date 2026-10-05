@@ -21,6 +21,7 @@ Ortam değişkenleri:
 
 import argparse
 import json
+import re
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -189,8 +190,46 @@ def _io():
     return IO
 
 
+_INCELE_RX = re.compile(r"İncele:\s*([^\n]+)")
+_BILINMIYOR_RX = re.compile(r"(?mi)^\s*bilinmiyor\s*$")
+
+
+def _incele_yollari(aciklama: str) -> list[str]:
+    """Kapı açıklamasındaki `İncele: yol1, yol2` satırı (dosya ya da dizin; dizin .md/.html dosyalarına açılır)."""
+    out: list[str] = []
+    kok = ROOT.resolve()
+    for m in _INCELE_RX.finditer(aciklama or ""):
+        for y in m.group(1).split(","):
+            y = y.strip().strip("`").rstrip(".")
+            if not y:
+                continue
+            p = (ROOT / y).resolve()
+            try:
+                p.relative_to((ROOT / "workspace").resolve())
+            except ValueError:
+                continue
+            if p.is_dir():
+                out += [str(f.resolve().relative_to(kok)) for f in sorted(p.rglob("*")) if f.suffix in (".md", ".html") and f.is_file() and not f.name.startswith("_")][:60]
+            elif p.is_file() or "*" in y:
+                if "*" in y:
+                    out += [str(f.resolve().relative_to(kok)) for f in sorted(ROOT.glob(y)) if f.is_file()][:60]
+                else:
+                    out.append(y)
+    return out
+
+
+def _dosya_meta(yol: str) -> dict:
+    p = ROOT / yol
+    m = {"yol": yol, "tur": p.suffix.lstrip("."), "var": p.is_file(), "kb": 0, "bilinmiyor": 0}
+    if p.is_file():
+        m["kb"] = round(p.stat().st_size / 1024, 1)
+        if p.suffix == ".md":
+            m["bilinmiyor"] = len(_BILINMIYOR_RX.findall(p.read_text(encoding="utf-8", errors="replace")))
+    return m
+
+
 def onaylar() -> dict:
-    """İnsan onay kapıları: bekleyenler önce. Her kapı için incelenecek dosyalar (bağımlı görevlerin .md çıktıları)."""
+    """İnsan onay kapıları: bekleyenler önce. Her kapı için: ne incelenecek, onaylanırsa/reddedilirse ne olacak."""
     IO = _io()
     try:
         board = B.load()
@@ -198,34 +237,44 @@ def onaylar() -> dict:
         return {"ok": False, "mesaj": "Pano henüz yok.", "onaylar": []}
     B.refresh(board)
     tum = {t["id"]: t for _, t in B.all_tasks(board)}
+    bagli: dict[str, list] = {}
+    for _, t in B.all_tasks(board):
+        for d in t.get("depends_on", []):
+            bagli.setdefault(d, []).append(t)
     out = []
     for sp, t in B.all_tasks(board):
         if not B.is_human(t):
             continue
         deps = [tum[d] for d in t.get("depends_on", []) if d in tum]
-        incele = [o for d in deps for o in d.get("outputs", []) if o.endswith((".md", ".json", ".txt"))]
+        yollar: list[str] = []
+        for y in [o for d in deps for o in d.get("outputs", []) if o.endswith((".md", ".html", ".json", ".txt"))] + _incele_yollari(t.get("description", "")):
+            if y not in yollar:
+                yollar.append(y)
+        dosyalar = [_dosya_meta(y) for y in yollar]
         yol = IO.kayit_yolu(t)
-        kayit = ""
-        if yol.exists():
-            kayit = yol.read_text(encoding="utf-8", errors="replace")[-900:]
+        kayit = yol.read_text(encoding="utf-8", errors="replace")[-900:] if yol.exists() else ""
+        etki = [{"id": x["id"], "baslik": x["title"], "rol": x["role"], "ciktilar": x.get("outputs", []), "durum": x["status"]}
+                for x in bagli.get(t["id"], [])]
         out.append({"id": t["id"], "sprint": sp["id"], "baslik": t["title"], "aciklama": t.get("description", ""),
-                    "durum": t["status"], "bagimliliklar": [{"id": d["id"], "durum": d["status"]} for d in deps],
-                    "incele": incele, "kayit": kayit, "not": t.get("note", "")})
+                    "durum": t["status"], "bagimliliklar": [{"id": d["id"], "baslik": d["title"], "rol": d["role"], "durum": d["status"]} for d in deps],
+                    "dosyalar": dosyalar, "incele": yollar, "kayit": kayit, "not": t.get("note", ""),
+                    "onaylanirsa": etki,
+                    "reddedilirse": [{"id": d["id"], "baslik": d["title"], "rol": d["role"]} for d in deps]})
     sira = {"READY": 0, "TODO": 1, "DONE": 2}
     out.sort(key=lambda x: (sira.get(x["durum"], 1), x["sprint"], x["id"]))
     return {"ok": True, "onaylar": out, "bekleyen": sum(1 for x in out if x["durum"] == "READY")}
 
 
 def onay_dosya(yol: str) -> dict:
-    """Panelde gösterilecek doküman: yalnız workspace/ altında .md/.json/.txt (yol kaçışı engellenir)."""
+    """Panelde gösterilecek doküman: yalnız workspace/ altında .md/.html/.json/.txt (yol kaçışı engellenir)."""
     p = (ROOT / yol).resolve()
     try:
         p.relative_to((ROOT / "workspace").resolve())
     except ValueError:
         return {"ok": False, "mesaj": "yalnız workspace/ altındaki dosyalar görüntülenir"}
-    if p.suffix not in (".md", ".json", ".txt") or not p.is_file():
+    if p.suffix not in (".md", ".html", ".json", ".txt") or not p.is_file():
         return {"ok": False, "mesaj": "dosya yok veya desteklenmeyen tür"}
-    return {"ok": True, "yol": yol, "icerik": p.read_text(encoding="utf-8", errors="replace")[:200_000]}
+    return {"ok": True, "yol": yol, "tur": p.suffix.lstrip("."), "icerik": p.read_text(encoding="utf-8", errors="replace")[:400_000]}
 
 
 def onay_ver(body: dict) -> dict:

@@ -42,6 +42,9 @@ class PanelOnay(unittest.TestCase):
         g = d["onaylar"][0]
         self.assertEqual((g["id"], g["durum"], d["bekleyen"]), ("G1", "READY", 1))
         self.assertEqual(g["incele"], ["workspace/docs/tasarim/x.md"])        # bağımlı tasarım görevinin çıktısı
+        self.assertEqual(g["dosyalar"][0]["tur"], "md")
+        self.assertEqual([x["id"] for x in g["onaylanirsa"]], ["W1"])           # onaylanırsa başlayacak görev
+        self.assertEqual([x["id"] for x in g["reddedilirse"]], ["D1"])          # reddedilirse yeniden çalışacak görev
 
     def test_onay_ve_ret_kurallari(self):
         r = W.onay_ver({"id": "G1", "karar": "reject", "not": ""})
@@ -51,6 +54,31 @@ class PanelOnay(unittest.TestCase):
         self.assertTrue(r["ok"], r)
         self.assertIn("Test Kişi", Path(self.onay_md).read_text(encoding="utf-8"))
         self.assertEqual(W.onaylar()["onaylar"][0]["durum"], "DONE")
+
+    def test_ret_revizyon_ister_ve_geri_bildirim_ekler(self):
+        r = W.onay_ver({"id": "G1", "karar": "reject", "not": "Filtre barı eksik", "kim": "Test Kişi"})
+        self.assertTrue(r["ok"], r)
+        board = B.load()
+        _, d1 = B.find_task(board, "D1")
+        _, g1 = B.find_task(board, "G1")
+        self.assertEqual(d1["status"], B.READY)                                  # tasarım yeniden çalışmaya hazır (bağımlılığı yok)
+        self.assertIn("REVİZYON İSTEĞİ (Test Kişi): Filtre barı eksik", d1["description"])
+        self.assertNotEqual(g1["status"], B.DONE)                                # kapı onaylanmadı, tasarım bitince yeniden sorulur
+
+    def test_incele_satiri_dizin_ve_dosya_acar(self):
+        d = Path(tempfile.mkdtemp())
+        eski = W.ROOT
+        try:
+            W.ROOT = d
+            (d / "workspace" / "docs" / "ekranlar" / "m").mkdir(parents=True)
+            (d / "workspace" / "docs" / "ekranlar" / "m" / "a.md").write_text("# a")
+            (d / "workspace" / "docs" / "ekranlar" / "m" / "_gizli.md").write_text("# g")
+            (d / "workspace" / "docs" / "t.html").write_text("<p>x</p>")
+            y = W._incele_yollari("Metin. İncele: workspace/docs/ekranlar/m, workspace/docs/t.html, /etc/passwd, ../disari.md")
+            self.assertEqual(sorted(y), ["workspace/docs/ekranlar/m/a.md", "workspace/docs/t.html"])   # dizin açılır, gizli/dış yol alınmaz
+        finally:
+            W.ROOT = eski
+            shutil.rmtree(d, ignore_errors=True)
 
     def test_dosya_yolu_kacisi_engellenir(self):
         for yol in ("../../etc/passwd", "/etc/passwd", "studio_engine.py", "workspace/../studio_web.py"):
