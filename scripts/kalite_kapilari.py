@@ -80,7 +80,7 @@ def _git(args: list[str]) -> subprocess.CompletedProcess:
 
 def porcelain_snapshot() -> set[str]:
     """git status --porcelain satırlarının kümesi (görev öncesi anlık)."""
-    res = _git(["status", "--porcelain"])
+    res = _git(["status", "--porcelain", "-uall"])   # yeni dizin tek satıra çökmesin (#189)
     if res.returncode != 0:
         return set()
     return {l for l in res.stdout.splitlines() if l.strip()}
