@@ -47,6 +47,22 @@
     border-radius: 6px; font-size: 13px; }
   .motor-kutu .baslik { font-weight: 600; margin-bottom: 10px; }
   .filtre .secili { border-color: var(--vurgu); color: var(--vurgu); font-weight: 600; }
+
+  .onay-kutu { background: rgba(127,127,127,.08); border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
+  .onay-iki { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 800px) { .onay-iki { grid-template-columns: 1fr; } }
+  .onay-kutu ul { margin: 6px 0 0 18px; padding: 0; }
+  .onay-dosya { border: 1px solid rgba(127,127,127,.25); border-radius: 8px; margin: 6px 0; padding: 6px 10px; }
+  .onay-dosya summary { cursor: pointer; }
+  .onay-icerik { margin-top: 8px; max-height: 70vh; overflow: auto; }
+  .onay-onizleme { width: 100%; height: 70vh; border: 1px solid rgba(127,127,127,.3); border-radius: 6px; background: #fff; }
+  .md h2,.md h3,.md h4,.md h5 { margin: 14px 0 6px; } .md p { margin: 6px 0; } .md ul { margin: 6px 0 6px 20px; }
+  .md-tablo { border-collapse: collapse; margin: 8px 0; font-size: .92em; } .md-tablo th,.md-tablo td { border: 1px solid rgba(127,127,127,.3); padding: 4px 8px; text-align: left; vertical-align: top; }
+  .md-kod { background: rgba(127,127,127,.12); padding: 8px; border-radius: 6px; overflow: auto; }
+  .onay-eylem { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; position: sticky; bottom: 0; background: inherit; padding: 8px 0; }
+  .onay-eylem input { flex: 1; min-width: 240px; }
+  .onay-btn { padding: 8px 16px; font-weight: 600; border-radius: 8px; border: 1px solid rgba(127,127,127,.4); cursor: pointer; }
+  .onay-btn.ok { background: #1ed760; color: #04210e; } .onay-btn.red { background: #fff; color: #b91c1c; border-color: #b91c1c; }
 </style>
 </head>
 <body>
@@ -174,7 +190,7 @@ function sekmeAc(t){
   for (const s of ['pano','canli','audit','cagri','talep','faz','onay'])
     document.getElementById('s-'+s).classList.toggle('gizli', s!==t);
   if(t==='audit') auditYukle(); if(t==='cagri') cagriYukle();
-  if(t==='talep') talepYukle(); if(t==='canli') canliYukle(); if(t==='faz') fazYukle(); if(t==='onay') onayYukle();
+  if(t==='talep') talepYukle(); if(t==='canli') canliYukle(); if(t==='faz') fazYukle(); if(t==='onay') onayYukle(true);
 }
 let aktifSekme='pano';
 
@@ -577,49 +593,82 @@ async function fazIlerlet(){
 
 
 // ---------- insan onayları ----------
-async function onayYukle(){
+function mdHtml(src){
+  // Güvenli minimal markdown: önce HTML kaçışlanır; başlık, liste, tablo, kod bloğu, kalın, satır içi kod.
+  const lines=String(src).replace(/\r/g,'').split('\n'); let h='', liste=false, kod=false, tablo=[];
+  const il=t=>esc(t).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>');
+  const bitirTablo=()=>{ if(!tablo.length)return; const rows=tablo.filter(r=>!/^\s*\|?\s*:?-{2,}/.test(r)).map(r=>r.replace(/^\s*\||\|\s*$/g,'').split('|').map(c=>il(c.trim())));
+    h+='<table class="md-tablo"><thead><tr>'+(rows[0]||[]).map(c=>`<th>${c}</th>`).join('')+'</tr></thead><tbody>'+rows.slice(1).map(r=>'<tr>'+r.map(c=>`<td>${c}</td>`).join('')+'</tr>').join('')+'</tbody></table>'; tablo=[]; };
+  for(const ln of lines){
+    if(/^```/.test(ln)){ bitirTablo(); if(liste){h+='</ul>';liste=false;} h+=kod?'</pre>':'<pre class="md-kod">'; kod=!kod; continue; }
+    if(kod){ h+=esc(ln)+'\n'; continue; }
+    if(/^\s*\|/.test(ln)){ tablo.push(ln); continue; } else bitirTablo();
+    let m;
+    if((m=ln.match(/^(#{1,4})\s+(.*)/))){ if(liste){h+='</ul>';liste=false;} h+=`<h${m[1].length+1} class="md-h">${il(m[2])}</h${m[1].length+1}>`; }
+    else if((m=ln.match(/^\s*[-*]\s+(.*)/))||(m=ln.match(/^\s*\d+\.\s+(.*)/))){ if(!liste){h+='<ul>';liste=true;} h+=`<li>${il(m[1])}</li>`; }
+    else if(!ln.trim()){ if(liste){h+='</ul>';liste=false;} }
+    else { if(liste){h+='</ul>';liste=false;} h+=`<p>${il(ln)}</p>`; }
+  }
+  bitirTablo(); if(liste)h+='</ul>'; if(kod)h+='</pre>'; return h;
+}
+let onaySig='';
+async function onayYukle(zorla){
   try{
     const d=await(await fetch('/api/onaylar')).json();
     const r=document.getElementById('onay-sayi');
     r.textContent=d.bekleyen||''; r.classList.toggle('gizli', !d.bekleyen);
     if(document.getElementById('s-onay').classList.contains('gizli')) return;
     const L=(d.onaylar||[]);
+    const sig=JSON.stringify(L.map(o=>[o.id,o.durum,o.kayit.length]));
+    if(!zorla && sig===onaySig) return;           // değişiklik yoksa yeniden çizme: açık dokümanlar ve yazılan not kaybolmasın
+    onaySig=sig;
     document.getElementById('onay-liste').innerHTML=L.map(o=>{
       const bekler=o.durum==='READY', bitti=o.durum==='DONE';
-      const dosyalar=(o.incele||[]).map(y=>`<a href="#" onclick="onayDosyaAc('${esc(y)}');return false">📄 ${esc(y.split('/').pop())}</a>`).join(' · ');
-      const bag=(o.bagimliliklar||[]).map(b=>`<span class="rozet r-${b.durum}">${esc(b.id)}</span>`).join(' ');
-      return `<div class="kart" style="margin-bottom:10px">
-        <div><b>${esc(o.id)}</b> · ${esc(o.baslik)} <span class="rozet r-${bitti?'DONE':(bekler?'FAILED':'TODO')}">${bitti?'ONAYLANDI':(bekler?'ONAY BEKLİYOR':'HENÜZ HAZIR DEĞİL')}</span></div>
-        <div class="soluk" style="margin:6px 0">${esc(o.aciklama)}</div>
-        <div style="margin:6px 0">İncele: ${dosyalar||'<span class="soluk">(dosya yok)</span>'}</div>
-        <div class="soluk" style="margin:4px 0">Bağımlı görevler: ${bag||'—'}</div>
+      const dos=(o.dosyalar||[]).map((f,i)=>`<details class="onay-dosya" ${bekler&&i===0?'open':''} ontoggle="onayDosyaYukle(this)" data-yol="${esc(f.yol)}" data-tur="${esc(f.tur)}">
+        <summary><b>${f.tur==='html'?'🖼 Görsel önizleme':'📄'}</b> ${esc(f.yol.split('/').slice(-2).join('/'))} <span class="soluk">· ${f.var?f.kb+' KB':'DOSYA YOK'}${f.bilinmiyor?` · ⚠ ${f.bilinmiyor} alan "bilinmiyor"`:''}</span></summary>
+        <div class="onay-icerik soluk">Yükleniyor…</div></details>`).join('')||'<div class="soluk">İncelenecek dosya bulunamadı.</div>';
+      const evet=(o.onaylanirsa||[]).map(x=>`<li><span class="rozet r-TODO">${esc(x.rol)}</span> ${esc(x.baslik)} <span class="soluk">→ ${esc((x.ciktilar||[]).join(', '))}</span></li>`).join('')||'<li class="soluk">Bu kapıya bağlı görev yok.</li>';
+      const hayir=(o.reddedilirse||[]).map(x=>`<li><span class="rozet r-TODO">${esc(x.rol)}</span> ${esc(x.baslik)}</li>`).join('')||'<li class="soluk">—</li>';
+      return `<div class="kart" style="margin-bottom:14px">
+        <div style="font-size:1.05em"><b>${esc(o.id)}</b> · ${esc(o.baslik)} <span class="rozet r-${bitti?'DONE':(bekler?'FAILED':'TODO')}">${bitti?'ONAYLANDI':(bekler?'ONAY BEKLİYOR':'HENÜZ HAZIR DEĞİL')}</span></div>
+        <div class="onay-kutu"><b>Neye onay veriyorsunuz?</b><div class="soluk">${esc(o.aciklama)}</div></div>
+        <div class="onay-iki">
+          <div class="onay-kutu"><b>✅ Onaylarsanız şunlar başlar</b><ul>${evet}</ul></div>
+          <div class="onay-kutu"><b>⛔ Reddederseniz</b><div class="soluk">Gerekçeniz geri bildirim olarak şu görev(ler)e eklenir ve yeniden çalışır:</div><ul>${hayir}</ul></div>
+        </div>
+        <h4 style="margin:12px 0 6px">İncelenecek içerik</h4>${dos}
         ${o.kayit?`<details><summary class="soluk">Önceki kararlar</summary><pre>${esc(o.kayit)}</pre></details>`:''}
-        ${bekler?`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-          <input id="not-${esc(o.id)}" placeholder="Not / gerekçe" style="flex:1;min-width:220px">
-          <button onclick="onayVer('${esc(o.id)}','approve')">✅ Onayla</button>
-          <button onclick="onayVer('${esc(o.id)}','reject')">⛔ Reddet</button></div>`:''}
+        ${bekler?`<div class="onay-eylem">
+          <input id="not-${esc(o.id)}" placeholder="Not / gerekçe (ret için zorunlu)">
+          <button class="onay-btn ok" onclick="onayVer('${esc(o.id)}','approve')">✅ Onayla</button>
+          <button class="onay-btn red" onclick="onayVer('${esc(o.id)}','reject')">⛔ Reddet (revizyon iste)</button></div>`:''}
       </div>`;
     }).join('')||'<div class="soluk">İnsan onay kapısı yok.</div>';
+    document.querySelectorAll('#onay-liste details[open].onay-dosya').forEach(onayDosyaYukle);
   }catch(e){}
 }
-async function onayDosyaAc(yol){
-  const d=await(await fetch('/api/onay-dosya?yol='+encodeURIComponent(yol))).json();
-  document.getElementById('modal-ic').innerHTML=`<h3>${esc(yol)}</h3>
-    <pre style="white-space:pre-wrap;max-height:70vh;overflow:auto">${esc(d.ok?d.icerik:d.mesaj)}</pre>
-    <button onclick="modalKapat()">Kapat</button>`;
-  document.getElementById('modal').classList.remove('gizli');
+async function onayDosyaYukle(el){
+  if(!el.open||el.dataset.yuklendi)return; el.dataset.yuklendi='1';
+  const kutu=el.querySelector('.onay-icerik');
+  const d=await(await fetch('/api/onay-dosya?yol='+encodeURIComponent(el.dataset.yol))).json();
+  if(!d.ok){kutu.textContent=d.mesaj;return;}
+  if(d.tur==='html'){
+    kutu.innerHTML='<iframe sandbox="" class="onay-onizleme"></iframe>';   // betik/ağ yok: yalnız statik önizleme
+    kutu.querySelector('iframe').srcdoc=d.icerik;
+  } else if(d.tur==='md'){ kutu.classList.remove('soluk'); kutu.innerHTML='<div class="md">'+mdHtml(d.icerik)+'</div>'; }
+  else { kutu.innerHTML='<pre>'+esc(d.icerik)+'</pre>'; }
 }
 async function onayVer(id,karar){
   const n=(document.getElementById('not-'+id)||{}).value||'';
   if(karar==='reject'&&!n.trim()){toast('Ret için gerekçe yazın.');return;}
-  if(!confirm((karar==='approve'?'ONAYLANACAK: ':'REDDEDİLECEK: ')+id+'\nDevam?'))return;
+  if(!confirm((karar==='approve'?'ONAYLANACAK: ':'REVİZYON İSTENECEK: ')+id+'\nDevam?'))return;
   const d=await(await fetch('/api/onay',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({id:id,karar:karar,not:n})})).json();
-  toast(d.mesaj); onayYukle();
+  toast(d.mesaj); onayYukle(true);
 }
 
 // ---------- döngü ----------
-ozetYukle(); panoYukle(); onayYukle();
+ozetYukle(); panoYukle(); onayYukle(true);
 setInterval(ozetYukle,2500);
 setInterval(onayYukle,5000);
 setInterval(()=>{ if(aktifSekme==='pano')panoYukle(); if(aktifSekme==='canli')canliYukle();
