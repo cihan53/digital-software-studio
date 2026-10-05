@@ -89,6 +89,30 @@ class PanelOnay(unittest.TestCase):
         # W1 doğrudan G1'e bağlı; zincir bitince dolaylı görevler de listelenir (burada tek halka)
         self.assertEqual([x["id"] for x in d["onaylar"][0]["onaylanirsa"]], ["W1"])
 
+    def test_gorsel_okuma_ve_eslestirme(self):
+        d = Path(tempfile.mkdtemp())
+        eski = W.ROOT
+        try:
+            W.ROOT = d
+            g = d / "workspace" / "docs" / "ekranlar" / "_gorsel"
+            g.mkdir(parents=True)
+            (g / "a.png").write_bytes(b"\x89PNG\r\n\x1a\nXX")
+            (g.parent / "m").mkdir()
+            (g.parent / "m" / "a.md").write_text("# a")
+            veri, hata = W.gorsel_oku("workspace/docs/ekranlar/_gorsel/a.png")
+            self.assertIsNotNone(veri)
+            for kotu in ("../etc/passwd", "/etc/passwd", "workspace/docs/ekranlar/m/a.md"):
+                self.assertIsNone(W.gorsel_oku(kotu)[0], kotu)               # yol kaçışı ve png dışı reddedilir
+            # görsel eşleştirme: ekranlar/<modül>/<ad>.md ↔ ekranlar/_gorsel/<ad>.png
+            B.save(B.normalize({"sprints": [{"id": "S1", "name": "s", "order": 0, "tasks": [
+                {"id": "G9", "title": "g", "description": "İncele: workspace/docs/ekranlar/m", "role": "human", "phase": "test",
+                 "outputs": [str(d / "o.md")], "depends_on": [], "status": B.READY, "order": 0}]}]}))
+            o = [x for x in W.onaylar()["onaylar"] if x["id"] == "G9"][0]
+            self.assertEqual([x["ad"] for x in o["gorseller"]], ["a"])
+        finally:
+            W.ROOT = eski
+            shutil.rmtree(d, ignore_errors=True)
+
     def test_dosya_yolu_kacisi_engellenir(self):
         for yol in ("../../etc/passwd", "/etc/passwd", "studio_engine.py", "workspace/../studio_web.py"):
             self.assertFalse(W.onay_dosya(yol)["ok"], yol)
