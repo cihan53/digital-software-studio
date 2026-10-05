@@ -977,6 +977,12 @@ def _call_agy(system_prompt: str, user_prompt: str, effort: str, model: str,
     )
 
 
+def _html_gecerli(metin: str) -> bool:
+    """HTML hedefi için asgari doğrulama: gerçek bir HTML etiketi içermeli (JSON/düz metin değil)."""
+    t = (metin or "").lstrip()
+    return bool(re.search(r"<(!doctype\s+html|html|body|main|div|section|svg)\b", t[:4000], re.I)) and not t.startswith(("{", "["))
+
+
 def _call_devin(system_prompt: str, user_prompt: str, effort: str, model: str,
                 tools: list | None = None) -> CliResult:
     """Devin CLI'yi print (etkileşimsiz) kipinde çalıştırır.
@@ -1030,6 +1036,7 @@ def _call_devin(system_prompt: str, user_prompt: str, effort: str, model: str,
     def _devin_izle():
         baslangic = int(time.time())
         oturum = None
+        onceki = [None]
         # Aynı message_id birden fazla düğüm olarak kaydedilir (kısmi → tam);
         # kimliğe göre tutup yenisiyle ezeceğiz — sıra ilk görülme sırası.
         mesajlar = {}
@@ -1043,13 +1050,21 @@ def _call_devin(system_prompt: str, user_prompt: str, effort: str, model: str,
                     conn = sqlite3.connect(
                         f"file:{sess_db}?mode=ro", uri=True, timeout=1)
                     try:
+                        if onceki[0] is None:
+                            # Çağrı başındaki mevcut oturumlar: aynı dizindeki başka bir çağrının
+                            # (örn. brief görüşmesi) oturumu bu çağrıya yanlışlıkla bağlanmasın.
+                            onceki[0] = {r[0] for r in conn.execute(
+                                "SELECT id FROM sessions WHERE working_directory=?",
+                                (str(run_cwd),)).fetchall()}
                         if oturum is None:
-                            row = conn.execute(
-                                "SELECT id FROM sessions WHERE"
-                                " working_directory=? AND created_at>=?"
-                                " ORDER BY created_at DESC LIMIT 1",
-                                (str(run_cwd), baslangic - 10)).fetchone()
-                            oturum = row[0] if row else None
+                            for oid, in conn.execute(
+                                    "SELECT id FROM sessions WHERE"
+                                    " working_directory=? AND created_at>=?"
+                                    " ORDER BY created_at ASC",
+                                    (str(run_cwd), baslangic - 2)).fetchall():
+                                if oid not in onceki[0]:
+                                    oturum = oid
+                                    break
                         if oturum:
                             dugumler = conn.execute(
                                 "SELECT node_id, chat_message FROM"
@@ -1955,6 +1970,11 @@ def run_agent(agent: dict, brief: str, state: dict, force: bool = False,
             "tools": tools,
         }
         output = query_claude(system, user, backend, model, effort, meta, tools)
+        if target.endswith(".html") and not _html_gecerli(output):
+            print("       [!] çıktı geçerli HTML değil; bir kez yeniden deneniyor.")
+            output = query_claude(system, user, backend, model, effort, meta, tools)
+            if not _html_gecerli(output):
+                raise RuntimeError(f"{target}: model geçerli HTML üretmedi (ilk 120 karakter: {output.strip()[:120]!r})")
 
         if target.endswith("/"):
             files = write_multi_file(target, output)
