@@ -375,3 +375,7 @@ Yalnız projenin kendi betiği çalıştırılır; kapatma yalnız bu projeye ai
 ### Uygulama dizini sözleşmesi
 
 Devops, web ve test görevleri aynı uygulama dizinini kullanır: `planlama.dizinler.uygulama` (varsayılan `workspace/src/web`). Planlayıcı istemine eklenir; üretilen panodaki ilgili görevlerin açıklamasına ve eş-anlamlı çıktı yollarına (`frontend`, `app`, `client`, `ui`) uygulanır. `yerel_ortam.sh` üreten göreve "dizini sabit yazma, `nuxt.config.*`/`package.json` bulunan dizini keşfet" kuralı eklenir. (`scripts/uygulama_dizini.py`)
+
+### Kalite denetimi ayarları (`studio.config.json` → `kalite`)
+
+Çerçeve hiçbir projeye özel kural taşımaz. İsteğe bağlı: `kalite.kritik_rotalar` (`[{"ad": "...", "isaretler": ["userRoutes", "/users"]}]`; backend `app.ts`te korunması gereken rotalar) ve `kalite.nuxt_host_kontrolu` (`nuxt.config.*` içinde `devServer`/`127.0.0.1` zorunlu). Varsayılan: ikisi de kapalı. Sprint rehberi `live.ports` ve `workspace/yerel_ortam.sh`ten üretilir.
