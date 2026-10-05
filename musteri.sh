@@ -39,7 +39,7 @@ yeni_bildirim_formu() {
   echo "  1) HATA (Bug / Çalışmayan veya hatalı işlev)"
   echo "  2) ISTEK (Yeni Özellik veya geliştirme)"
   echo "  3) UX (Tasarım, mobil görünüm veya kullanıcı deneyimi)"
-  echo "  4) VERI (Eksik veya hatalı istasyon verisi)"
+  echo "  4) VERI (Eksik veya hatalı veri)"
   read -r -p "Seçiminiz [1-4] (Varsayılan: 1): " tur_secim
   case "$tur_secim" in
     2) TUR="ISTEK" ;;
@@ -59,7 +59,7 @@ yeni_bildirim_formu() {
     *) ONCELIK="NORMAL" ;;
   esac
 
-  echo -e "\n${BOLD}3. İlgili Sayfa veya URL:${NC} (Örn: /, /[operator], İstasyon Detay Paneli)"
+  echo -e "\n${BOLD}3. İlgili Sayfa veya URL:${NC} (Örn: /, /login, Ayarlar Paneli)"
   read -r -p "Sayfa [/]: " SAYFA
   [ -z "$SAYFA" ] && SAYFA="/"
 
@@ -162,7 +162,7 @@ while true; do
   echo -e "  ${CYAN}2)${NC} 📋 Talepleri ve Durumları Listele"
   echo -e "  ${CYAN}3)${NC} 🔍 Belirli Bir Talebi İncele"
   echo -e "  ${CYAN}4)${NC} 🧠 Studio Yetkilisini Çağır (Bekleyenleri Çözüm İçin Planla)"
-  echo -e "  ${CYAN}5)${NC} 🌐 Canlı Test Ortamını Başlat (Nuxt & Fastify)"
+  echo -e "  ${CYAN}5)${NC} 🌐 Canlı Test Ortamını Başlat (workspace/yerel_ortam.sh)"
   echo -e "  ${CYAN}6)${NC} 📑 Talep Havuzu Dosyasını Aç (musteri_talepleri.md)"
   echo -e "  ${CYAN}7)${NC} ⚖️  Karar Verici Masası (Triage, Fazlama & Onay)"
   echo -e "  ${CYAN}0)${NC} Çıkış"

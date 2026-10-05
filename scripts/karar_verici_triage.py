@@ -35,36 +35,26 @@ except ImportError:
 
 FAZLAR_FILE = ROOT / "workspace" / "docs" / "fazlar.json"
 
-VARSAYILAN_FAZLAR = {
-    "fazlar": [
-        {
-            "id": "FAZ-1",
-            "ad": "Çekirdek Platform, Arama ve Canlı Yayına Alma (MVP)",
-            "aciklama": "Harita, BBox keşfi, istasyon detayları, GADM CBS sınırları ve canlıya alma stabilizasyonu.",
-            "durum": "AKTIF",
-            "hedef_tarih": "2026-09-18",
-            "kilitli": False
-        },
-        {
-            "id": "FAZ-2",
-            "ad": "Sürüm Yönetimi, Değişiklik Günlüğü ve Kullanıcı Bildirimleri",
-            "aciklama": "Yeni sürüm çıktığında 20s otomatik sayfa yenileme, /guncellemeler (changelog) ekranı ve sürüm izleme.",
-            "durum": "PLANLANDI",
-            "hedef_tarih": "2026-09-25",
-            "kilitli": True,
-            "onkosul_faz": "FAZ-1"
-        },
-        {
-            "id": "FAZ-3",
-            "ad": "CPO Derin Entegrasyon, Rota Optimizasyonu & Rezervasyon",
-            "aciklama": "Şarj istasyonu doluluk oranları, rota planlama ve operatör rezervasyon entegrasyonları.",
-            "durum": "PLANLANDI",
-            "hedef_tarih": "2026-10-10",
-            "kilitli": True,
-            "onkosul_faz": "FAZ-2"
-        }
-    ]
-}
+def varsayilan_fazlar() -> dict:
+    """Projeden bağımsız başlangıç yol haritası; adlar ve tarihler proje başladığı günden hesaplanır, Fazlar sekmesinden değiştirilir."""
+    from datetime import date, timedelta
+    bugun = date.today()
+    return {
+        "fazlar": [
+            {"id": "FAZ-1", "ad": "Çekirdek Kapsam (MVP) ve Canlıya Alma",
+             "aciklama": "Brief'teki temel ekranlar/işlevler çalışır, canlı ortamda doğrulanır ve stabilize edilir.",
+             "durum": "AKTIF", "hedef_tarih": (bugun + timedelta(days=14)).isoformat(), "kilitli": False},
+            {"id": "FAZ-2", "ad": "Stabilizasyon ve İyileştirmeler",
+             "aciklama": "MVP sonrası müşteri geri bildirimleri, hata düzeltmeleri ve kullanıcı deneyimi iyileştirmeleri.",
+             "durum": "PLANLANDI", "hedef_tarih": (bugun + timedelta(days=28)).isoformat(), "kilitli": True, "onkosul_faz": "FAZ-1"},
+            {"id": "FAZ-3", "ad": "Genişleme ve Derin Entegrasyon",
+             "aciklama": "Kapsamı genişleten özellikler, dış sistem entegrasyonları ve ölçeklenme çalışmaları.",
+             "durum": "PLANLANDI", "hedef_tarih": (bugun + timedelta(days=56)).isoformat(), "kilitli": True, "onkosul_faz": "FAZ-2"},
+        ]
+    }
+
+
+VARSAYILAN_FAZLAR = varsayilan_fazlar()
 
 
 def db_conn():

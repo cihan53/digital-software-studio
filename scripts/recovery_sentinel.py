@@ -181,7 +181,7 @@ class RecoverySentinelAgent:
                 self.log("⏳", f"Canlı dağıtım (CI/CD) GitHub Actions üzerinde devam ediyor (Run ID: {run_id}).")
             elif conclusion == "success":
                 sonuc["durum"] = "BASARILI"
-                self.log("✅", f"Canlı dağıtım (CI/CD) BAŞARILI! Sürüm cPanel ortamında aktif (Run ID: {run_id}).")
+                self.log("✅", f"Canlı dağıtım (CI/CD) BAŞARILI! Sürüm canlı ortamda aktif (Run ID: {run_id}).")
                 self._coz_deploy_talepleri()
             elif conclusion in ("failure", "timed_out", "cancelled"):
                 sonuc["durum"] = "BASARISIZ"
@@ -222,7 +222,7 @@ class RecoverySentinelAgent:
                     return
             yeni = MT.yeni_talep(
                 "HATA",
-                f"[DEPLOY-CI/CD] GitHub Actions cPanel dağıtımı başarısız oldu (Run #{run_id})",
+                f"[DEPLOY-CI/CD] GitHub Actions canlı dağıtımı başarısız oldu (Run #{run_id})",
                 f"GitHub Actions '{workflow}' iş akışı canlıya dağıtım yaparken çöktü.\n\n"
                 f"**Run ID:** {run_id}\n\n"
                 f"**Başarısız Olan Adım Logları:**\n```\n{hata[:1200]}\n```\n\n"
