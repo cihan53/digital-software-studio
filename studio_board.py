@@ -10,6 +10,7 @@ başlamaz, onun yerine sonraki tüm sprint'lerin planlanan tarihleri kayar.
 from __future__ import annotations
 
 import json
+import re
 import os
 import signal
 import socket
@@ -33,6 +34,7 @@ TODO, READY, RUNNING, BLOCKED, DONE, FAILED, SKIPPED = (
 )
 TERMINAL = {DONE, SKIPPED}
 PHASE_ORDER = {"develop": 0, "test": 1, "deploy": 2}
+TELAFI_NOT_RX = re.compile(r"telafi\s+(TALEP-\d+)\s+talebine devredildi")
 
 
 # ---------------------------------------------------------------- veritabanı
@@ -833,7 +835,16 @@ def refresh(board: dict) -> dict:
                     t["status"] = SKIPPED
                     t["note"] = "talep iptal edildi"
 
-    done_ids = {t["id"] for _, t in all_tasks(board) if t["status"] in TERMINAL}
+    # Telafiye devredilen (kalite kapısından düşüp 'telafi TALEP-N talebine devredildi' notuyla SKIPPED yapılan) görev,
+    # ilgili talep çözülene/iptal edilene kadar BAŞARILI sayılmaz: bağımlıları başlamaz, sprint kapanmaz.
+    # Kullanıcının bilerek atladığı ('kullanıcı atladı') ve iptal edilen talep görevleri etkilenmez.
+    acik_telafi = set()
+    for _, t in all_tasks(board):
+        if t["status"] == SKIPPED:
+            m = TELAFI_NOT_RX.search(t.get("note") or "")
+            if m and m.group(1) not in cozulmus_talepler and m.group(1) not in iptal_talepler:
+                acik_telafi.add(t["id"])
+    done_ids = {t["id"] for _, t in all_tasks(board) if t["status"] in TERMINAL and t["id"] not in acik_telafi}
     failed_ids = {t["id"] for _, t in all_tasks(board) if t["status"] == FAILED}
 
     active = is_runner_active()
@@ -852,14 +863,14 @@ def refresh(board: dict) -> dict:
             if deps & failed_ids:
                 t["status"] = BLOCKED
                 t["note"] = "bağımlı olduğu görev başarısız"
-            elif not prev_closed:
-                t["status"] = TODO          # önceki sprint bitmedi: sıra gelmedi
+            elif not prev_closed and not t.get("talep_id"):
+                t["status"] = TODO          # önceki sprint bitmedi: sıra gelmedi (telafi/talep görevleri hariç)
             elif deps <= done_ids:
                 t["status"] = READY
             else:
                 t["status"] = TODO
 
-        statuses = {t["status"] for t in s["tasks"]}
+        statuses = {(BLOCKED if t["id"] in acik_telafi else t["status"]) for t in s["tasks"]}
         if statuses <= TERMINAL:
             if s["status"] != DONE:
                 s["status"] = DONE
@@ -904,7 +915,16 @@ def next_ready(board: dict):
                                       t.get("order", 0), t["id"]))
             return s, ready[0]
         if any(t["status"] not in TERMINAL for t in s["tasks"]):
-            return None, None      # bu sprint bitmeden sonrakine geçilmez
+            # Bu sprint bitmeden sonrakine geçilmez; İSTİSNA: telafi (talep'li) görevler sprint sırasını atlar,
+            # yoksa telafi bekleyen bir sprint, telafiyi yapacak görevleri beklerken kilitlenir.
+            for s2 in sorted(board["sprints"], key=lambda x: x["order"]):
+                if s2["order"] <= s["order"]:
+                    continue
+                tel = [t for t in s2["tasks"] if t["status"] == READY and t.get("talep_id") and not is_human(t)]
+                if tel:
+                    tel.sort(key=lambda t: (-(t.get("priority") or 0), PHASE_ORDER.get(t["phase"], 9), t.get("order", 0), t["id"]))
+                    return s2, tel[0]
+            return None, None
     return None, None
 
 
