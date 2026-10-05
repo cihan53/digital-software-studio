@@ -141,7 +141,7 @@ class GezginUcAnca(unittest.TestCase):
                                  "skip_routes": ["^/login"], "inventory": str(t / "inv.txt"), "log": str(t / "docs" / "log.jsonl")}}
             (t / "cfg.json").write_text(json.dumps(cfg))
             env = {**os.environ, "STUDIO_CONFIG": str(t / "cfg.json"), "STUDIO_KESIF_PROFIL": str(t / "prof")}
-            r = subprocess.run(["node", "scripts/kesif_gezgin.mjs", "--sema"], cwd=ROOT, env=env, capture_output=True, text=True, timeout=120)
+            r = subprocess.run(["node", "scripts/kesif_gezgin.mjs", "--sema", "--gorsel"], cwd=ROOT, env=env, capture_output=True, text=True, timeout=120)
             srv.shutdown()
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertIn("New item", tiklar)
@@ -162,6 +162,10 @@ class GezginUcAnca(unittest.TestCase):
             self.assertIn("GET /api/items", sema)
             self.assertNotIn("Secret Name", sema)
             self.assertIn('"Finished"', sema)
+            # referans ekran görüntüsü: geçerli PNG
+            png = (t / "docs" / "_gorsel" / "home.png").read_bytes()
+            self.assertEqual(png[:8], b"\x89PNG\r\n\x1a\n")
+            self.assertGreater(len(png), 500)
             # Chrome profili serbest: süreç temizlendi
             ps = subprocess.run(["pgrep", "-f", str(t / "prof")], capture_output=True, text=True)
             self.assertEqual(ps.stdout.strip(), "")
