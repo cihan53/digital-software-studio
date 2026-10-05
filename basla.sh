@@ -658,6 +658,29 @@ echo
 dim "Log: $LOG    Durdurmak için kontrol ekranında 's'"
 echo
 
+web_panel_baslat() {
+  # Web arayüzü: port doluysa ya da dosya yoksa atla. Koşucu düşse bile panel açık kalmalı (log/durum oradan görülür).
+  WEB_PORT="${STUDIO_WEB_PORT:-8090}"
+  WEB_HOST="${STUDIO_WEB_HOST:-127.0.0.1}"
+  if [ ! -f studio_web.py ]; then
+    dim "studio_web.py yok — web paneli atlandı"
+  elif lsof -iTCP:"$WEB_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+    dim "Web paneli zaten açık: http://$WEB_HOST:$WEB_PORT/panel"
+  else
+    mkdir -p workspace/logs
+    nohup $PY studio_web.py > workspace/logs/web.log 2>&1 &
+    echo $! > workspace/.web.pid
+    sleep 1
+    if kill -0 $! 2>/dev/null; then
+      grn "✓ Web paneli: http://$WEB_HOST:$WEB_PORT/panel"
+    else
+      ylw "Web paneli başlatılamadı — log: workspace/logs/web.log"
+    fi
+  fi
+}
+
+web_panel_baslat
+
 # Bilinçli başlatma: 'acil durdur' (devre_disi) bayrağı kalmışsa temizle,
 # yoksa koşucu ilk döngüde hiçbir şey yapmadan çıkar.
 $PY -c "import studio_board as B; B.clear('devre_disi')" 2>/dev/null || true
@@ -671,28 +694,12 @@ nohup $PY studio_engine.py --full --yes ${STUDIO_BUTCE:+--max-cost $STUDIO_BUTCE
 PID=$!
 sleep 2
 if ! kill -0 "$PID" 2>/dev/null; then
-  red "✗ Koşucu hemen düştü. Son satırlar:"; tail -15 "$LOG"; exit 1
+  red "✗ Koşucu hemen düştü. Son satırlar:"; tail -15 "$LOG"
+  dim "Panel açık kaldı (log ve durum için): http://${STUDIO_WEB_HOST:-127.0.0.1}:${STUDIO_WEB_PORT:-8090}/panel"
+  exit 1
 fi
 grn "✓ Koşucu çalışıyor (pid $PID)"
 
-# Web arayüzü de kalksın — port doluysa ya da dosya yoksa atla.
-WEB_PORT="${STUDIO_WEB_PORT:-8090}"
-WEB_HOST="${STUDIO_WEB_HOST:-127.0.0.1}"
-if [ ! -f studio_web.py ]; then
-  dim "studio_web.py yok — web paneli atlandı"
-elif lsof -iTCP:"$WEB_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
-  dim "Web paneli zaten açık: http://$WEB_HOST:$WEB_PORT/panel"
-else
-  mkdir -p workspace/logs
-  nohup $PY studio_web.py > workspace/logs/web.log 2>&1 &
-  echo $! > workspace/.web.pid
-  sleep 1
-  if kill -0 $! 2>/dev/null; then
-    grn "✓ Web paneli: http://$WEB_HOST:$WEB_PORT/panel"
-  else
-    ylw "Web paneli başlatılamadı — log: workspace/logs/web.log"
-  fi
-fi
 echo
 dim "Kontrol ekranı açılıyor — çıkmak için 'q' (çıkışta servisleri de kapatmayı seçebilirsin; koşu arka planda devam eder)"
 sleep 2
