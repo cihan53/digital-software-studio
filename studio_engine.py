@@ -493,6 +493,29 @@ def trace_fail(meta: dict, error: str, duration: float):
 VALID_BACKENDS = ("agy", "devin", "claude")
 
 
+def _normalize_dynamic_role(r: dict) -> dict:
+    """ekip_yapisi.json rolleri serbest şemalıdır (purpose/responsibilities/deliverables...); org şemasının zorunlu alanlarını doldurur (issue #211)."""
+    rid = str(r["id"])
+    r.setdefault("title", rid.replace("_", " ").title())
+    if not r.get("system_prompt"):
+        parca = [f"Sen '{r['title']}' ({rid}) rolüsün."]
+        if r.get("purpose"):
+            parca.append(f"Amaç: {r['purpose']}")
+        gor = r.get("responsibilities")
+        if isinstance(gor, list) and gor:
+            parca.append("Sorumluluklar:\n" + "\n".join(f"- {g}" for g in gor if isinstance(g, str)))
+        elif isinstance(gor, str):
+            parca.append(f"Sorumluluklar: {gor}")
+        for ek in ("constraint", "note", "decision_gate"):
+            if isinstance(r.get(ek), str) and r[ek]:
+                parca.append(f"{ek}: {r[ek]}")
+        r["system_prompt"] = "\n".join(parca)
+    for alan in ("inputs", "outputs", "tools"):
+        if not isinstance(r.get(alan), list):
+            r[alan] = []
+    return r
+
+
 def load_and_merge_dynamic_roles(org: dict) -> dict:
     """CTO ve Product Owner tarafından tanımlanan ekip_yapisi.json varsa rolleri org şemasına ekler."""
     team_file = WORKSPACE / "docs" / "ekip_yapisi.json"
@@ -503,6 +526,7 @@ def load_and_merge_dynamic_roles(org: dict) -> dict:
             existing_ids = {a["id"] for a in org.get("hierarchy", [])}
             for r in roles:
                 if isinstance(r, dict) and r.get("id") and r["id"] not in existing_ids:
+                    r = _normalize_dynamic_role(r)
                     r.setdefault("stage", "build")
                     r.setdefault("backend", BACKEND)
                     r.setdefault("model", AGY_MODEL)
