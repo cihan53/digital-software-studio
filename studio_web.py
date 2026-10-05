@@ -308,6 +308,22 @@ _DOK_TURLERI = {".md", ".html", ".json", ".txt"} | set(_GORSEL_TURLERI)
 _DOK_ATLA = {"_ham", "node_modules", ".git"}
 
 
+def html_ham(yol: str):
+    """Yeni sekmede açılacak HTML doküman: yalnız workspace/ altında .html. (bayt, hata) döndürür."""
+    p = (ROOT / yol).resolve()
+    try:
+        p.relative_to((ROOT / "workspace").resolve())
+    except ValueError:
+        return None, "yalnız workspace/ altı"
+    if p.suffix.lower() != ".html" or not p.is_file():
+        return None, "html doküman yok"
+    return p.read_bytes(), ""
+
+
+# Yeni sekmede açılan üretilmiş HTML: betik çalışabilir ama panel origin'ine/API'sine erişemez (opak origin), form/üst gezinme yok.
+HTML_CSP = "sandbox allow-scripts allow-popups; default-src 'self' data: blob: 'unsafe-inline' 'unsafe-eval'; connect-src 'none'; form-action 'none'"
+
+
 def gorsel_oku(yol: str):
     """Görsel: yalnız workspace/ altında png/jpg/gif/webp. (bayt, mime, hata) döndürür."""
     p = (ROOT / yol).resolve()
@@ -639,9 +655,11 @@ class Handler(BaseHTTPRequestHandler):
         sys.stderr.write("[web] %s - %s\n" % (self.address_string(), fmt % args))
 
     # ------------------------------------------------ yardımcılar
-    def _send(self, code: int, body: bytes, ctype: str):
+    def _send(self, code: int, body: bytes, ctype: str, ek_basliklar: dict | None = None):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
+        for k, v in (ek_basliklar or {}).items():
+            self.send_header(k, v)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
@@ -700,6 +718,12 @@ class Handler(BaseHTTPRequestHandler):
             if veri is None:
                 return self._json({"ok": False, "mesaj": hata}, 404)
             return self._send(200, veri, mime)
+        if path == "/api/dokuman-html":
+            veri, hata = html_ham(q.get("yol", [""])[0])
+            if veri is None:
+                return self._json({"ok": False, "mesaj": hata}, 404)
+            return self._send(200, veri, "text/html; charset=utf-8",
+                              {"Content-Security-Policy": HTML_CSP, "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer"})
         if path == "/api/dokumanlar":
             return self._json(dokumanlar())
         if path == "/api/onay-dosya":

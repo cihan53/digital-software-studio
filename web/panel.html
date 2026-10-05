@@ -719,6 +719,12 @@ async function dokAc(yol){
   dokSec=yol; if(document.getElementById('s-dok').classList.contains('gizli')) sekmeAc('dok'); dokCiz();
   const k=document.getElementById('dok-icerik'); document.getElementById('dok-yol').textContent=yol;
   const tur=(yol.split('.').pop()||'').toLowerCase();
+  if(tur==='html'){   // HTML dokümanlar yeni (boş) sekmede açılır; tıklama bağlamında açıldığı için engellenmez
+    const url='/api/dokuman-html?yol='+encodeURIComponent(yol);
+    const w=window.open(url,'_blank','noopener');
+    k.innerHTML=`<div class="ipucu">HTML doküman yeni sekmede açıldı. ${w?'':'<b>Tarayıcı açılışı engelledi.</b> '}Açılmadıysa: <a href="${url}" target="_blank" rel="noopener">↗ Yeni sekmede aç</a></div>`;
+    return;
+  }
   if(['png','jpg','jpeg','gif','webp'].includes(tur)){ k.innerHTML=`<img alt="" src="/api/gorsel?yol=${encodeURIComponent(yol)}">`; return; }
   k.textContent='Yükleniyor…';
   const d=await(await fetch('/api/onay-dosya?yol='+encodeURIComponent(yol))).json();
@@ -728,7 +734,7 @@ async function dokAc(yol){
     const m=yol.match(/^(.*\/ekranlar)\/(?:.*\/)?([^/]+)\.md$/), png=m&&`${m[1]}/_gorsel/${m[2]}.png`;
     if(png&&dokListe.some(f=>f.yol===png)) h=`<div class="ipucu">Referans ekran görüntüsü</div><img alt="referans" src="/api/gorsel?yol=${encodeURIComponent(png)}">`+h;
     k.innerHTML=h;
-  } else if(d.tur==='html'){ k.innerHTML='<iframe sandbox></iframe>'; k.firstChild.srcdoc=d.icerik; }
+  }
   else { let t=d.icerik; if(d.tur==='json'){ try{ t=JSON.stringify(JSON.parse(t),null,2); }catch(e){} } k.innerHTML='<pre class="md-kod"></pre>'; k.firstChild.textContent=t; }
 }
 // ---------- yerel ortam (başlat/durdur + log) ----------
@@ -803,7 +809,7 @@ async function onayDosyaYukle(el){
   const d=await(await fetch('/api/onay-dosya?yol='+encodeURIComponent(el.dataset.yol))).json();
   if(!d.ok){kutu.textContent=d.mesaj;return;}
   if(d.tur==='html'){
-    kutu.innerHTML='<iframe sandbox="" class="onay-onizleme"></iframe>';   // betik/ağ yok: yalnız statik önizleme
+    kutu.innerHTML=`<div style="margin-bottom:6px"><a href="/api/dokuman-html?yol=${encodeURIComponent(el.dataset.yol)}" target="_blank" rel="noopener">↗ Yeni sekmede aç (tam ekran)</a></div><iframe sandbox="" class="onay-onizleme"></iframe>`;   // betik/ağ yok: yalnız statik önizleme
     kutu.querySelector('iframe').srcdoc=d.icerik;
   } else if(d.tur==='md'){ kutu.classList.remove('soluk'); kutu.innerHTML='<div class="md">'+mdHtml(d.icerik)+'</div>'; }
   else { kutu.innerHTML='<pre>'+esc(d.icerik)+'</pre>'; }
