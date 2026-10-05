@@ -10,6 +10,7 @@
  *   node scripts/kesif_gezgin.mjs --login          # görünür Chrome açar; kullanıcı BİR KEZ giriş yapar
  *   node scripts/kesif_gezgin.mjs                  # envanteri gez (devam edilebilir)
  *   node scripts/kesif_gezgin.mjs --only '^/admin' --headed --fresh
+ *   node scripts/kesif_gezgin.mjs --fresh --gorsel   # her birim için ekran görüntüsü: <output_dir>/_gorsel/<slug>.png (yerel, git dışı)
  * Ortam: CHROME_PATH (varsayılan macOS Chrome). Profil: workspace/.kesif_profil (repoya girmez).
  * Çıktı: <analysis.output_dir>/_ham/<slug>.json, discovery.log (JSONL), _ham/_durum.json
  * Çıkış kodu: 0 tamam, 2 oturum yok, 3 sözleşme geçersiz, 4 sapma/ihlal.
@@ -109,6 +110,8 @@ async function main() {
   const durumYol = path.join(ham, '_durum.json');
   const semaYol = path.join(outDir, '_api_semalari.json');
   const semaAcik = flag('--sema');
+  const gorselAcik = flag('--gorsel');
+  const gorselDir = path.join(outDir, '_gorsel');
   const semalar = semaAcik && existsSync(semaYol) ? JSON.parse(readFileSync(semaYol, 'utf8')) : {};
 
   // ---- giriş modu ----
@@ -227,6 +230,13 @@ async function main() {
     if (yol.startsWith(d.login_path) && !rota.startsWith(d.login_path)) throw new OturumYok();
     await ev(`window.__ks_cfg = ${JSON.stringify(d.selectors || {})}; ${cikarici}`);
     const ex = await ev('window.__ks.extract()');
+    if (gorselAcik) {                              // referans ekran görüntüsü (yerel; kişisel veri içerebilir, git'e girmez)
+      try {
+        const sh = await pg.s('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 1440, height: 900, scale: 0.6 } });
+        mkdirSync(gorselDir, { recursive: true });
+        writeFileSync(path.join(gorselDir, slug(rota) + '.png'), Buffer.from(sh.data, 'base64'));
+      } catch { /* görüntü alınamadı: keşif sürer */ }
+    }
     ex.lk.forEach((h) => { if (h.startsWith('/')) gozlenen.add(h.split('?')[0].split('#')[0]); });
     const yonlendirme = ex.path.split('?')[0] !== rota && !rx(rota).test(ex.path.split('?')[0]) ? ex.path : null;
     const ulr = origin + ex.path;

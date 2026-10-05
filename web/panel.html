@@ -51,6 +51,9 @@
   .onay-kutu { background: rgba(127,127,127,.08); border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
   .onay-iki { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   @media (max-width: 800px) { .onay-iki { grid-template-columns: 1fr; } }
+  .onay-galeri { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+  .onay-galeri figure { margin: 0; cursor: zoom-in; } .onay-galeri img { width: 100%; border: 1px solid rgba(127,127,127,.3); border-radius: 6px; background: #fff; }
+  .onay-galeri figcaption { font-size: .8em; opacity: .7; word-break: break-all; }
   .onay-kutu ul { margin: 6px 0 0 18px; padding: 0; }
   .onay-dosya { border: 1px solid rgba(127,127,127,.25); border-radius: 8px; margin: 6px 0; padding: 6px 10px; }
   .onay-dosya summary { cursor: pointer; }
@@ -636,6 +639,8 @@ async function onayYukle(zorla){
           <div class="onay-kutu"><b>✅ Onaylarsanız şunlar başlar</b><ul>${evet}</ul></div>
           <div class="onay-kutu"><b>⛔ Reddederseniz</b><div class="soluk">Gerekçeniz geri bildirim olarak şu görev(ler)e eklenir ve yeniden çalışır:</div><ul>${hayir}</ul></div>
         </div>
+        ${(o.gorseller||[]).length?`<h4 style="margin:12px 0 6px">Mevcut ekran görüntüleri <span class="soluk">(referans: şu an çalışan Oobeya; yeni tasarım stili farklı olacak)</span></h4>
+          <div class="onay-galeri">${o.gorseller.map(g=>`<figure onclick="gorselAc('${esc(g.yol)}')"><img loading="lazy" src="/api/gorsel?yol=${encodeURIComponent(g.yol)}" alt="${esc(g.ad)}"><figcaption>${esc(g.ad)}</figcaption></figure>`).join('')}</div>`:''}
         <h4 style="margin:12px 0 6px">İncelenecek içerik</h4>${dos}
         ${o.kayit?`<details><summary class="soluk">Önceki kararlar</summary><pre>${esc(o.kayit)}</pre></details>`:''}
         ${bekler?`<div class="onay-eylem">
@@ -646,6 +651,10 @@ async function onayYukle(zorla){
     }).join('')||'<div class="soluk">İnsan onay kapısı yok.</div>';
     document.querySelectorAll('#onay-liste details[open].onay-dosya').forEach(onayDosyaYukle);
   }catch(e){}
+}
+function gorselAc(yol){
+  document.getElementById('modal-ic').innerHTML=`<img src="/api/gorsel?yol=${encodeURIComponent(yol)}" style="max-width:100%"><div><button onclick="modalKapat()">Kapat</button></div>`;
+  document.getElementById('modal').classList.remove('gizli');
 }
 async function onayDosyaYukle(el){
   if(!el.open||el.dataset.yuklendi)return; el.dataset.yuklendi='1';
