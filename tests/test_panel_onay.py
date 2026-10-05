@@ -96,6 +96,27 @@ class PanelOnay(unittest.TestCase):
         # W1 doğrudan G1'e bağlı; zincir bitince dolaylı görevler de listelenir (burada tek halka)
         self.assertEqual([x["id"] for x in d["onaylar"][0]["onaylanirsa"]], ["W1"])
 
+    def test_dokumanlar_listesi_guvenli(self):
+        d = Path(tempfile.mkdtemp())
+        eski = W.ROOT
+        try:
+            W.ROOT = d
+            e = d / "workspace" / "docs" / "ekranlar"
+            (e / "_ham").mkdir(parents=True)
+            (e / "_gorsel").mkdir()
+            (e / "m").mkdir()
+            (e / "_ham" / "gizli.json").write_text("{}")
+            (e / "m" / "a.md").write_text("# a")
+            (e / "_gorsel" / "a.png").write_bytes(b"x")
+            (e / "m" / "betik.svg").write_text("<svg onload=alert(1)/>")
+            (d / "workspace" / "docs" / "x.exe").write_text("x")
+            ys = {f["yol"] for f in W.dokumanlar()["dosyalar"]}
+            self.assertEqual(ys, {"workspace/docs/ekranlar/m/a.md", "workspace/docs/ekranlar/_gorsel/a.png"})   # _ham, svg, exe listelenmez
+            self.assertFalse(W.dokumanlar("../")["ok"])                                                         # workspace dışı reddedilir
+            self.assertIsNone(W.gorsel_oku("workspace/docs/ekranlar/m/betik.svg")[0])
+        finally:
+            W.ROOT = eski
+
     def test_gorsel_okuma_ve_eslestirme(self):
         d = Path(tempfile.mkdtemp())
         eski = W.ROOT
@@ -106,8 +127,9 @@ class PanelOnay(unittest.TestCase):
             (g / "a.png").write_bytes(b"\x89PNG\r\n\x1a\nXX")
             (g.parent / "m").mkdir()
             (g.parent / "m" / "a.md").write_text("# a")
-            veri, hata = W.gorsel_oku("workspace/docs/ekranlar/_gorsel/a.png")
+            veri, mime, hata = W.gorsel_oku("workspace/docs/ekranlar/_gorsel/a.png")
             self.assertIsNotNone(veri)
+            self.assertEqual(mime, "image/png")
             for kotu in ("../etc/passwd", "/etc/passwd", "workspace/docs/ekranlar/m/a.md"):
                 self.assertIsNone(W.gorsel_oku(kotu)[0], kotu)               # yol kaçışı ve png dışı reddedilir
             # görsel eşleştirme: ekranlar/<modül>/<ad>.md ↔ ekranlar/_gorsel/<ad>.png
