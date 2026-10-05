@@ -228,6 +228,15 @@ def _dosya_meta(yol: str) -> dict:
     return m
 
 
+def _aciklama_temiz(a: str) -> str:
+    """Panelde gösterilecek açıklama: İncele: satırı ve komut satırı ipuçları çıkarılır."""
+    a = _INCELE_RX.sub("", a or "")
+    a = re.sub(r"`python3 scripts/[^`]*`", "", a)
+    a = re.sub(r"\(ya da\s*\)|\(\s*\)", "", a)
+    a = re.sub(r"^\s*İNSAN KAPISI\.?\s*", "", a)
+    return re.sub(r"\s{2,}", " ", a).strip()
+
+
 def onaylar() -> dict:
     """İnsan onay kapıları: bekleyenler önce. Her kapı için: ne incelenecek, onaylanırsa/reddedilirse ne olacak."""
     IO = _io()
@@ -253,9 +262,14 @@ def onaylar() -> dict:
         dosyalar = [_dosya_meta(y) for y in yollar]
         yol = IO.kayit_yolu(t)
         kayit = yol.read_text(encoding="utf-8", errors="replace")[-900:] if yol.exists() else ""
-        etki = [{"id": x["id"], "baslik": x["title"], "rol": x["role"], "ciktilar": x.get("outputs", []), "durum": x["status"]}
-                for x in bagli.get(t["id"], [])]
-        out.append({"id": t["id"], "sprint": sp["id"], "baslik": t["title"], "aciklama": t.get("description", ""),
+        etki, gor, kuyruk = [], {t["id"]}, [t["id"]]          # onaylanınca zincirleme başlayacak görevler (dolaylı bağımlılar dahil)
+        while kuyruk:
+            for x in bagli.get(kuyruk.pop(0), []):
+                if x["id"] not in gor and not B.is_human(x):
+                    gor.add(x["id"])
+                    kuyruk.append(x["id"])
+                    etki.append({"id": x["id"], "baslik": x["title"], "rol": x["role"], "ciktilar": x.get("outputs", []), "durum": x["status"]})
+        out.append({"id": t["id"], "sprint": sp["id"], "baslik": t["title"], "aciklama": _aciklama_temiz(t.get("description", "")),
                     "durum": t["status"], "bagimliliklar": [{"id": d["id"], "baslik": d["title"], "rol": d["role"], "durum": d["status"]} for d in deps],
                     "dosyalar": dosyalar, "incele": yollar, "kayit": kayit, "not": t.get("note", ""),
                     "onaylanirsa": etki,
