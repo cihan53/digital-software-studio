@@ -51,6 +51,10 @@ DEFAULTS: dict = {
         "dizinler": {"tasarim": "workspace/docs/tasarim", "onay": "workspace/docs/onaylar",
                      "uygulama": "workspace/src/web", "mock": "workspace/src/backend/mock", "ekran": "workspace/src/web/modules", "parite": "workspace/tests/parite"},
     },
+    "kalite": {
+        "kritik_rotalar": [],                  # [{"ad": "Kullanıcı Rotaları", "isaretler": ["userRoutes", "/users"]}] — backend app.ts'te korunması gereken rotalar
+        "nuxt_host_kontrolu": False,           # true: nuxt.config.* içinde devServer/127.0.0.1 zorunlu (frontend hedeflerinde)
+    },
     "discovery": {
         "goal": "",
         "questions": [],
