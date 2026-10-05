@@ -379,3 +379,7 @@ Devops, web ve test görevleri aynı uygulama dizinini kullanır: `planlama.dizi
 ### Kalite denetimi ayarları (`studio.config.json` → `kalite`)
 
 Çerçeve hiçbir projeye özel kural taşımaz. İsteğe bağlı: `kalite.kritik_rotalar` (`[{"ad": "...", "isaretler": ["userRoutes", "/users"]}]`; backend `app.ts`te korunması gereken rotalar) ve `kalite.nuxt_host_kontrolu` (`nuxt.config.*` içinde `devServer`/`127.0.0.1` zorunlu). Varsayılan: ikisi de kapalı. Sprint rehberi `live.ports` ve `workspace/yerel_ortam.sh`ten üretilir.
+
+### Çerçeve projeden bağımsızdır
+
+Çerçeve dosyaları (motor, betikler, şablon roller, panel) hiçbir projeye özel yol, alan, teknoloji ya da rota içermez; `tests/test_cerceve_genel.py` bunu denetler. Projeye özel her şey `workspace/` altındadır: `studio.config.json` (`live.ports`, `planlama.dizinler.*`, `kalite.*`), `workspace/uat_checklist.json` (genel UAT/ziyaretçi betikleri için rota ve kontrol listesi) ve `workspace/scripts/<ad>` (aynı adlı çerçeve betiğinin yerine geçen proje betikleri).

@@ -4,7 +4,7 @@ scripts/studio_updater.py
 Digital Software Studio — Framework Versiyon Takip & Güncelleme Scripti
 =========================================================================
 
-Kullanan projeler (örn. elektriklioto-gemini) bu scripti çalıştırarak
+Kullanan projeler bu scripti çalıştırarak
 digital-software-studio framework'ünün güncel versiyonunu kontrol edebilir
 ve yeni değişiklikleri kontrollü olarak uygulayabilir.
 

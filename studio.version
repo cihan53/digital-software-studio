@@ -7,7 +7,6 @@
     "scripts/musteri_temsilcisi.py",
     "scripts/karar_verici_triage.py",
     "scripts/github_issue_bridge.py",
-    "scripts/migrate_to_sqlite.py",
     "scripts/recovery_sentinel.py",
     "scripts/studio_yetkilisi.py",
     "scripts/studio_updater.py",
