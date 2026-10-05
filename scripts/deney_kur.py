@@ -94,27 +94,33 @@ def kol_kur(ad: str, i: int, a) -> Path:
     hedef = Path(a.hedef) / f"{a.onek}-{ad}"
     if hedef.exists():
         raise SystemExit(f"[HATA] {hedef} zaten var; silmeden/üzerine yazmadan çıkıldı.")
-    kaynak = Path(a.kaynak)
+    kaynak = Path(a.kaynak or a.kaynak_yol or ".")
     sh("git", "clone", "-q", a.framework_url, str(hedef))
     sh("git", "remote", "rename", "origin", "framework", cwd=hedef)
     sh("git", "remote", "set-url", "--push", "framework", "DISABLED", cwd=hedef)       # framework deposuna yanlışlıkla push edilemez
     (hedef / "workspace" / "docs").mkdir(parents=True, exist_ok=True)
-    for rel in KOPYALA_DOSYA:
-        if (kaynak / rel).exists():
-            shutil.copy2(kaynak / rel, hedef / rel)
-    for g in KOPYALA_GLOB:
-        for f in kaynak.glob(g):
-            shutil.copy2(f, hedef / f.relative_to(kaynak))
-    for rel in KOPYALA_DIZIN:
-        if (kaynak / rel).exists():
-            shutil.copytree(kaynak / rel, hedef / rel, dirs_exist_ok=True)
+    if not a.sifir:
+        for rel in KOPYALA_DOSYA:
+            if (kaynak / rel).exists():
+                shutil.copy2(kaynak / rel, hedef / rel)
+        for g in KOPYALA_GLOB:
+            for f in kaynak.glob(g):
+                shutil.copy2(f, hedef / f.relative_to(kaynak))
+        for rel in KOPYALA_DIZIN:
+            if (kaynak / rel).exists():
+                shutil.copytree(kaynak / rel, hedef / rel, dirs_exist_ok=True)
+    elif (kaynak / ".env").exists():
+        shutil.copy2(kaynak / ".env", hedef / ".env")           # yalnız giriş bilgisi; .gitignore ile git dışı
     if a.brief:
         shutil.copy2(a.brief, hedef / "workspace/docs/proje_kapsami.md")
     elif (kaynak / "workspace/docs/proje_kapsami.md").exists():
         shutil.copy2(kaynak / "workspace/docs/proje_kapsami.md", hedef / "workspace/docs/proje_kapsami.md")
     cfgp = hedef / "workspace/studio.config.json"
     cfg = json.loads(cfgp.read_text(encoding="utf-8")) if cfgp.exists() else {}
-    cfg.setdefault("planlama", {})["uretici"] = "birim"
+    if a.sifir:
+        cfg = {"source": {"path": a.kaynak_yol, "live_url": a.canli_url, "kind": a.tur}}   # sıfır: yalnız kaynak tanımı; analiz/keşif/plan çerçeveyle üretilir
+    else:
+        cfg.setdefault("planlama", {})["uretici"] = "birim"
     cfg["live"] = {"ports": [p["nuxt"], p["backend"]]}
     cfg["deney"] = {"kol": ad, "backend": kol["backend"], "model": kol["model"], "portlar": p}
     cfgp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -175,7 +181,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sp = ap.add_subparsers(dest="cmd", required=True)
     k = sp.add_parser("kur")
-    k.add_argument("--kaynak", required=True)
+    k.add_argument("--kaynak", default="")
     k.add_argument("--hedef", required=True)
     k.add_argument("--onek", required=True)
     k.add_argument("--brief", default=None)
@@ -183,6 +189,10 @@ def main(argv=None) -> int:
     k.add_argument("--framework-url", default=FRAMEWORK_URL)
     k.add_argument("--github-sahip", default=None)
     k.add_argument("--plan", action="store_true")
+    k.add_argument("--sifir", action="store_true", help="hiçbir analiz/org_chart/plan kopyalama; yalnız brief + kaynak tanımı")
+    k.add_argument("--kaynak-yol", default="", help="--sifir: kaynak proje yolu")
+    k.add_argument("--canli-url", default="", help="--sifir: canlı referans URL")
+    k.add_argument("--tur", default="", help="--sifir: kaynak türü (örn. angular-spa)")
     e = sp.add_parser("esitle")
     e.add_argument("--kaynak-kol", required=True)
     e.add_argument("--hedefler", required=True)
