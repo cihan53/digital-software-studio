@@ -2126,6 +2126,11 @@ def run_planner(org: dict, brief: str, force: bool = False) -> dict:
         try:
             import plan_birim as PB
             board = B.normalize(PB.uret(scfg))
+            try:
+                import uygulama_dizini as _UD
+                _UD.uygula(board, scfg)
+            except Exception:
+                pass
             errs = B.validate(board)
             if errs:
                 sys.exit("[HATA] birim planı geçersiz:\n  " + "\n  ".join(errs[:10]))
@@ -2147,6 +2152,11 @@ def run_planner(org: dict, brief: str, force: bool = False) -> dict:
         f'- "{a["id"]}" → çıktıları: {", ".join(a["outputs"])}' for a in build_roles)
     # BOARD_TASK JSON şeması içerdiği için .format() kullanılamaz ({ } çakışır).
     task = BOARD_TASK.replace("{roles}", roles_block)
+    try:
+        import uygulama_dizini as UD
+        task += UD.planlayici_notu(scfg)
+    except Exception:
+        UD = None
 
     last_err = ""
     for attempt in (1, 2, 3):
@@ -2190,6 +2200,8 @@ def run_planner(org: dict, brief: str, force: bool = False) -> dict:
             if r and not any(a["id"] == r for a in org["hierarchy"]):
                 synthesize_role(org, r)
 
+        if UD:
+            UD.uygula(board, scfg)
         B.schedule(board)
         board["baseline_end"] = board["sprints"][-1]["planned_end"]
         B.refresh(board)

@@ -371,3 +371,7 @@ Yalnız `workspace/` altı okunur; `_ham/` (yerel, PII içerebilir) ve `.svg` (b
 
 `workspace/yerel_ortam.sh` (S1-T1 görevi üretir) oluşunca panelden **Başlat / Yeniden başlat / Durdur** ve canlı log izleme: portların durumu (`live.ports`), log `workspace/logs/yerel_ortam.log`.
 Yalnız projenin kendi betiği çalıştırılır; kapatma yalnız bu projeye ait süreçlere dokunur. Yazma uçları aynı-kaynak korumalıdır.
+
+### Uygulama dizini sözleşmesi
+
+Devops, web ve test görevleri aynı uygulama dizinini kullanır: `planlama.dizinler.uygulama` (varsayılan `workspace/src/web`). Planlayıcı istemine eklenir; üretilen panodaki ilgili görevlerin açıklamasına ve eş-anlamlı çıktı yollarına (`frontend`, `app`, `client`, `ui`) uygulanır. `yerel_ortam.sh` üreten göreve "dizini sabit yazma, `nuxt.config.*`/`package.json` bulunan dizini keşfet" kuralı eklenir. (`scripts/uygulama_dizini.py`)
