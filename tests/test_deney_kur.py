@@ -109,6 +109,20 @@ class DeneyKur(unittest.TestCase):
         self.assertIn('STUDIO_WEB_PORT="8092"', (d / "workspace/calistir.sh").read_text())   # tek kol kurulsa da devin portu sabit
         self.assertEqual(subprocess.run(["git", "status", "--short"], cwd=d, capture_output=True, text=True).stdout.strip(), "")
 
+    def test_yeniden_baslat_betigi_ve_betikler_komutu(self):
+        self._sifir_kur()
+        c = self.tmp / "sifir-devin"
+        sc = (c / "workspace/yeniden_baslat.sh").read_text()
+        self.assertIn("--durdur", sc)
+        self.assertIn("--zorla", sc)
+        self.assertIn("calistir.sh --baslat", sc)
+        self.assertNotIn("\r", sc)
+        self.assertEqual(subprocess.run(["bash", "-n", str(c / "workspace/yeniden_baslat.sh")], capture_output=True).returncode, 0)
+        (c / "workspace/yeniden_baslat.sh").unlink()
+        r = subprocess.run([sys.executable, str(ARAC), "betikler", "--hedefler", str(c)], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue((c / "workspace/yeniden_baslat.sh").exists())
+
     def test_var_olan_klasorun_uzerine_yazmaz(self):
         r = subprocess.run([sys.executable, str(ARAC), "kur", "--kaynak", str(self.tmp / "kaynak"), "--hedef", str(self.tmp), "--onek", "deney",
                             "--kollar", "claude", "--framework-url", str(ROOT)], capture_output=True, text=True)

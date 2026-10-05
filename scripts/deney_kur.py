@@ -93,6 +93,67 @@ exec ./basla.sh --web
     f.chmod(f.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP)
 
 
+def yeniden_baslat_yaz(d: Path, ad: str) -> None:
+    """workspace/yeniden_baslat.sh: koşucuyu nazikçe durdur (çalışan çağrı bitsin), panel ve yerel ortamı kapat, sonra başlat."""
+    s = f'''#!/usr/bin/env bash
+# {ad} kolu — durdur, bekle, yeniden başlat. Kullanım:
+#   ./workspace/yeniden_baslat.sh            nazik durdurma: çalışan model çağrısı BİTSİN, sonra yeniden başlat
+#   ./workspace/yeniden_baslat.sh --zorla    çalışan çağrıyı ANINDA kes (yarım kalan çağrı yeniden yapılır)
+#   ./workspace/yeniden_baslat.sh --panel    yalnız paneli aç (koşucu başlamaz)
+cd "$(dirname "$0")/.." || exit 1
+ZORLA=0; SADECE_PANEL=0
+for a in "$@"; do
+  case "$a" in --zorla) ZORLA=1 ;; --panel) SADECE_PANEL=1 ;; esac
+done
+
+kosucu_calisiyor() {{ python3 - <<'PY'
+import sys; sys.path.insert(0, "scripts")
+import servis_kapat as SK
+sys.exit(0 if SK.kosucu_pid() else 1)
+PY
+}}
+
+echo "[{ad}] Koşucu durduruluyor..."
+if [ "$ZORLA" = "1" ]; then
+  ./basla.sh --oldur >/dev/null 2>&1
+else
+  ./basla.sh --durdur >/dev/null 2>&1
+  for i in $(seq 1 90); do                      # en çok ~7,5 dk bekle; çalışan çağrı bitince koşucu kendiliğinden çıkar
+    kosucu_calisiyor || break
+    [ $((i % 6)) = 0 ] && echo "[{ad}] ... çalışan çağrının bitmesi bekleniyor ($((i*5))sn)"
+    sleep 5
+  done
+  if kosucu_calisiyor; then
+    echo "[{ad}] Koşucu hâlâ kapanmadı. Anında kesmek için: ./workspace/yeniden_baslat.sh --zorla"
+    exit 1
+  fi
+fi
+
+echo "[{ad}] Panel ve yerel ortam kapatılıyor..."
+python3 scripts/servis_kapat.py kapat --panel --ortam >/dev/null 2>&1
+rm -f workspace/.control/stop
+
+if [ "$SADECE_PANEL" = "1" ]; then
+  exec ./workspace/calistir.sh
+fi
+echo "[{ad}] Yeniden başlatılıyor..."
+exec ./workspace/calistir.sh --baslat
+'''
+    f = d / "workspace" / "yeniden_baslat.sh"
+    f.write_text(s, encoding="utf-8", newline="\n")
+    f.chmod(f.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP)
+
+
+def betikler(a) -> None:
+    """Mevcut kolların calistir.sh ve yeniden_baslat.sh dosyalarını (yeniden) yazar."""
+    for x in [Path(h) for h in a.hedefler.split(",") if h]:
+        cfg = json.loads((x / "workspace/studio.config.json").read_text(encoding="utf-8"))["deney"]
+        ad = cfg["kol"]
+        calistir_yaz(x, ad, KOLLAR[ad], cfg["portlar"])
+        yeniden_baslat_yaz(x, ad)
+        print(f"✓ {x.name}: workspace/calistir.sh, workspace/yeniden_baslat.sh")
+
+
 def kol_kur(ad: str, i: int, a) -> Path:
     kol = KOLLAR[ad]
     p = portlar(i)
@@ -131,6 +192,7 @@ def kol_kur(ad: str, i: int, a) -> Path:
     cfg["deney"] = {"kol": ad, "backend": kol["backend"], "model": kol["model"], "portlar": p}
     cfgp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     calistir_yaz(hedef, ad, kol, p)
+    yeniden_baslat_yaz(hedef, ad)
     (hedef / "workspace" / "deney.json").write_text(json.dumps({"kol": ad, **kol, "portlar": p, "girdi": girdi_ozeti(hedef)}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     sh(sys.executable, "scripts/depo_hijyeni.py", "--uygula", cwd=hedef)
     sh("git", "add", "-A", cwd=hedef)
@@ -214,6 +276,8 @@ def main(argv=None) -> int:
     k.add_argument("--kaynak-yol", default="", help="--sifir: kaynak proje yolu")
     k.add_argument("--canli-url", default="", help="--sifir: canlı referans URL")
     k.add_argument("--tur", default="", help="--sifir: kaynak türü (örn. angular-spa)")
+    b = sp.add_parser("betikler")
+    b.add_argument("--hedefler", required=True)
     e = sp.add_parser("esitle")
     e.add_argument("--kaynak-kol", default="", help="brief'in alınacağı kol dizini")
     e.add_argument("--kaynak-dosya", default="", help="ya da proje dışındaki ortak brief dosyası")
@@ -228,6 +292,8 @@ def main(argv=None) -> int:
             ds.append(d)
             print(f"✓ {d}")
         print(tablo(ds))
+    elif a.cmd == "betikler":
+        betikler(a)
     else:
         esitle(a)
     return 0
