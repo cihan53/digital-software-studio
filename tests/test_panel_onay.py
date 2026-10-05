@@ -80,6 +80,13 @@ class PanelOnay(unittest.TestCase):
             W.ROOT = eski
             shutil.rmtree(d, ignore_errors=True)
 
+    def test_bayat_pano_onayi_geri_almaz(self):
+        bayat = B.load()                                              # koşucunun uzun görev başında aldığı bellek görüntüsü
+        self.assertTrue(W.onay_ver({"id": "G1", "karar": "approve", "kim": "Test Kişi"})["ok"])
+        B.save(bayat)                                                 # görev bitince bayat panoyu bütünüyle yazar
+        _, g = B.find_task(B.load(), "G1")
+        self.assertEqual(g["status"], B.DONE)                         # insan onayı kaybolmadı
+
     def test_aciklama_temiz_ve_dolayli_etki(self):
         a = W._aciklama_temiz("İNSAN KAPISI. X sunulur; onaylanır `python3 scripts/insan_onayi.py approve G1`. İncele: a.md, b")
         self.assertNotIn("python3", a)

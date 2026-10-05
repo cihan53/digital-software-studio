@@ -360,6 +360,16 @@ def db_save_board(board: dict):
     try:
         cur = conn.cursor()
 
+        # İnsan kararı kalıcıdır: DB'de DONE olan insan kapısını (role: human) bayat bir bellek görüntüsü
+        # (ör. uzun çağrıdaki koşucu) geri READY'ye çeviremez. Aksi halde panelden verilen onaylar kaybolur.
+        onayli = {r["id"]: r["not_"] for r in cur.execute(
+            "SELECT id, not_ FROM pano_gorevleri WHERE rol = 'human' AND durum = ?", (DONE,))}
+        if onayli:
+            for _s, _t in all_tasks(board):
+                if _t["id"] in onayli and _t.get("status") != DONE:
+                    _t["status"] = DONE
+                    _t["note"] = onayli[_t["id"]] or _t.get("note", "")
+
         # İptal edilmiş taleplere bağlı görevler panoda yaşamasın: purge satırları
         # sildikten sonra bile bayat bellek görüntüsü tutan bir yazar (örn. uzun
         # çağrıdaki koşucu) save ederse görevler dirilmesin — budama her yazıda
