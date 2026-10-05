@@ -99,6 +99,7 @@ class DeneyKur(unittest.TestCase):
         self.assertEqual(cfg["source"]["live_url"], "https://x.example")
         self.assertNotIn("planlama", cfg)
         self.assertTrue((d / "workspace/docs/proje_kapsami.md").exists())
+        self.assertIn('STUDIO_WEB_PORT="8092"', (d / "workspace/calistir.sh").read_text())   # tek kol kurulsa da devin portu sabit
         self.assertEqual(subprocess.run(["git", "status", "--short"], cwd=d, capture_output=True, text=True).stdout.strip(), "")
 
     def test_var_olan_klasorun_uzerine_yazmaz(self):
