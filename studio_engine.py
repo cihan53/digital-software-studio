@@ -219,6 +219,12 @@ def git_auto_commit(mesaj: str):
                     f"refs/heads/{hedef}").returncode != 0:
                 return
             dal = hedef
+        snap = ROOT / "scripts" / "pano_snapshot.py"
+        if snap.exists():                          # studio.db git dışı: pano durumu okunabilir snapshot olarak commit'lenir
+            try:
+                subprocess.run([sys.executable, str(snap), "export"], cwd=str(ROOT), capture_output=True, timeout=30)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
         if not _git("status", "--porcelain").stdout.strip():
             return
         _git("add", "-A")

@@ -332,3 +332,9 @@ Panelde **✅ Onaylar** sekmesi bekleyen insan kapılarını listeler (sekme roz
 çıktıları (ör. tasarım dokümanı) panelden okunur; not yazıp **Onayla** / **Reddet** (ret için gerekçe zorunlu). Karar onay kaydına
 (kim/ne zaman/not) yazılır ve audit'e düşer; onaylanan kapının bağlı görevlerini koşucu kendiliğinden başlatır. Yazma isteği yalnız aynı kaynaktan
 ve JSON gövdeyle kabul edilir; panel varsayılan olarak yalnız 127.0.0.1'e bağlıdır.
+
+### Depo hijyeni
+
+`python3 scripts/depo_hijyeni.py` (rapor) / `--uygula`: yalıtım modeline uygun yönetilen `.gitignore` ve `.gitattributes` blokları
+(db, loglar, ham keşif verisi, görseller, trace ayrıntısı, framework dosyaları git dışı; `workspace/` altındaki proje dosyaları içeride) ve izlenen artıkların
+`git rm --cached` ile temizliği. `setup.sh` bunu otomatik çalıştırır. Otomatik commit öncesi `workspace/pano_snapshot.json` yenilenir (`studio.db` git dışı olduğu için).
