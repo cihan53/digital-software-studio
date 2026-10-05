@@ -2442,7 +2442,42 @@ def _auto_talep_uat(task: dict, uat_cikti: str, kaynak: str = "UAT",
         return None
 
 
+def render_kapisi_kostur(task: dict) -> str:
+    """Canlı sistem gerektiren görevlerde (UAT, ziyaretçi testi) sayfaların tarayıcıda GERÇEKTEN çizildiğini doğrular
+    (scripts/render_kapisi.mjs). Başarısızlık mevcut talep/telafi akışına girer. Dönen metin görev notuna eklenir. Issue #217."""
+    if not B.needs_live(task):
+        return ""
+    betik = resolve_script("render_kapisi.mjs")
+    if not betik.exists():
+        return ""
+    print(f"\n   🖥️  [RENDER KAPISI] {task['id']} · sayfalar tarayıcıda çiziliyor mu?")
+    try:
+        res = subprocess.run(["node", str(betik)], cwd=ROOT, capture_output=True, text=True, timeout=240)
+    except Exception as e:
+        print(f"   ⚠️  Render kapısı çalıştırılamadı: {e}")
+        return ""
+    cikti = (res.stdout or "").strip()
+    if res.returncode == 3:
+        print("   ⏭️  " + (cikti.splitlines()[-1] if cikti else "render kapısı atlandı"))
+        return "render kapısı atlandı"
+    if res.returncode == 0:
+        print("   ✅ [RENDER BAŞARILI] " + (cikti.splitlines()[-1].strip() if cikti else ""))
+        return "render kapısı geçti"
+    print("   ⚠️  [RENDER BAŞARISIZ] Sayfalar doğru çizilmiyor:")
+    print("      " + "\n      ".join(cikti.splitlines()[-10:]))
+    not_ = "render kapısı başarısız (workspace/docs/render_raporu.md)"
+    tid = _auto_talep_uat(task, cikti, kaynak="RENDER", neden="tarayıcıda çizim doğrulaması")
+    return not_ + (f"; telafi {tid} talebine devredildi" if tid else "")
+
+
 def verify_task_execution(task: dict, sprint: dict, interactive: bool = False) -> str:
+    """Önce render kapısı (UAT/ziyaretçi görevleri), sonra rol bazlı doğrulama."""
+    render = render_kapisi_kostur(task)
+    diger = _verify_task_execution_core(task, sprint, interactive)
+    return "; ".join(x for x in (render, diger) if x)
+
+
+def _verify_task_execution_core(task: dict, sprint: dict, interactive: bool = False) -> str:
     """QA veya DevOps görevlerinde gerçek yerel ortam doğrulaması yapar veya talimat verir."""
     phase = task.get("phase", "")
     role = task.get("role", "")
