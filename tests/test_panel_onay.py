@@ -80,6 +80,15 @@ class PanelOnay(unittest.TestCase):
             W.ROOT = eski
             shutil.rmtree(d, ignore_errors=True)
 
+    def test_aciklama_temiz_ve_dolayli_etki(self):
+        a = W._aciklama_temiz("İNSAN KAPISI. X sunulur; onaylanır `python3 scripts/insan_onayi.py approve G1`. İncele: a.md, b")
+        self.assertNotIn("python3", a)
+        self.assertNotIn("İncele", a)
+        self.assertNotIn("İNSAN KAPISI", a)
+        d = W.onaylar()
+        # W1 doğrudan G1'e bağlı; zincir bitince dolaylı görevler de listelenir (burada tek halka)
+        self.assertEqual([x["id"] for x in d["onaylar"][0]["onaylanirsa"]], ["W1"])
+
     def test_dosya_yolu_kacisi_engellenir(self):
         for yol in ("../../etc/passwd", "/etc/passwd", "studio_engine.py", "workspace/../studio_web.py"):
             self.assertFalse(W.onay_dosya(yol)["ok"], yol)
