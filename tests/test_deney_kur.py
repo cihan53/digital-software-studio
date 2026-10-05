@@ -88,6 +88,19 @@ class DeneyKur(unittest.TestCase):
         self.assertIn("workspace/docs/proje_kapsami.md", izl)         # proje dosyaları izlenir
         self.assertNotIn("workspace/studio.db", izl)
 
+    def test_sifir_kurulum_analiz_kopyalamaz(self):
+        r = subprocess.run([sys.executable, str(ARAC), "kur", "--sifir", "--kaynak-yol", str(self.tmp / "kaynak"), "--canli-url", "https://x.example", "--tur", "angular-spa",
+                            "--hedef", str(self.tmp), "--onek", "sifir", "--brief", str(self.brief), "--kollar", "devin", "--framework-url", str(ROOT)], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        d = self.tmp / "sifir-devin"
+        self.assertFalse((d / "workspace/docs/ekranlar").exists())
+        self.assertFalse((d / "workspace/docs/org_chart.json").exists())
+        cfg = json.loads((d / "workspace/studio.config.json").read_text())
+        self.assertEqual(cfg["source"]["live_url"], "https://x.example")
+        self.assertNotIn("planlama", cfg)
+        self.assertTrue((d / "workspace/docs/proje_kapsami.md").exists())
+        self.assertEqual(subprocess.run(["git", "status", "--short"], cwd=d, capture_output=True, text=True).stdout.strip(), "")
+
     def test_var_olan_klasorun_uzerine_yazmaz(self):
         r = subprocess.run([sys.executable, str(ARAC), "kur", "--kaynak", str(self.tmp / "kaynak"), "--hedef", str(self.tmp), "--onek", "deney",
                             "--kollar", "claude", "--framework-url", str(ROOT)], capture_output=True, text=True)
