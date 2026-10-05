@@ -23,6 +23,7 @@
     "scripts/brief_gorusme.py",
     "scripts/deney_kur.py",
     "scripts/yerel_ortam_yonet.py",
+    "scripts/uygulama_dizini.py",
     "scripts/birim_envanteri.py",
     "scripts/koruma_kontrol.py",
     "scripts/yetenek_kontrol.py",
