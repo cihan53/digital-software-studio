@@ -39,43 +39,40 @@ except ImportError:
 KATEGORILER = [
     {
         "id": "data_engineer",
-        "unvan": "Veri & ETL Mühendisi (Python Pipeline & Scraper)",
-        "bilesen": "Veri Kazıma & ETL Pipeline (Python)",
+        "unvan": "Veri & Entegrasyon Mühendisi",
+        "bilesen": "Veri Kaynağı & Entegrasyon",
         "anahtar_kelimeler": [
-            "scraper", "crawler", "etl", "pipeline", "import", "curl",
-            "veri çek", "veri al", "veri kaynağı", "kaynak", "epdk",
+            "scraper", "crawler", "etl", "pipeline", "import",
+            "veri çek", "veri al", "veri kaynağı", "kaynak",
             "api entegrasyon", "data-pipeline",
-            "curl_input", "fetch", "download", "sync", "senkron",
+            "fetch", "download", "sync", "senkron",
             "canlı kaynak", "gerçek siteden", "web sitesinden",
         ],
         "dosyalar": [
             "scripts/",
-            "server-scripts/",
-            "curl_input.txt",
+            "workspace/scripts/",
         ],
         "plan_asamalari": """\
 ### Aşama A: Kaynak & Ortam Analizi (`data_engineer`)
-- `curl_input.txt` dosyasını incele — hangi kaynaklar tanımlı (`kaynak: curl ...` formatı)?
-- İlgili scraper/fetcher scriptlerinin session ve auth yönetimini gözden geçir.
-- Mevcut `load_json_dataset()` veya eşdeğeri kaynak öncelik zincirini anla.
+- Talepte adı geçen veri kaynaklarını ve bunları okuyan betik/modülleri belirle (proje dokümanları ve `workspace/docs/` girdilerinden).
+- İlgili çekici/okuyucu kodun oturum ve kimlik doğrulama yönetimini gözden geçir.
+- Mevcut kaynak öncelik zincirini (yerel önbellek, canlı kaynak, yedek) anla.
 
 ### Aşama B: Kodlama & Entegrasyon (`data_engineer`)
-- `curl_input.txt`'i multi-source (`kaynak: curl ...`) formatında okuyacak bir parser modülü yaz/güncelle.
-- Her kaynak için (`epdk`, `voltrun`, `zes`) ayrı bir scraper/fetcher fonksiyonu tanımla veya güncelle.
-- Kaynak fallback zincirini güncelle: önce yerel cache, sonra canlı API, en son statik fallback.
-- Session süresi dolduğunda sistem açıkça uyarsın ve `curl_input.txt` güncellemesini rehberlik etsin.
+- Gerekli okuyucu/ayrıştırıcıyı yaz ya da güncelle; her kaynak için ayrı, test edilebilir bir işlev kullan.
+- Kaynak yedek zincirini güncelle: önce yerel önbellek, sonra canlı kaynak, en son statik yedek.
+- Oturum süresi dolduğunda sistem açıkça uyarsın ve yeniden yapılandırma için yönlendirsin.
 
 ### Aşama C: Test & Doğrulama (`data_engineer` + `qa_lead`)
 - Test verisiyle tüm kaynak zincirini uçtan uca çalıştır.
-- Boş veri gelmesi durumunda mevcut `cpo_stations.json`'ın EZİLMEDİĞİNİ doğrula (sıfır-kayıt kalkanı).
-- Scraper çıktı JSON dosyasının pipeline tarafından doğru okunduğunu kontrol et.\
+- Boş veri gelmesi durumunda mevcut veri dosyasının EZİLMEDİĞİNİ doğrula (sıfır-kayıt kalkanı).
+- Üretilen veri çıktısının tüketen katman tarafından doğru okunduğunu kontrol et.\
 """,
         "kabul_kriterleri": [
-            "EPDK verisi doğrudan EPDK sitesinden (`epdk_scraper.py` aracılığıyla) çekiliyor.",
-            "Voltrun verisi Voltrun API'sinden (`curl_input.txt`'teki `voltrun:` bloğu kullanılarak) çekiliyor.",
-            "`curl_input.txt` multi-source formatı (`kaynak: curl ...`) doğru parse ediliyor.",
-            "Hiçbir canlı kaynaktan veri gelmediğinde mevcut `cpo_stations.json` korunuyor.",
-            "Yeni kaynak eklemek için sadece `curl_input.txt`'e satır eklemek yeterli.",
+            "Talepte belirtilen veri kaynağından veri doğru çekiliyor.",
+            "Kaynak yapılandırması dokümante ve doğru ayrıştırılıyor.",
+            "Hiçbir kaynaktan veri gelmediğinde mevcut veri korunuyor.",
+            "Yeni kaynak eklemek için yalnızca yapılandırma eklemek yeterli.",
         ],
     },
     {
@@ -83,7 +80,7 @@ KATEGORILER = [
         "unvan": "DevOps & Zamanlama Mühendisi",
         "bilesen": "Altyapı, Zamanlama & Dağıtım (Infra)",
         "anahtar_kelimeler": [
-            "docker", "cpanel", "deploy", "sunucu", "nginx", "node sürümü",
+            "docker", "deploy", "sunucu", "nginx", "node sürümü",
             "ci/cd", "infra", "cron", "zamanlanmış", "otomatik çalış",
             "schedule", "plist", "launchd", "systemd", "otomasyonu",
         ],
@@ -92,13 +89,12 @@ KATEGORILER = [
             "studio_schedule.sh",
             "yerel_ortam.sh",
             "workspace/yerel_ortam.sh",
-            "cpanel_nuxt_entry.cjs",
-            "cpanel_api_entry.cjs",
+            "workspace/infra/",
         ],
         "plan_asamalari": """\
 ### Aşama A: Ortam & Zamanlama Analizi (`devops_engineer`)
 - Mevcut `studio.tick.plist` ve `studio_schedule.sh` konfigürasyonunu incele.
-- Sunucu ortamını (cPanel / Linux / macOS LaunchAgent) doğrula.
+- Sunucu ortamını (Linux / macOS / konteyner) doğrula.
 
 ### Aşama B: Kodlama & Çözüm
 - İlgili zamanlanmış görev veya dağıtım script'ini güncelle.
@@ -116,21 +112,20 @@ KATEGORILER = [
     },
     {
         "id": "backend_engineer",
-        "unvan": "Backend & API Mühendisi (Fastify & PostGIS)",
+        "unvan": "Backend & API Mühendisi",
         "bilesen": "Backend API & Servis Katmanı",
         "anahtar_kelimeler": [
-            "api", "backend", "fastify", "postgis", "veritabanı", "endpoint",
-            "sql", "seed", "tohumlama", "swagger", "404 not found (route",
+            "api", "backend", "veritabanı", "endpoint",
+            "sql", "seed", "tohumlama", "swagger", "openapi", "404 not found (route",
             "route", "servis", "rest",
         ],
         "dosyalar": [
-            "workspace/src/backend/src/modules/",
-            "workspace/src/backend/src/app.ts",
+            "workspace/src/backend/",
         ],
         "plan_asamalari": """\
 ### Aşama A: İnceleme ve Hazırlık (`backend_engineer`)
-- İlgili Fastify modülündeki rota tanımı ve handler mantığını incele.
-- Sorunun yerel ortamda (`./workspace/yerel_ortam.sh` → 3001) yeniden üretilebilirliğini teyit et.
+- İlgili backend modülündeki rota tanımı ve handler mantığını incele.
+- Sorunun yerel ortamda (`./workspace/yerel_ortam.sh`, portlar `live.ports`) yeniden üretilebilirliğini teyit et.
 
 ### Aşama B: Kodlama ve Çözüm
 - İlgili route veya servis katmanında gerekli düzeltmeyi yap.
@@ -150,20 +145,19 @@ KATEGORILER = [
     {
         "id": "ui_designer",
         "unvan": "Arayüz ve Tasarım Uzmanı (UI/UX)",
-        "bilesen": "Arayüz Tasarım Sistemi & Tailwind",
+        "bilesen": "Arayüz Tasarım Sistemi",
         "anahtar_kelimeler": [
             "renk", "font", "tipografi", "padding", "margin", "logo",
             "ikon", "tema", "tasarım", "görünüm", "mobil", "responsive",
             "css", "tailwind", "animasyon",
         ],
         "dosyalar": [
-            "workspace/src/frontend/assets/",
-            "workspace/src/frontend/tailwind.config.js",
+            "{APP}/assets/",
         ],
         "plan_asamalari": """\
 ### Aşama A: Görsel İnceleme (`ui_designer`)
 - İlgili bileşeni tarayıcıda incele, sorunu görsel olarak belgele.
-- Tailwind config ve mevcut tasarım token'larını gözden geçir.
+- Mevcut stil yapılandırmasını ve tasarım token'larını gözden geçir.
 
 ### Aşama B: Tasarım Uygulama
 - İlgili Vue bileşeninde / CSS dosyasında gerekli stil düzeltmesini yap.
@@ -181,17 +175,17 @@ KATEGORILER = [
     {
         # Varsayılan — hiçbiri eşleşmezse
         "id": "web_engineer",
-        "unvan": "Kıdemli Web Frontend Mühendisi (Nuxt 3 & Vue)",
-        "bilesen": "Nuxt 3 Web Frontend & Harita Arayüzü",
+        "unvan": "Kıdemli Web Frontend Mühendisi",
+        "bilesen": "Web Frontend",
         "anahtar_kelimeler": [],  # varsayılan — her zaman eşleşir
         "dosyalar": [
-            "workspace/src/frontend/components/",
-            "workspace/src/frontend/pages/",
+            "{APP}/app/components/",
+            "{APP}/app/pages/",
         ],
         "plan_asamalari": """\
 ### Aşama A: İnceleme ve Hazırlık (`web_engineer`)
 - İlgili Vue bileşenindeki mevcut state, props ve event akışını kontrol et.
-- Sorunun yerel ortamda (`./workspace/yerel_ortam.sh` → 3000) yeniden üretilebilirliğini teyit et.
+- Sorunun yerel ortamda (`./workspace/yerel_ortam.sh`, portlar `live.ports`) yeniden üretilebilirliğini teyit et.
 
 ### Aşama B: Kodlama ve Çözüm
 - İlgili bileşende gerekli refactor / hata düzeltmesini yap.
@@ -325,30 +319,36 @@ def tespit_et_kategori(talep: dict) -> dict:
         skor = 3 * _kelime_say(baslik, anahtar) + _kelime_say(diger, anahtar)
         if skor > en_skor:
             en_iyi, en_skor = kat, skor
-    if en_iyi:
-        return en_iyi
-
-    # Varsayılan kategori (anahtarsız) — son kategori (web_engineer)
-    for kat in KATEGORILER:
-        if not kat["anahtar_kelimeler"]:
-            return kat
-    return KATEGORILER[-1]
+    if not en_iyi:
+        # Varsayılan kategori (anahtarsız) — son kategori (web_engineer)
+        en_iyi = next((k for k in KATEGORILER if not k["anahtar_kelimeler"]), KATEGORILER[-1])
+    return {**en_iyi, "dosyalar": [_proje_yolu_coz(d) for d in en_iyi["dosyalar"]]}
 
 
 # Tasarım-aşaması rolleri kod yazmaz (doküman üretir); kod görevinde
 # uygulayıcı role eşlenir.
 _KOD_ROLU = {"ui_designer": "web_engineer"}
 
-_FRONTEND_ADAYLARI = ("workspace/src/web", "workspace/src/frontend")
 _KOD_UZANTILARI = r"(?:vue|ts|tsx|js|mjs|css|scss|json|html|py|sh)"
 
 
+def _app_dizini() -> str:
+    """Web uygulaması dizini: planlama.dizinler.uygulama (varsayılan workspace/src/web)."""
+    try:
+        import studio_config as SC
+        import uygulama_dizini as UD
+        return UD.dizin(SC.load_config(ROOT / "workspace" / "studio.config.json"))
+    except Exception:
+        return "workspace/src/web"
+
+
 def _proje_yolu_coz(yol: str) -> str:
-    """Kategorideki sabit frontend yolunu projede gerçekten var olan
-    dizine (workspace/src/web | frontend) çevirir."""
-    for aday in _FRONTEND_ADAYLARI:
-        if yol.startswith("workspace/src/frontend") and (ROOT / aday).is_dir():
-            return aday + yol[len("workspace/src/frontend"):]
+    """Kategorideki `{APP}` yer tutucusunu (ve eski `workspace/src/frontend` yazımını) projenin uygulama dizinine çevirir."""
+    app = _app_dizini()
+    if yol.startswith("{APP}"):
+        return app + yol[len("{APP}"):]
+    if yol.startswith("workspace/src/frontend"):
+        return app + yol[len("workspace/src/frontend"):]
     return yol
 
 
@@ -425,23 +425,8 @@ def cozum_plani_olustur(talep_id: str) -> str:
 
     print(f"  🔍 Kategori tespiti: [{rol}] — {bilesen}")
 
-    # Sayfaya göre ek dosya özelleştirme (web / harita odaklı)
     sayfa = talep.get("sayfa_url", "")
-    metin = f"{talep.get('baslik','')} {talep.get('aciklama','')}".lower()
-    if sayfa == "/" or "harita" in metin:
-        dosyalar = list(dosyalar) + [
-            "workspace/src/frontend/components/StationMap.vue",
-            "workspace/src/frontend/pages/index.vue",
-        ]
-    elif "/r/" in sayfa or "rota" in metin:
-        dosyalar = list(dosyalar) + [
-            "workspace/src/frontend/pages/r/[payload].vue",
-            "workspace/src/backend/src/modules/route-bridge/route-bridge.routes.ts",
-        ]
-    elif "istasyon" in sayfa or "detay" in metin:
-        dosyalar = list(dosyalar) + [
-            "workspace/src/frontend/components/StationDetailModal.vue"
-        ]
+    dosyalar = list(dosyalar) + talepten_dosyalar(talep)   # talep metninde geçen ve projede var olan dosyalar
 
     dosyalar = list(dict.fromkeys(dosyalar))  # tekrarları kaldır
 
@@ -674,7 +659,7 @@ def otomatik_musteri_talepleri_senkronize_et() -> int:
             if d.startswith("workspace/") and d not in guvenli_dosyalar:
                 guvenli_dosyalar.append(d)
         if not guvenli_dosyalar:
-            guvenli_dosyalar = [_proje_yolu_coz("workspace/src/frontend/")]
+            guvenli_dosyalar = [_proje_yolu_coz("{APP}/")]
 
         # 1. Geliştirme Görevi
         dev_task_id = f"{sid}-T{task_counter}"

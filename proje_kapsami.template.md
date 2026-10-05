@@ -14,10 +14,10 @@
 ---
 
 ## 2. Platformlar ve Teknoloji Tercihleri
-- **Web Platformu:** Nuxt 3 / Vue 3 / Tailwind CSS (veya tercih ettiğiniz stack)
-- **Backend Servisi:** Node.js (Fastify / Express) veya Python (FastAPI)
-- **Veritabanı:** PostgreSQL / SQLite
-- **Mobil (Opsiyonel):** Flutter (iOS & Android)
+- **Web Platformu:** (tercih ettiğiniz çerçeve; boş bırakırsanız CTO ortamdaki araçlara göre önerir)
+- **Backend Servisi:** (varsa tercihiniz; yoksa CTO önerir)
+- **Veritabanı:** (varsa tercihiniz)
+- **Mobil (Opsiyonel):** (gerekiyorsa platformlar)
 
 ---
 
