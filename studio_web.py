@@ -340,6 +340,24 @@ def dokumanlar(taban: str = "workspace/docs") -> dict:
     return {"ok": True, "taban": taban, "dosyalar": out}
 
 
+def _yo():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import yerel_ortam_yonet as YO
+    return YO
+
+
+def ortam_ozet() -> dict:
+    YO = _yo()
+    return {"ok": True, **YO.durum(ROOT), "log": YO.log_oku(ROOT)}
+
+
+def ortam_islem(body: dict) -> dict:
+    YO = _yo()
+    islem = (body.get("islem") or "").strip()
+    f = {"baslat": YO.baslat, "durdur": YO.durdur, "yeniden": YO.yeniden}.get(islem)
+    return f(ROOT) if f else {"ok": False, "mesaj": "bilinmeyen işlem"}
+
+
 def _bg():
     sys.path.insert(0, str(ROOT / "scripts"))
     import brief_gorusme as BG
@@ -673,6 +691,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "mesaj": "Pano henüz yok."})
         if path == "/api/brief-gorusme":
             return self._json(_bg().ozet())
+        if path == "/api/ortam":
+            return self._json(ortam_ozet())
         if path == "/api/onaylar":
             return self._json(onaylar())
         if path == "/api/gorsel":
@@ -767,6 +787,15 @@ class Handler(BaseHTTPRequestHandler):
                 return hata
             try:
                 return self._json(onay_ver(body))
+            except Exception as e:
+                return self._json({"ok": False, "mesaj": str(e)}, 500)
+
+        if path == "/api/ortam":
+            hata = self._yazma_guvenligi()
+            if hata:
+                return hata
+            try:
+                return self._json(ortam_islem(body))
             except Exception as e:
                 return self._json({"ok": False, "mesaj": str(e)}, 500)
 
