@@ -60,6 +60,11 @@ def uygula(board: dict, cfg: dict | None = None, kok: Path = ROOT) -> int:
             if MARKER not in ac:
                 ac = (ac.rstrip() + " " + sozlesme(d)).strip()
                 degisti = True
+            if re.search(r"visitor|uat|tester|qa", t.get("role", ""), re.I) and "uat_checklist.json" not in ac:
+                ac += (" Sayfaların tarayıcıda gerçekten çizildiği render kapısı ile doğrulanır: giriş gerektiren rotalar için "
+                       "workspace/uat_checklist.json içine giris tanımı yaz (rota, doldur: {seçici: değer}, tikla: seçici; test/mock hesabı), "
+                       "isteğe bağlı rotalar listesi. Konsolda Vue uyarısı/hata ve eksik çatı (header/nav/main) başarısızlıktır.")
+                degisti = True
             if yerel and "SABİT yazmaz" not in ac:
                 ac += (" yerel_ortam.sh uygulama dizinini SABİT yazmaz: önce sözleşmedeki dizine bakar, yoksa nuxt.config.* / package.json bulunan dizini keşfeder; "
                        "bulunamazsa hata mesajında beklenen yolu ve bulunan adayları listeler.")
