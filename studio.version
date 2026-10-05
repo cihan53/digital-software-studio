@@ -18,6 +18,7 @@
     "scripts/insan_onayi.py",
     "scripts/servis_kapat.py",
     "scripts/pano_snapshot.py",
+    "scripts/depo_hijyeni.py",
     "scripts/koruma_kontrol.py",
     "scripts/yetenek_kontrol.py",
     "scripts/kesif_cikarici.js",
