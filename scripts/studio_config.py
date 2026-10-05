@@ -49,7 +49,7 @@ DEFAULTS: dict = {
         "kurallar": [],                        # her modül görevine eklenen proje kuralları (metin listesi)
         "roller": {"tasarim": "ui_designer", "mock": "backend_engineer", "ekran": "web_engineer", "parite": "qa_lead"},
         "dizinler": {"tasarim": "workspace/docs/tasarim", "onay": "workspace/docs/onaylar",
-                     "mock": "workspace/src/backend/mock", "ekran": "workspace/src/web/modules", "parite": "workspace/tests/parite"},
+                     "uygulama": "workspace/src/web", "mock": "workspace/src/backend/mock", "ekran": "workspace/src/web/modules", "parite": "workspace/tests/parite"},
     },
     "discovery": {
         "goal": "",
