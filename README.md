@@ -366,3 +366,8 @@ python3 scripts/deney_kur.py esitle (--kaynak-kol <dizin> | --kaynak-dosya <brie
 `workspace/docs` altındaki üretilmiş analiz, tasarım ve ekran dokümanlarını panelde gezilebilir ağaç + markdown görüntüleyici ile okursunuz (salt-okuma).
 Ekran dokümanlarının üstünde referans ekran görüntüsü (`_gorsel/<ad>.png`) gösterilir; markdown içindeki resimler ve dokümanlar arası bağlantılar çalışır, `.html` dokümanlar korumalı iframe'de açılır.
 Yalnız `workspace/` altı okunur; `_ham/` (yerel, PII içerebilir) ve `.svg` (betik taşıyabilir) listelenmez.
+
+### Yerel Ortam sekmesi (panel: 🖥 Yerel Ortam)
+
+`workspace/yerel_ortam.sh` (S1-T1 görevi üretir) oluşunca panelden **Başlat / Yeniden başlat / Durdur** ve canlı log izleme: portların durumu (`live.ports`), log `workspace/logs/yerel_ortam.log`.
+Yalnız projenin kendi betiği çalıştırılır; kapatma yalnız bu projeye ait süreçlere dokunur. Yazma uçları aynı-kaynak korumalıdır.
