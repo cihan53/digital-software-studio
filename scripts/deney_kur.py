@@ -126,7 +126,8 @@ def kol_kur(ad: str, i: int, a) -> Path:
         cfg = {"source": {"path": a.kaynak_yol, "live_url": a.canli_url, "kind": a.tur}}   # sıfır: yalnız kaynak tanımı; analiz/keşif/plan çerçeveyle üretilir
     else:
         cfg.setdefault("planlama", {})["uretici"] = "birim"
-    cfg["live"] = {"ports": [p["nuxt"], p["backend"]]}
+    # Yalnız gerçekten sunulacak port: mock Nuxt içindedir, backend portunda dinleyen yoktur; kapalı port koşucuyu sonsuza dek bekletir (#197)
+    cfg["live"] = {"ports": [p["nuxt"]]}
     cfg["deney"] = {"kol": ad, "backend": kol["backend"], "model": kol["model"], "portlar": p}
     cfgp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     calistir_yaz(hedef, ad, kol, p)
