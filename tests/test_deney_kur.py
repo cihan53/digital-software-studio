@@ -61,6 +61,8 @@ class DeneyKur(unittest.TestCase):
         self.assertIn('STUDIO_BACKEND="agy"', sg)
         self.assertIn('STUDIO_WEB_PORT="8090"', sc)
         self.assertIn('STUDIO_WEB_PORT="8091"', sg)                   # portlar çakışmaz
+        self.assertIn("exec ./basla.sh --web", sc)                    # varsayılan: yalnız panel, koşucu yok
+        self.assertIn('"$1" = "--baslat"', sc)
         self.assertNotIn("\r", sc)                                    # LF
         oc = json.loads((c / "workspace/deney.json").read_text())
         og = json.loads((g / "workspace/deney.json").read_text())
