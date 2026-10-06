@@ -3515,6 +3515,21 @@ def run_board(org: dict, brief: str, once: bool = False,
                       f"port {', '.join(kapali)} kapalı. Görev bekletildi; "
                       f"başlatmak için: ./basla.sh --canli")
                 break
+            # Canlı gerektirmeyen başka bir READY görev varsa onu al: bekleme tüm panoyu kilitlemesin (#219).
+            alt_s, alt_t = B.next_ready(board, uygun=lambda t: not B.needs_live(t))
+            if alt_t is not None:
+                print(f"\n[↪] {task['id']} canlı sistem bekliyor; bu arada {alt_t['id']} yürütülüyor.")
+                sprint, task = alt_s, alt_t
+            elif not B.live_baslatilabilir():
+                # Başlatacak betik yok (yerel_ortam.sh üretilmemiş): beklemek sonsuz kilit olur → görev bu notla geçilir.
+                B.mark(board, task["id"], B.SKIPPED, "canlı ortam tanımsız (yerel_ortam.sh yok); ortam kurulunca yeniden açın")
+                B.save(board)
+                B.audit("engine", "canli_tanimsiz_atla", detay={"gorev": task["id"]})
+                print(f"\n[⏭] {task['id']} canlı sistem gerektiriyor ama yerel_ortam.sh yok; görev 'canlı ortam tanımsız' notuyla geçildi.")
+                git_auto_commit(f"studio: görev SKIPPED (canlı ortam tanımsız) — {task['id']}")
+                board = B.load()
+                continue
+        if B.needs_live(task) and not B.live_up():
             # ~2 dk'da bir hatırlat; görev READY kalır, live açılınca koşar.
             if getattr(run_board, "_live_warn", 0) % 24 == 0:
                 print(f"\n[⏸ CANLI BEKLENİYOR] {task['id']} için port "
