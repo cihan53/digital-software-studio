@@ -1248,7 +1248,10 @@ def _call_claude(system_prompt: str, user_prompt: str, effort: str, model: str,
     if system_prompt:
         cmd += ["--system-prompt", system_prompt.replace("\x00", "")]
     for t in tools or []:
-        cmd += ["--allowedTools", t]
+        if t.startswith("!"):                       # '!' öneki: yasak araç/komut (--disallowedTools, izne baskın) — issue #247
+            cmd += ["--disallowedTools", t[1:]]
+        else:
+            cmd += ["--allowedTools", t]
     if tools:
         # Referans (kaynak) proje ajan çalışma dizininin dışındaysa okunamıyordu
         # ('dizin erişimi reddedildi' → yer tutucu üretiliyordu).
@@ -2835,6 +2838,53 @@ def _girdi_beyani_hatasi(description: str, output: str) -> bool:
     return False
 
 
+class _OnarimHata(RuntimeError):
+    pass
+
+
+def _onarim_calistir(ON, task, sprint, agent, backend, model, effort, pre_task_git, board) -> str:
+    """Onarım döngüsünü koşturur; görev notuna eklenecek kısa özeti döner (issue #247)."""
+    etiket = ON.etiket(task)
+    gercek_kapi = ON.kapi(etiket, ROOT)
+    kapi_f = gercek_kapi or (lambda tur: (tur > 0, ""))                  # etiketsiz (müşteri) talep: kapı yok, tek tur
+    azami = ON.TUR_VARSAYILAN if gercek_kapi else 1
+    print(f"     [onarım] kapalı döngü: kapı={etiket or '—'}, azami tur={azami}, araçlı ajan ({backend})")
+
+    def ajan_cagir(tur, kanit):
+        act = _pending_control(task["id"])
+        if act:
+            raise CallAborted(f"{task['id']} '{act}' isteğiyle kesildi.")
+        sistem, kullanici = ON.istem(task, etiket, kanit, tur, azami)
+        once_snap = _kalite_snapshot()
+        butunluk = ON.butunluk_anlik(ROOT)
+        meta = {"seq": _trace_seq(), "role": task["role"], "title": agent["title"], "target": f"onarim-tur{tur}",
+                "backend": backend, "model": model, "tools": ON.ARACLAR, "task": task["id"], "sprint": sprint["id"]}
+        try:
+            yanit = query_claude(sistem, kullanici, backend, model, effort, meta, ON.ARACLAR)
+        except RuntimeError as e:
+            raise _OnarimHata(f"onarım çağrısı başarısız: {e}")
+        ozet = (yanit or "").strip().splitlines()
+        print("     [onarım] ajan özeti: " + (" ".join(ozet[-4:])[:400] if ozet else "—"))
+        geri = ON.kapsam_denetle(ROOT, once_snap)
+        if geri:
+            print(f"     [!] workspace dışı değişiklik geri alındı: {', '.join(geri[:6])}", file=sys.stderr)
+        bozulan = ON.butunluk_denetle(ROOT, butunluk)
+        if bozulan:
+            print(f"     [!] ÇERÇEVE dosyası değişti ({', '.join(bozulan[:4])}); studio_updater ile geri yükleniyor.", file=sys.stderr)
+            try:
+                subprocess.run([sys.executable, str(ROOT / "scripts" / "studio_updater.py"), "--uygula", "--force"], cwd=ROOT, capture_output=True, timeout=120)
+            except Exception:
+                pass
+
+    sonuc = ON.dongu(kapi_f, ajan_cagir,
+                     kontrol_noktasi=lambda tur: git_auto_commit(f"studio: onarım kontrol noktası — {task['id']} tur {tur}"),
+                     azami_tur=azami)
+    d, t = sonuc["durum"], sonuc["tur"]
+    B.audit("engine", "onarim", gorev_id=task["id"], detay={"durum": d, "tur": t, "kapi": etiket})
+    return {"zaten_gecti": "onarım: kapı zaten geçiyordu", "cozuldu": f"onarım: çözüldü (tur {t})",
+            "cozulemedi": f"onarım: {t} turda çözülemedi"}[d]
+
+
 def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
                  interactive: bool = False) -> bool:
     """Panodaki tek bir görevi yürütür. Başarılıysa True."""
@@ -2883,7 +2933,22 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
     # Kalite kapıları için görev öncesi çalışma ağacı anlığı
     pre_task_git = _kalite_snapshot()
 
-    for target in task["outputs"]:
+    # Kapalı döngü onarım (issue #247): talebe bağlı geliştirme görevlerinde araçlı ajan çözer, motor aynı kapıyla doğrular
+    onarim_notu = ""
+    onarim_yapildi = False
+    if os.getenv("STUDIO_ONARIM", "1") != "0":
+        try:
+            import onarim as ON
+            if ON.uygun_mu(task):
+                onarim_yapildi = True
+                onarim_notu = _onarim_calistir(ON, task, sprint, agent, backend, model, effort, pre_task_git, board)
+        except _OnarimHata as e:
+            B.mark(board, task["id"], B.FAILED, str(e)[:200])
+            git_auto_commit(f"studio: görev FAILED — {task['id']}")
+            print(f"     [!] {e}", file=sys.stderr)
+            return False
+
+    for target in ([] if onarim_yapildi else task["outputs"]):
         act = _pending_control(task["id"])
         if act:
             raise CallAborted(f"{task['id']} '{act}' isteğiyle kesildi.")
@@ -2973,6 +3038,8 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
 
     # Gerçek ortam doğrulaması / çalıştırma rehberi
     note = verify_task_execution(task, sprint, interactive=interactive)
+    if onarim_notu:
+        note = "; ".join(x for x in (onarim_notu, note) if x)
 
     # Deterministik kalite kapıları (regresyon taraması, fix+test, smoke)
     gate_notes = _kalite_kapilari_kostur(task, pre_task_git)

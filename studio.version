@@ -24,6 +24,7 @@
     "scripts/yerel_ortam_yonet.py",
     "scripts/uygulama_dizini.py",
     "scripts/render_kapisi.mjs",
+    "scripts/onarim.py",
     "scripts/birim_envanteri.py",
     "scripts/koruma_kontrol.py",
     "scripts/yetenek_kontrol.py",
