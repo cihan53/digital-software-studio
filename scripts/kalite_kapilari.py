@@ -23,6 +23,7 @@ Engine entegrasyonu (studio_engine.py):
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import urllib.request
@@ -356,6 +357,7 @@ SIZINTI_ISIM_RE = re.compile(
     r"test-results|playwright-report)$")
 
 # workspace/src/ altında kaynak dosya sayılmayan üretim artefaktları
+TEST_CIKTI_DIZINLERI = {"playwright-report", "test-results"}
 SRC_ARTEFAKT_RE = re.compile(
     r"(?i)(^|/)_CIKTI[^/]*\.md$|(^|/)(test-results|playwright-report)(/|$)")
 
@@ -441,6 +443,15 @@ def calisma_alani_hijyeni(files: list[str] | None = None) -> tuple[list[str], li
         p = ROOT / rel
         if rel in temizlenen or not (p.exists() or p.is_symlink()):
             continue
+        # Yeniden üretilebilir test çıktı dizinleri (playwright-report, test-results) kaynak ağacında alarm değil temizlik konusudur (#239)
+        if rel.startswith("workspace/src/") and p.is_dir() and not p.is_symlink() and p.name in TEST_CIKTI_DIZINLERI:
+            try:
+                shutil.rmtree(p)
+                temizlenen.append(rel)
+                continue
+            except OSError as e:
+                bulgular.append(f"{rel}: test çıktı dizini silinemedi ({e})")
+                continue
         bulgular.append(f"{rel}: çalışma alanına sızan artefakt")
     return temizlenen, bulgular
 
