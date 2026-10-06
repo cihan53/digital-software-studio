@@ -35,6 +35,7 @@ class ImportAlias(unittest.TestCase):
         self.assertEqual(len(h), 1)
         self.assertIn("#shared/schemas/settings", h[0])
         self.assertIn("alias", h[0])
+        self.assertIn("aranan: workspace/src/web/shared/schemas/settings", h[0])      # sensör nereye baktığını söyler: ajan doğru yolu bulur
 
     def test_var_olan_aliaslar_gecer(self):
         d = kur({
