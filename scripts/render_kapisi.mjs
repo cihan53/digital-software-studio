@@ -224,6 +224,7 @@ const goruntuDizin = path.join(ROOT, 'workspace/docs/ekran_goruntuleri');
 fs.mkdirSync(goruntuDizin, { recursive: true });
 
 const sonuc = [];
+let karsilama = false;                                            // çerçevenin karşılama sayfası: uygulama değil ORTAM bozuk (#229)
 const cozulemeyen = new Set();
 let uyari = [];
 try {
@@ -241,6 +242,7 @@ try {
     const temiz = mesajlar.filter((m) => !YOKSAY.some((r) => r.test(m)));
     for (const m of temiz) for (const x of m.matchAll(/Failed to resolve component: ([A-Za-z0-9_]+)/g)) cozulemeyen.add(x[1]);
     for (const m of temiz) if (SORUN.test(m) || /^(error|exception|http)/.test(m)) sorunlar.push(temizMesaj(m));
+    if (await degerlendir(`/Welcome to Nuxt|nuxt-welcome/i.test(document.body?.innerText||'')||!!document.querySelector('[class*=nuxt-welcome],#__nuxt .nuxt-welcome')`)) karsilama = true;
     if (bilgi.metin < 5) sorunlar.push('sayfa boş (görünen metin yok)');
     const catiBeklenir = !HARIC.has(son) && !HARIC.has(rota);
     if (catiBeklenir) {
@@ -259,6 +261,13 @@ try {
   await kapat();
 }
 
+if (karsilama) {
+  console.log('\n  ⚠️  ORTAM HATALI: uygulama değil çerçevenin karşılama sayfası ("Welcome to Nuxt") servis ediliyor.');
+  console.log('      Olası nedenler: dev sunucu yanlış argümanla başlatılmış (örn. `nuxt dev -- --port N`: `--port` proje dizini sanılır),');
+  console.log('      sunucu yanlış dizinde çalışıyor ya da uygulama dizininde app.vue/pages bulunamıyor. yerel_ortam.sh başlatma komutunu düzeltin;');
+  console.log('      sayfa içeriği doğrulanamadığı için render kapısı atlandı (talep açılmaz).');
+  process.exit(3);
+}
 const kalan = sonuc.filter((r) => r.sorunlar.length);
 const yon = sonuc.filter((r) => r.yonlendi && !r.sorunlar.length).length;
 if (yon && !liste.giris) uyari.push(`${yon} rota yönlendirildi (büyük olasılıkla oturum gerekiyor).`);

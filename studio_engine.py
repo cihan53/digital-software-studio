@@ -2462,8 +2462,9 @@ def render_kapisi_kostur(task: dict) -> str:
         return ""
     cikti = (res.stdout or "").strip()
     if res.returncode == 3:
-        print("   ⏭️  " + (cikti.splitlines()[-1] if cikti else "render kapısı atlandı"))
-        return "render kapısı atlandı"
+        ortam = [ln.strip() for ln in cikti.splitlines() if "ORTAM HATALI" in ln]
+        print("   ⏭️  " + (ortam[0] if ortam else (cikti.splitlines()[-1] if cikti else "render kapısı atlandı")))
+        return "render kapısı atlandı" + (" (ortam hatalı: uygulama servis edilmiyor)" if ortam else "")
     if res.returncode == 0:
         print("   ✅ [RENDER BAŞARILI] " + (cikti.splitlines()[-1].strip() if cikti else ""))
         return "render kapısı geçti"
