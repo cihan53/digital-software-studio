@@ -13,7 +13,7 @@ import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = process.env.STUDIO_KOK ? path.resolve(process.env.STUDIO_KOK) : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const C = { g: '\x1b[32m', r: '\x1b[31m', c: '\x1b[36m', x: '\x1b[0m' };
 
 function oku(rel, varsayilan) {
@@ -23,7 +23,7 @@ function oku(rel, varsayilan) {
 function istek(url) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
-    const req = http.request({ hostname: u.hostname, port: u.port, path: u.pathname + u.search, method: 'GET', timeout: 5000 }, (res) => {
+    const req = http.request({ hostname: u.hostname.replace(/^\[|\]$/g, ''), port: u.port, path: u.pathname + u.search, method: 'GET', timeout: 5000 }, (res) => {
       let veri = '';
       res.on('data', (d) => (veri += d));
       res.on('end', () => resolve({ durum: res.statusCode, govde: veri }));
@@ -35,11 +35,10 @@ function istek(url) {
 }
 
 async function dene(url) {            // localhost hem IPv4 hem IPv6 olabilir
-  let hata;
   for (const h of [url, url.replace('localhost', '127.0.0.1'), url.replace('localhost', '[::1]')]) {
-    try { return await istek(h); } catch (e) { hata = e; }
+    try { return await istek(h); } catch { /* sonraki adres */ }
   }
-  throw hata;
+  throw new Error('bağlanılamadı (port kapalı ya da sunucu yanıt vermiyor)');
 }
 
 const cfg = oku('workspace/studio.config.json', {});
