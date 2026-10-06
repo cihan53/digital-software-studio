@@ -311,6 +311,11 @@ def tespit_et_kategori(talep: dict) -> dict:
     diger = " ".join([talep.get("aciklama") or "",
                       talep.get("sayfa_url") or ""]).lower()
 
+    # [RENDER] (tarayıcıda çizim) talepleri her zaman web arayüzü işidir; metindeki 'kaynak/import' gibi sözcükler veri rolüne saptırmasın (#225)
+    if baslik.lstrip().startswith("[render]"):
+        web = next((k for k in KATEGORILER if k["id"] == "web_engineer"), KATEGORILER[-1])
+        return {**web, "dosyalar": [_proje_yolu_coz(d) for d in web["dosyalar"]]}
+
     en_iyi, en_skor = None, 0
     for kat in KATEGORILER:
         anahtar = kat["anahtar_kelimeler"]

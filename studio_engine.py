@@ -2382,6 +2382,9 @@ def _auto_talep_uat(task: dict, uat_cikti: str, kaynak: str = "UAT",
         anahtar_gorev = f"[{kaynak}] {task['id']}"
         for t in acik_talepler:
             t_baslik = t.get("baslik") or ""
+            if kaynak == "RENDER" and t_baslik.startswith("[RENDER]"):
+                print(f"   [i] Açık RENDER talebi zaten var: {t['id']} — zincir şişmesin diye yenisi açılmadı.")
+                return t["id"]
             if kaynak == "HİJYEN" and t_baslik.startswith("[HİJYEN]"):
                 print(f"   [i] Açık HİJYEN talebi zaten var: {t['id']} — mükerrer kayıt açılmadı.")
                 return t["id"]
