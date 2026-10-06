@@ -25,6 +25,7 @@
     "scripts/uygulama_dizini.py",
     "scripts/render_kapisi.mjs",
     "scripts/onarim.py",
+    "scripts/faz_planla.py",
     "scripts/birim_envanteri.py",
     "scripts/koruma_kontrol.py",
     "scripts/yetenek_kontrol.py",

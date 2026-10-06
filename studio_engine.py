@@ -3187,142 +3187,6 @@ def spent_so_far() -> float:
     return total
 
 
-def autonomous_gap_review_and_phasing(org: dict, brief: str, board: dict) -> int:
-    """Panodaki görevler tamamlandığında CTO ve Product Owner liderlik değerlendirmesi yapar.
-    Sistemdeki eksikleri (gezilmeyen ekranlar, test edilmemiş butonlar/modallar, hata raporları)
-    tespit eder, tartışıp yeni sprint fazlarına böler ve panoya ekler.
-    Eklenen yeni sprint sayısını döner (0 = eksik yok, proje tamam).
-    """
-    print("\n" + "="*70)
-    print("  🧠 [LİDERLİK DÖNGÜSÜ: CTO & PRODUCT OWNER EKSİK VE FAZ DEĞERLENDİRMESİ]")
-    print("="*70)
-
-    # 1. Ziyaretçi Deneyimi & Ekran Taraması Fazı Yapıldı mı?
-    has_visitor_phase = any(
-        "ziyaretçi" in s.get("name", "").lower() or
-        "ziyaretci" in s.get("name", "").lower() or
-        any(t.get("role") == "screen_visitor_tester" for t in s.get("tasks", []))
-        for s in board.get("sprints", [])
-    )
-
-    report_path = WORKSPACE / "docs" / "eksiklikler_ve_yeni_fazlar.md"
-
-    # Senaryo A: Henüz Kapsamlı Ziyaretçi Ekran & Buton Gezinim Fazı Eklenmemiş
-    if not has_visitor_phase:
-        print("  [!] Liderlik Tespiti: Tüm ekran ve butonların (100% interactive elements)")
-        print("      ziyaretçi gözüyle gezilip doğrulanması aşaması henüz yürütülmedi.")
-        print("  [+] CTO & Product Owner Kararı: Yeni Faz Planlanıyor...")
-
-        s_id = f"S{len(board.get('sprints', [])) + 1}"
-        new_sprint = {
-            "id": s_id,
-            "name": "Ziyaretçi Deneyimi ve 100% Ekran/Buton Etkileşim Denetimi",
-            "goal": "Tüm uygulama rotalarının ve interaktif elemanların (butonlar, modallar, formlar, listeler) ziyaretçi gözüyle uçtan uca doğrulanması.",
-            "planned_days": 3,
-            "tasks": [
-                {
-                    "id": f"{s_id}-T1",
-                    "title": "Tüm Rotalar ve Ekranların Ziyaretçi Gözüyle Taranması",
-                    "description": "Tüm temel sayfa, modül ve ekranların render sağlığı ve konsol hatasızlığının taranması",
-                    "role": "screen_visitor_tester",
-                    "phase": "test",
-                    "outputs": ["workspace/docs/ziyaretci_ekran_denetimi.md"],
-                    "depends_on": []
-                },
-                {
-                    "id": f"{s_id}-T2",
-                    "title": "Arayüz Buton, Filtre ve Modal Etkileşim Denetimi",
-                    "description": "Arayüz filtreleri, işlem butonları, modal formlar ve yönlendirmelerin tıklanma testi",
-                    "role": "screen_visitor_tester",
-                    "phase": "test",
-                    "outputs": ["workspace/docs/bug_raporlari.md"],
-                    "depends_on": [f"{s_id}-T1"]
-                },
-                {
-                    "id": f"{s_id}-T3",
-                    "title": "Tespit Edilen Arayüz Eksiklerinin ve Buton Aksiyonlarının Onarılması",
-                    "description": "Ziyaretçi testinde bulunan buton tepkisizlikleri, eksik rota veya durum hatalarının giderilmesi",
-                    "role": "web_engineer",
-                    "phase": "develop",
-                    "outputs": [_uygulama_dizini() + "/"],
-                    "depends_on": [f"{s_id}-T2"]
-                },
-                {
-                    "id": f"{s_id}-T4",
-                    "title": "Nihai UAT Kabul ve Canlı Kullanıcı Yolculuğu Onayı",
-                    "description": "Canlı sistemde tüm kullanıcı senaryolarının eksiksiz geçtiğinin doğrulanması",
-                    "role": "uat_auditor",
-                    "phase": "test",
-                    "outputs": ["workspace/docs/uat_kabul_raporu.md"],
-                    "depends_on": [f"{s_id}-T3"]
-                }
-            ]
-        }
-
-        eval_md = f"""# Liderlik Eksik Tespiti ve Yeni Faz Planlama Raporu
-
-> **Tarih:** {datetime.now().strftime('%Y-%m-%d %H:%M')}  
-> **Katılımcılar:** CTO / Baş Mimar, Ürün Sahibi (Product Owner), Sprint Planlayıcı  
-> **Konu:** Canlı Sistem Eksik Analizi ve Ziyaretçi Gözüyle 100% Ekran Denetimi  
-
----
-
-## 1. Tespit Edilen Eksiklikler ve Gözlemler
-
-1. **İzole Test Bias (Yapay Doğrulama Tuzağı):** Önceki aşamalarda birim testler geçmesine karşın, kullanıcının gerçek bir ziyaretçi gibi her sayfayı gezmesi, her butona basması ve modalları açıp kapatması simüle edilmemiştir.
-2. **Kapsanması Gereken Rotalar:**
-   - `/` : Ana ekran ve genel modül görünümleri
-   - Dinamik detay ve katalog sayfaları
-   - İşlem, profil ve yönetim modülleri
-3. **Kapsanması Gereken Etkileşimler:**
-   - Arama ve filtre butonları
-   - Aksiyon ve detay butonları
-   - Modallar ve form alanları
-   - Tarayıcı Konsolu: Sıfır hata (0 TypeError, 0 Uncaught) garantisi.
-
----
-
-## 2. Kararlaştırılan Faz (Sprint) Yapısı
-
-CTO ve Product Owner'ın mutabakatıyla sisteme aşağıdaki yeni faz eklenmiştir:
-
-- **Sprint {s_id}: Ziyaretçi Deneyimi ve 100% Ekran/Buton Etkileşim Denetimi**
-  - `{s_id}-T1`: Tüm Rotalar ve Ekranların Ziyaretçi Gözüyle Taranması (`screen_visitor_tester`)
-  - `{s_id}-T2`: Arayüz Buton, Filtre ve Modal Etkileşim Denetimi (`screen_visitor_tester`)
-  - `{s_id}-T3`: Tespit Edilen Arayüz Eksiklerinin ve Buton Aksiyonlarının Onarılması (`web_engineer`)
-  - `{s_id}-T4`: Nihai UAT Kabul ve Canlı Kullanıcı Yolculuğu Onayı (`uat_auditor`)
-
-Bu faz tamamlandığında sistem canlı UAT ve ziyaretçi testlerini geçmiş olarak teslim edilecektir.
-"""
-        report_path.write_text(eval_md, encoding="utf-8")
-        B.append_sprint(board, new_sprint)
-        B.save(board)
-        print(f"  [✓] Yeni faz ({s_id}) panoya eklendi ve rapor üretildi: {report_path.relative_to(ROOT)}")
-        return 1
-
-    # Senaryo B: ziyaretçi fazı planda var. Rapor SONUCA GÖRE üretilir; onay/kabul iddiası taşımaz.
-    st = {}
-    acik = []
-    for _s, _t in B.all_tasks(board):
-        st[_t["status"]] = st.get(_t["status"], 0) + 1
-        if _t["status"] not in B.TERMINAL or _t["status"] == B.SKIPPED:
-            acik.append(f"- `{_t['id']}` {_t['title']} — {_t['status']}")
-    print("  [i] Liderlik İncelemesi: yeni faz gerekmedi; durum raporu yazılıyor (onay iddiası YOK).")
-    final_md = f"""# Pano Durum Raporu (otomatik)
-
-> **Tarih:** {datetime.now().strftime('%Y-%m-%d %H:%M')}
-> Bu rapor panodaki görev durumlarından üretilir. **Kabul/onay vermez**: UAT sonuçları ve müşteri onayı
-> ilgili görev çıktılarındadır (`uat_kabul_raporu*.md`, `workspace/docs/onaylar/`).
-
-## Görev durumu
-""" + "\n".join(f"- {k}: {v}" for k, v in sorted(st.items())) + """
-
-## Tamamlanmamış / atlanmış görevler
-""" + ("\n".join(acik) if acik else "- yok") + "\n"
-    report_path.write_text(final_md, encoding="utf-8")
-    return 0
-
-
 def otomatik_kurtar_ve_temizle(board: dict) -> int:
     """Yarım kalan, çöken veya önceki oturumlarda hata veren (FAILED / BLOCKED)
     görevleri kontrol eder; yetimleri ve geçici API hatası (503 / kapasite / ağ)
@@ -3524,6 +3388,22 @@ def run_board(org: dict, brief: str, once: bool = False,
                 goto = (gs, gt)
                 print(f"\n[GEÇİŞ] {tid} doğrudan sıradaki iş olarak alınıyor.")
 
+        # Faz planı: plan doğrulama / insan onayı sonrası sprintleri panoya ekleme (#249)
+        try:
+            import faz_planla as FP
+            _, _cfg = _studio_config()
+            _zorla = B.value_of("faz_planla")
+            if _zorla:                                           # panel/CLI isteği: "Fazı planla"
+                B.clear("faz_planla")
+                _sid = FP.tetikle(board, org, _cfg, zorla=_zorla)
+                print(f"\n[FAZ PLANLAMA] {_zorla}: " + (f"{_sid} eklendi." if _sid else "zaten planlanıyor/planlandı."))
+                B.refresh(board)
+                B.save(board)
+            if FP.kontrol(board, org, _cfg):
+                B.save(board)
+        except Exception as e:
+            print(f"  [uyarı] faz plan kontrolü: {e}")
+
         sprint, task = goto if goto else B.next_ready(board)
 
         # Günlük kota: görev BAŞLAMADAN önce bakılır, sınır aşılmaz.
@@ -3581,19 +3461,18 @@ def run_board(org: dict, brief: str, once: bool = False,
                 B.save(board)
                 continue
 
-            p = B.progress(board)
-            if p["done"] >= p["total"] and p["total"] > 0:
-                if not getattr(run_board, "_leadership_checked", False):
-                    run_board._leadership_checked = True
-                    print("\n[LİDERLİK KONTROLÜ] Panodaki mevcut görevler kapandı. CTO ve Product Owner eksik ve faz incelemesi yapıyor...")
-                    added = autonomous_gap_review_and_phasing(org, brief, board)
-                    if added > 0:
-                        B.audit("engine", "liderlik_faz_eklendi",
-                                detay={"yeni_sprint": added})
-                        print(f"  [✓] {added} yeni sprint fazı planlandı ve panoya eklendi. Normal akış devam ediyor...\n")
-                        B.refresh(board)
-                        B.save(board)
-                        continue
+            # 3. Faz planlama (#249): aktif faz sprintsizse planlayıcı + insan onay kapısı sprinti eklenir
+            try:
+                import faz_planla as FP
+                _, _cfg = _studio_config()
+                sid = FP.tetikle(board, org, _cfg)
+                if sid:
+                    print(f"\n[FAZ PLANLAMA] {sid} eklendi: planlayıcı planı üretecek, insan onayı sonrası sprintler açılacak.")
+                    B.refresh(board)
+                    B.save(board)
+                    continue
+            except Exception as e:
+                print(f"  [uyarı] faz planlama tetiklenemedi: {e}")
 
             if once:
                 print("\n[i] Tek seferlik koşu: hazır görev yok, çıkılıyor.")
@@ -3738,7 +3617,7 @@ def main():
     ap.add_argument("--refresh-env", action="store_true",
                     help="ortam raporunu yeniden ölç")
     ap.add_argument("--review", action="store_true",
-                    help="liderlik eksik denetimini ve yeni faz planlamasını tetikle")
+                    help="aktif faz için sprint planlamasını (planlayıcı + insan onay kapısı) tetikle")
     ap.add_argument("--backend", choices=sorted(VALID_BACKENDS), default=None,
                     help="çalıştırma arka ucu (varsayılan: STUDIO_BACKEND veya agy)")
     ap.add_argument("--word-scale", type=float, default=None, metavar="N",
@@ -3766,11 +3645,20 @@ def main():
 
     if args.review:
         board = B.load()
-        added = autonomous_gap_review_and_phasing(org, brief, board)
-        if added > 0:
-            print(f"[✓] {added} yeni sprint fazı planlandı.")
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import faz_planla as FP
+        faz, _ = FP.aktif_faz()
+        if faz is None:
+            print("[i] Aktif faz yok.")
+            return
+        _, _cfg = _studio_config()
+        sid = FP.tetikle(board, org, _cfg, zorla=faz["id"])
+        if sid:
+            B.refresh(board)
+            B.save(board)
+            print(f"[✓] {faz['id']} planlama sprinti ({sid}) eklendi; plan üretilince Onaylar sekmesinden onaylayın.")
         else:
-            print("[i] Eksik tespit edilmedi, tüm fazlar tamamlanmış.")
+            print(f"[i] {faz['id']} için planlama sprinti zaten var.")
         return
 
     if not args.dry_run and not acquire_lock():
