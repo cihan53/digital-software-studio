@@ -38,6 +38,59 @@ const SORUN = /\[Vue warn\]|Failed to resolve component|Hydration|is missing tem
 // Konsol iletisi: ilk satır, %c biçim işaretleri ve tekrarlar temizlenir
 const temizMesaj = (m) => m.split('\n')[0].replace(/%c[^%\s]*%c\s*/g, '').replace(/%c/g, '').replace(/\s+/g, ' ').trim().slice(0, 200);
 
+// ---------- tanı: çözülemeyen bileşenler ----------
+function bilesenDosyalari() {
+  const kok = path.join(ROOT, appDizin, 'app', 'components');
+  const alt = path.join(ROOT, appDizin, 'components');
+  const out = [];
+  const gez = (d, taban) => {
+    if (!fs.existsSync(d)) return;
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      if (e.isDirectory()) gez(path.join(d, e.name), taban);
+      else if (/\.vue$/.test(e.name)) out.push({ ad: e.name.replace(/\.vue$/, ''), rel: path.relative(path.join(ROOT), path.join(d, e.name)), dir: path.relative(taban, d) });
+    }
+  };
+  gez(kok, kok); gez(alt, alt);
+  return out;
+}
+const pascal = (s) => s.split(/[\\/_-]/).filter(Boolean).map((x) => x[0].toUpperCase() + x.slice(1)).join('');
+function tani(cozulemeyen) {
+  const dosyalar = bilesenDosyalari();
+  const satirlar = [];
+  for (const ad of cozulemeyen) {
+    const f = dosyalar.find((d) => d.ad === ad);
+    if (f && f.dir) satirlar.push(`- ${ad} → ${f.rel}: Nuxt bunu \`${pascal(f.dir)}${ad}\` adıyla kaydeder (klasör ön eki); \`<${ad}>\` olarak kullanılamaz.`);
+    else if (f) satirlar.push(`- ${ad} → ${f.rel}: dosya var ama bileşen çözülemiyor (dev sunucuyu yeniden başlatın ya da \`nuxt prepare\`).`);
+    else satirlar.push(`- ${ad}: bu adla bir .vue dosyası bulunamadı (dosya eksik ya da ad uyuşmuyor).`);
+  }
+  const onekli = satirlar.some((x) => x.includes('klasör ön eki'));
+  return [`Çözülemeyen bileşenler (${cozulemeyen.length}): ${cozulemeyen.join(', ')}`, ...satirlar,
+    ...(onekli ? ['Tek seferde çözüm: nuxt.config içinde `components: [{ path: \'~/components\', pathPrefix: false }]` (klasör adı ön ek olmaz); tek tek takma ad dosyası yazmayın.'] : [])];
+}
+
+// ---------- mock tohumundan test hesabı ----------
+function tohumKimlik() {
+  const app = path.join(ROOT, appDizin);
+  const adaylar = [];
+  const gez = (d) => {
+    if (!fs.existsSync(d)) return;
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      if (['node_modules', '.nuxt', '.output', 'dist', '.git'].includes(e.name)) continue;
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) gez(p);
+      else if (/\.(ts|js|mjs|json)$/.test(e.name) && !/\.(test|spec)\./.test(e.name)) adaylar.push(p);
+    }
+  };
+  gez(app);
+  adaylar.sort((a, b) => (/mock|seed|fixture/i.test(b) ? 1 : 0) - (/mock|seed|fixture/i.test(a) ? 1 : 0));
+  const rx = /(?:username|email|user|login)['"]?\s*[:=]\s*['"]([^'"\n]{1,80})['"][\s\S]{0,240}?password['"]?\s*[:=]\s*['"]([^'"\n]{1,80})['"]/;
+  for (const f of adaylar) {
+    let m; try { m = rx.exec(fs.readFileSync(f, 'utf8')); } catch { continue; }
+    if (m) return { kullanici: m[1], parola: m[2], kaynak: path.relative(ROOT, f) };
+  }
+  return null;
+}
+
 function atla(neden) { console.log(`⏭️  Render kapısı atlandı: ${neden}`); process.exit(3); }
 
 // ---------- rota keşfi (Nuxt pages/) ----------
@@ -147,15 +200,33 @@ async function girisYap(g) {
   await sleep(2500);
 }
 
+async function otomatikGiris(uyari) {
+  const k = tohumKimlik();
+  if (!k) { uyari.push('`giris` tanımsız ve mock tohum dosyasında test hesabı bulunamadı: korumalı rotalar doğrulanamadı (workspace/uat_checklist.json → giris).'); return false; }
+  await git('/login');
+  const sel = await degerlendir(`(()=>{const q=(s)=>document.querySelector(s);
+    const u=q('input[name=username],input[name=email],input[type=email],input[autocomplete=username],input[type=text]');
+    const p=q('input[type=password]'); if(!u||!p) return null;
+    const t=(e)=>e.name?'input[name="'+e.name+'"]':(e.id?'#'+e.id:null);
+    return {u:t(u),p:t(p),b:q('button[type=submit]')?'button[type=submit]':null};})()`);
+  if (!sel || !sel.u || !sel.p) { uyari.push('Otomatik giriş: /login sayfasında kullanıcı/parola alanı bulunamadı.'); return false; }
+  await girisYap({ rota: '/login', doldur: { [sel.u]: k.kullanici, [sel.p]: k.parola }, tikla: sel.b });
+  const son = await degerlendir('location.pathname');
+  if (son.startsWith('/login')) { uyari.push(`Otomatik giriş başarısız (${k.kullanici}, kaynak: ${k.kaynak}).`); return false; }
+  uyari.push(`Otomatik giriş yapıldı: ${k.kullanici} (kaynak: ${k.kaynak}).`);
+  return true;
+}
+
 const rotalar = (liste.rotalar && liste.rotalar.length) ? liste.rotalar : sayfalardanRotalar();
 const goruntuDizin = path.join(ROOT, 'workspace/docs/ekran_goruntuleri');
 fs.mkdirSync(goruntuDizin, { recursive: true });
 
 const sonuc = [];
+const cozulemeyen = new Set();
 let uyari = [];
 try {
   if (liste.giris) await girisYap(liste.giris);
-  else uyari.push('`giris` tanımlı değil: giriş gerektiren rotalar login sayfasına yönlenir ve doğrulanamaz (workspace/uat_checklist.json → giris).');
+  else await otomatikGiris(uyari);
 
   for (const rota of rotalar) {
     await git(rota);
@@ -166,6 +237,7 @@ try {
       baslik:document.title}))()`);
     const sorunlar = [];
     const temiz = mesajlar.filter((m) => !YOKSAY.some((r) => r.test(m)));
+    for (const m of temiz) for (const x of m.matchAll(/Failed to resolve component: ([A-Za-z0-9_]+)/g)) cozulemeyen.add(x[1]);
     for (const m of temiz) if (SORUN.test(m) || /^(error|exception|http)/.test(m)) sorunlar.push(temizMesaj(m));
     if (bilgi.metin < 5) sorunlar.push('sayfa boş (görünen metin yok)');
     const catiBeklenir = !HARIC.has(son) && !HARIC.has(rota);
@@ -188,12 +260,15 @@ try {
 const kalan = sonuc.filter((r) => r.sorunlar.length);
 const yon = sonuc.filter((r) => r.yonlendi && !r.sorunlar.length).length;
 if (yon && !liste.giris) uyari.push(`${yon} rota yönlendirildi (büyük olasılıkla oturum gerekiyor).`);
+const taniSatirlar = cozulemeyen.size ? tani([...cozulemeyen]) : [];
 const md = [`# Render kapısı raporu`, '', `Taban: ${taban} · rota: ${sonuc.length} · başarısız: ${kalan.length}`, '',
+  ...(taniSatirlar.length ? ['## Tanı', ...taniSatirlar, ''] : []),
   ...(uyari.length ? ['## Uyarılar', ...uyari.map((u) => `- ${u}`), ''] : []),
   '| Rota | Durum | Bulgular | Görüntü |', '|---|---|---|---|',
   ...sonuc.map((r) => `| \`${r.rota}\`${r.yonlendi ? ` → \`${r.son}\`` : ''} | ${r.sorunlar.length ? '✗' : '✓'} | ${r.sorunlar.map((x) => x.replace(/\|/g, '/')).join('<br>') || '-'} | ${r.png ? `![](${path.basename(r.png)})` : ''} |`), ''].join('\n');
 fs.writeFileSync(path.join(ROOT, 'workspace/docs/render_raporu.md'), md);
 
 for (const u of uyari) console.log(`  ⚠️  ${u}`);
+if (taniSatirlar.length) { console.log('\n  TANI:'); taniSatirlar.forEach((t) => console.log('  ' + t)); }
 console.log(`\n  Render kapısı: ${sonuc.length - kalan.length}/${sonuc.length} rota temiz — rapor: workspace/docs/render_raporu.md`);
 process.exit(kalan.length ? 1 : 0);
