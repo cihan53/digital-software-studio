@@ -2742,7 +2742,26 @@ GIREDI_TOPLAM_LIMIT = 260_000
 GIREDI_DOSYA_LIMIT = 70_000
 
 
-def gorev_girdileri(description: str, root: Path | None = None) -> str:
+def mevcut_cikti_dosyalari(ciktilar, root: Path | None = None, azami: int = 6) -> list[Path]:
+    """Görevin çıktıları arasında ZATEN VAR olan dosyalar (dizin değil; yalnız workspace/ altı). Araçsız rol bunları göremeden
+    sıfırdan yazıp mevcut ayarları ezmesin diye göreve girdi olarak verilir (issue #227)."""
+    root = (root or ROOT).resolve()
+    ws = root / "workspace"
+    out: list[Path] = []
+    for c in ciktilar or []:
+        if not isinstance(c, str) or c.endswith("/"):
+            continue
+        try:
+            p = (root / c).resolve()
+            p.relative_to(ws)
+        except (ValueError, OSError):
+            continue
+        if p.is_file() and p not in out and p.suffix.lower() not in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".lock", ".sqlite", ".db"):
+            out.append(p)
+    return out[:azami]
+
+
+def gorev_girdileri(description: str, root: Path | None = None, ciktilar=None) -> str:
     """Görev açıklamasındaki `Girdi: yol1, yol2` satırlarını (dosya, dizin veya glob; yalnız workspace/ altı)
     göreve GÖREV GİRDİSİ olarak okur. Araçsız roller de bu içeriği doğrudan görür (boyut sınırlı)."""
     root = (root or ROOT).resolve()
@@ -2765,21 +2784,31 @@ def gorev_girdileri(description: str, root: Path | None = None) -> str:
                                  and not f.name.startswith("_")][:25]
                 elif p.is_file():
                     dosyalar.append(p)
+    mevcut = [f for f in mevcut_cikti_dosyalari(ciktilar, root) if f not in dosyalar]
     gorulen, bloklar, toplam = set(), [], 0
-    for f in dosyalar:
+    for f in dosyalar + mevcut:
         if f in gorulen:
             continue
         gorulen.add(f)
-        metin = f.read_text(encoding="utf-8", errors="replace")[:GIREDI_DOSYA_LIMIT]
+        etiket = "MEVCUT ÇIKTI DOSYASI" if f in mevcut else "GÖREV GİRDİSİ"
+        metin = f.read_text(encoding="utf-8", errors="replace")
+        if f in mevcut and len(metin) > 40_000:                 # kesik içerikle yeniden yazım dosyayı bozar: büyük dosya girdiye alınmaz
+            bloklar.append(f"===== {etiket} ATLANDI (büyük dosya, {len(metin)//1000} KB): {f.relative_to(root)} — dosyayı baştan yazma, yalnız gerekli değişikliği küçük parçalarla yap =====")
+            continue
+        metin = metin[:GIREDI_DOSYA_LIMIT]
         if toplam + len(metin) > GIREDI_TOPLAM_LIMIT:
-            bloklar.append(f"===== GÖREV GİRDİSİ ATLANDI (boyut sınırı): {f.relative_to(root)} =====")
+            bloklar.append(f"===== {etiket} ATLANDI (boyut sınırı): {f.relative_to(root)} =====")
             continue
         toplam += len(metin)
-        bloklar.append(f"===== GÖREV GİRDİSİ: {f.relative_to(root)} =====\n{metin}")
+        bloklar.append(f"===== {etiket}: {f.relative_to(root)} =====\n{metin}")
     if not bloklar:
         return ""
-    return ("\n".join(bloklar) + "\n\nYukarıdaki GÖREV GİRDİLERİ sana verilmiştir ve okunabilirdir. Bunları 'okunamadı/okuma izni yok' diye "
-            "varsayımla geçiştirme; kullan. Gerçekten eksik bir girdi varsa çıktının ilk satırına `GİRDİ-EKSİK: <yol>` yaz.\n")
+    metin_son = ("\n".join(bloklar) + "\n\nYukarıdaki GÖREV GİRDİLERİ sana verilmiştir ve okunabilirdir. Bunları 'okunamadı/okuma izni yok' diye "
+                 "varsayımla geçiştirme; kullan. Gerçekten eksik bir girdi varsa çıktının ilk satırına `GİRDİ-EKSİK: <yol>` yaz.\n")
+    if mevcut:
+        metin_son += ("'MEVCUT ÇIKTI DOSYASI' blokları, üreteceğin dosyaların ŞU ANKİ hâlidir. Dosyayı SIFIRDAN YAZMA: yalnız görevin gerektirdiği değişikliği yap, "
+                      "diğer tüm ayarları, import'ları, alanları ve yapılandırmayı olduğu gibi koru; dosyanın tamamını güncel hâliyle eksiksiz döndür.\n")
+    return metin_son
 
 
 def _girdi_beyani_hatasi(description: str, output: str) -> bool:
@@ -2826,7 +2855,7 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
         print(f"     [!] {e}", file=sys.stderr)
         return False
 
-    inputs_text += "\n\n" + gorev_girdileri(task.get("description", ""))
+    inputs_text += "\n\n" + gorev_girdileri(task.get("description", ""), ciktilar=task.get("outputs"))
     task_brief = (
         f"\n--- BU GÖREV ---\n"
         f"Sprint: {sprint['id']} — {sprint['name']}\n"
