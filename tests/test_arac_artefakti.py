@@ -65,5 +65,27 @@ class DosyaIsaretleyici(unittest.TestCase):
             E.check_output_path = eski
 
 
+class YedekDokum(unittest.TestCase):
+    def test_isaretleyicisiz_cikti_src_disina_yazilir(self):
+        d = Path(tempfile.mkdtemp()).resolve()
+        eski = (E.check_output_path, E.WORKSPACE, E.DOC_DIR)
+        try:
+            E.WORKSPACE, E.DOC_DIR = d / "workspace", d / "workspace" / "docs"
+            hedef = d / "workspace" / "src" / "web" / "app" / "components"
+            E.check_output_path = lambda p: hedef
+            ya = E.write_multi_file("workspace/src/web/app/components/", "Dosyaları doğrudan düzenledim, özet burada.")
+            self.assertEqual(len(ya), 1)
+            self.assertTrue(str(ya[0]).startswith(str(d / "workspace/docs/cikti_notlari")))
+            self.assertNotIn("_CIKTI", ya[0].name)                             # hijyen kapısı artefakt saymaz
+            self.assertFalse(hedef.exists() and any(hedef.iterdir()))          # kaynak ağacına dosya bırakılmaz
+            # kaynak dışı (doküman) dizin hedefleri eski davranışı korur
+            doc = d / "workspace" / "docs" / "tasarim"
+            E.check_output_path = lambda p: doc
+            ya2 = E.write_multi_file("workspace/docs/tasarim/", "özet")
+            self.assertEqual(ya2[0].name, "_CIKTI.md")
+        finally:
+            E.check_output_path, E.WORKSPACE, E.DOC_DIR = eski
+
+
 if __name__ == "__main__":
     unittest.main()
