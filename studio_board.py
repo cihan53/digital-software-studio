@@ -903,11 +903,13 @@ def pending_human(board: dict) -> list[dict]:
     return [t for _, t in all_tasks(board) if is_human(t) and t["status"] == READY]
 
 
-def next_ready(board: dict):
+def next_ready(board: dict, uygun=None):
     """Yürütülecek tek bir görev döndürür (öncelik ve faz sırasına saygı duyarak).
-    İnsan onay görevleri (role: human) yürütülebilir değildir; sprint onlar bitmeden kapanmaz."""
+    İnsan onay görevleri (role: human) yürütülebilir değildir; sprint onlar bitmeden kapanmaz.
+    uygun: isteğe bağlı süzgeç (görev -> bool); örn. canlı sistem kapalıyken canlı gerektirmeyenleri seçmek için (#219)."""
+    uygun = uygun or (lambda t: True)
     for s in sorted(board["sprints"], key=lambda x: x["order"]):
-        ready = [t for t in s["tasks"] if t["status"] == READY and not is_human(t)]
+        ready = [t for t in s["tasks"] if t["status"] == READY and not is_human(t) and uygun(t)]
         if ready:
             # Önce kullanıcı önceliği (büyük önce koşar), sonra faz ve pano sırası.
             ready.sort(key=lambda t: (-(t.get("priority") or 0),
@@ -920,7 +922,7 @@ def next_ready(board: dict):
             for s2 in sorted(board["sprints"], key=lambda x: x["order"]):
                 if s2["order"] <= s["order"]:
                     continue
-                tel = [t for t in s2["tasks"] if t["status"] == READY and t.get("talep_id") and not is_human(t)]
+                tel = [t for t in s2["tasks"] if t["status"] == READY and t.get("talep_id") and not is_human(t) and uygun(t)]
                 if tel:
                     tel.sort(key=lambda t: (-(t.get("priority") or 0), PHASE_ORDER.get(t["phase"], 9), t.get("order", 0), t["id"]))
                     return s2, tel[0]
@@ -1271,6 +1273,11 @@ def live_status() -> dict:
             except OSError:
                 continue
     return out
+
+
+def live_baslatilabilir() -> bool:
+    """Canlı sistemi başlatacak bir betik var mı? (workspace/yerel_ortam.sh ya da kökte yerel_ortam.sh). Yoksa canlı gerektiren görev beklemekle açılmaz."""
+    return any(p.is_file() for p in (WORKSPACE / "yerel_ortam.sh", ROOT / "yerel_ortam.sh"))
 
 
 def live_up() -> bool:
