@@ -2337,10 +2337,11 @@ def _kalite_kapilari_kostur(task: dict, pre_snapshot: set) -> list:
 
 # Sınırsız [UAT] telafi zinciri sprintleri kilitlemesin diye üst sınır
 UAT_MAX_REMEDIATION = int(os.getenv("STUDIO_UAT_MAX_REMEDIATION", "2"))
+RENDER_MAX_REMEDIATION = int(os.getenv("STUDIO_RENDER_MAX_REMEDIATION", "4"))   # render düzeltmeleri ucuz; çok bileşenli tek kök neden için ek tur hakkı (#223)
 
 
 def _auto_talep_uat(task: dict, uat_cikti: str, kaynak: str = "UAT",
-                    neden: str = "canlı kabul denetimi") -> str | None:
+                    neden: str = "canlı kabul denetimi", sinir: int = 900) -> str | None:
     """Canlı UAT/smoke/derleme başarısızlığını müşteri talep havuzuna düşürür.
 
     Mükerrer koruması: aynı kök talep veya görev id'si ile açık
@@ -2396,7 +2397,7 @@ def _auto_talep_uat(task: dict, uat_cikti: str, kaynak: str = "UAT",
         if kok_tid:
             k_talep = MT.getir(kok_tid) or {}
             zincir = int(k_talep.get("telafi_zincir") or 0) + 1
-            if zincir >= UAT_MAX_REMEDIATION:
+            if zincir >= (RENDER_MAX_REMEDIATION if kaynak == "RENDER" else UAT_MAX_REMEDIATION):
                 not_metni = (
                     f"Otomatik {kaynak} telafi sınırı aşıldı ({zincir}/{UAT_MAX_REMEDIATION}). "
                     f"'{task['id']}' görevi yine başarısız oldu; Devre Kesici panoyu duraklattı."
@@ -2419,7 +2420,7 @@ def _auto_talep_uat(task: dict, uat_cikti: str, kaynak: str = "UAT",
         baslik = f"[{kaynak}] {kok_etiket}{task['id']} {neden} başarısız: {task.get('title', '')[:70]}"
         aciklama = (
             f"Deterministik kalite kapısı '{task['id']}' görevinde "
-            f"{neden} başarısızlığı tespit etti.\n\nSon çıktı satırları:\n```\n{(uat_cikti or '').strip()[-900:]}\n```"
+            f"{neden} başarısızlığı tespit etti.\n\nSon çıktı satırları:\n```\n{(uat_cikti or '').strip()[-sinir:]}\n```"
         )
         yeni = MT.yeni_talep("HATA", baslik, aciklama, oncelik="YUKSEK", sayfa_url="/")
         
@@ -2464,9 +2465,9 @@ def render_kapisi_kostur(task: dict) -> str:
         print("   ✅ [RENDER BAŞARILI] " + (cikti.splitlines()[-1].strip() if cikti else ""))
         return "render kapısı geçti"
     print("   ⚠️  [RENDER BAŞARISIZ] Sayfalar doğru çizilmiyor:")
-    print("      " + "\n      ".join(cikti.splitlines()[-10:]))
+    print("      " + "\n      ".join(cikti.splitlines()[-16:]))
     not_ = "render kapısı başarısız (workspace/docs/render_raporu.md)"
-    tid = _auto_talep_uat(task, cikti, kaynak="RENDER", neden="tarayıcıda çizim doğrulaması")
+    tid = _auto_talep_uat(task, cikti, kaynak="RENDER", neden="tarayıcıda çizim doğrulaması", sinir=4000)
     return not_ + (f"; telafi {tid} talebine devredildi" if tid else "")
 
 
