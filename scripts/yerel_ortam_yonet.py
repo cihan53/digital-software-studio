@@ -152,6 +152,26 @@ def baslat(kok: Path = ROOT, portlar_: list[int] | None = None, profil: str = "y
     return {"ok": True, "mesaj": "Başlatıldı.", "pid": p.pid}
 
 
+def _artik_nuxt_dev(kok: Path) -> list[int]:
+    """Portu dinlemese bile kilit tutan, bu projeye ait 'nuxt ... dev' süreçlerini kapatır ve .nuxt/nuxt.lock dosyalarını siler (#245)."""
+    out = []
+    try:
+        pids = subprocess.run(["pgrep", "-f", r"nuxt(\.mjs)? .*dev"], capture_output=True, text=True, timeout=10).stdout.split()
+    except (OSError, subprocess.TimeoutExpired):
+        pids = []
+    for x in pids:
+        pid = int(x)
+        if pid != os.getpid() and SK._canli(pid) and SK.projede_mi(pid, kok):
+            out += SK.agac_kapat(pid)
+    for kilit in (kok / "workspace" / "src").glob("**/.nuxt/nuxt.lock") if (kok / "workspace" / "src").is_dir() else []:
+        if "node_modules" not in kilit.parts:
+            try:
+                kilit.unlink()
+            except OSError:
+                pass
+    return out
+
+
 def durdur(kok: Path = ROOT, portlar_: list[int] | None = None, profil: str = "yerel_ortam") -> dict:
     kapatilan = []
     pid = _pid(kok, profil)
@@ -161,6 +181,8 @@ def durdur(kok: Path = ROOT, portlar_: list[int] | None = None, profil: str = "y
         for x in SK.dinleyenler(port):
             if SK.projede_mi(x, kok):
                 kapatilan += SK.agac_kapat(x)
+    if profil == "yerel_ortam":
+        kapatilan += _artik_nuxt_dev(kok)
     try:
         _pidf(kok, profil).unlink()
     except OSError:

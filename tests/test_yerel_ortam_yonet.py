@@ -55,5 +55,25 @@ class YerelOrtam(unittest.TestCase):
         self.assertIn("durduruldu", YO.log_oku(self.k))
 
 
+    def test_portu_dinlemeyen_nuxt_dev_ve_kilit_temizlenir(self):
+        import subprocess
+        kilit = self.k / "workspace/src/web/.nuxt/nuxt.lock"
+        kilit.parent.mkdir(parents=True)
+        kilit.write_text("kilit")
+        p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", "node_modules/.bin/../nuxt/bin/nuxt.mjs", "dev"], cwd=self.k)
+        try:
+            time.sleep(0.5)
+            YO.durdur(self.k, [self.port])
+            for _ in range(20):
+                if p.poll() is not None:
+                    break
+                time.sleep(0.25)
+            self.assertIsNotNone(p.poll())                       # artık nuxt dev kapandı
+            self.assertFalse(kilit.exists())                     # kilit dosyası silindi
+        finally:
+            if p.poll() is None:
+                p.kill()
+
+
 if __name__ == "__main__":
     unittest.main()
