@@ -13,6 +13,7 @@
 #
 #   ./basla.sh --musteri    müşteri denetim masasını (istek/şikayet) açar
 #   ./basla.sh --onayla     günlük kota dolduğunda bir tur daha izin ver
+#   ./basla.sh --surdur     duraklatmayı/devre kesiciyi kaldırır (--duraklat: panoyu duraklatır)
 #   ./basla.sh --onayla 5   bugün için 5 görevlik ek kota tanı
 #
 #   Var olan bir kod tabanını stüdyoya tanıtma (migrasyon/analiz projeleri):
@@ -126,6 +127,21 @@ PYEOF
   --izle)   exec $PY studio_ctl.py ;;
   --web|--panel|--arayuz)
       exec $PY studio_web.py "${@:2}" ;;
+  --surdur|--devam|--duraklat)
+      # Devre kesici/duraklatma bayrağını yönetir: --surdur/--devam kaldırır, --duraklat koyar. Koşucu açıksa kendisi devam eder.
+      EYLEM="${1}"
+      $PY - "$EYLEM" <<'PYEOF'
+import sys, studio_board as B
+e = sys.argv[1]
+if e == "--duraklat":
+    B.request("pause", "elle", kaynak="cli")
+    print("⏸ Pano duraklatıldı (kaldırmak için: ./basla.sh --surdur).")
+else:
+    onceki = B.value_of("pause") if hasattr(B, "value_of") else None
+    B.clear("pause")
+    print("▶ Duraklatma kaldırıldı" + (f" (neden: {onceki})" if onceki else "") + ". Koşucu kapalıysa başlatın: ./basla.sh")
+PYEOF
+      exit 0 ;;
   --onayla)
       $PY - "$@" <<'PYEOF'
 import sys, studio_board as B
