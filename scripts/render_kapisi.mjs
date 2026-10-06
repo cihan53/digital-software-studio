@@ -206,11 +206,15 @@ async function otomatikGiris(uyari) {
   const k = tohumKimlik();
   if (!k) { uyari.push('`giris` tanımsız ve mock tohum dosyasında test hesabı bulunamadı: korumalı rotalar doğrulanamadı (workspace/uat_checklist.json → giris).'); return false; }
   await git('/login');
-  const sel = await degerlendir(`(()=>{const q=(s)=>document.querySelector(s);
+  let sel = null;
+  for (let i = 0; i < 24 && !sel; i++) {                          // SPA (ssr:false): form istemcide çizilir; hazır olana dek bekle (#231)
+    if (i) await sleep(500);
+    sel = await degerlendir(`(()=>{const q=(s)=>document.querySelector(s);
     const u=q('input[name=username],input[name=email],input[type=email],input[autocomplete=username],input[type=text]');
     const p=q('input[type=password]'); if(!u||!p) return null;
     const t=(e)=>e.name?'input[name="'+e.name+'"]':(e.id?'#'+e.id:null);
     return {u:t(u),p:t(p),b:q('button[type=submit]')?'button[type=submit]':null};})()`);
+  }
   if (!sel || !sel.u || !sel.p) { uyari.push('Otomatik giriş: /login sayfasında kullanıcı/parola alanı bulunamadı.'); return false; }
   await girisYap({ rota: '/login', doldur: { [sel.u]: k.kullanici, [sel.p]: k.parola }, tikla: sel.b });
   const son = await degerlendir('location.pathname');
