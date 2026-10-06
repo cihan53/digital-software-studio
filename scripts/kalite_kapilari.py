@@ -261,6 +261,10 @@ BUILD_CHECKLIST_FILE = WORKSPACE / "build_checklist.json"
 IMPORT_SPEC_RE = re.compile(
     r"""(?:from|import|require)\s*\(?\s*['"](\.[^'"]+)['"]""")
 
+# Nuxt alias'ları (issue #241): '#shared/x', '~/x', '@/x', '~~/x', '@@/x' — yalnız uygulama dizininde nuxt.config.* varsa denetlenir
+ALIAS_SPEC_RE = re.compile(
+    r"""(?:from|import|require)\s*\(?\s*['"]((?:#shared|~~|~|@@|@)/[^'"]+)['"]""")
+
 RESOLVE_EXTS = ("", ".ts", ".tsx", ".js", ".jsx", ".vue", ".mjs",
                 ".json", ".css", ".scss", ".sass", ".less")
 INDEX_FILES = tuple(f"index{e}" for e in
@@ -280,9 +284,40 @@ def _import_cozulur_mu(dosya_dir: Path, spec: str) -> bool:
     return False
 
 
+def _uygulama_koku() -> Path | None:
+    """Nuxt uygulama dizini (planlama.dizinler.uygulama, varsayılan workspace/src/web); nuxt.config.* yoksa None (alias denetimi yapılmaz)."""
+    try:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import studio_config as SC
+        import uygulama_dizini as UD
+        d = UD.dizin(SC.load_config(ROOT / "workspace" / "studio.config.json"))
+    except Exception:
+        d = "workspace/src/web"
+    kok = ROOT / d
+    return kok if kok.is_dir() and any(kok.glob("nuxt.config.*")) else None
+
+
+def _alias_cozulur_mu(kok: Path, spec: str) -> bool:
+    onek, _, geri = spec.partition("/")
+    if onek == "#shared":
+        adaylar = [kok / "shared" / geri]
+    elif onek in ("~~", "@@"):
+        adaylar = [kok / geri]
+    else:                                             # '~' ve '@': Nuxt 4 srcDir (app/), Nuxt 3 köküne geri düşer
+        adaylar = [kok / "app" / geri, kok / geri]
+    for base in adaylar:
+        for ext in RESOLVE_EXTS:
+            if Path(str(base) + ext).is_file():
+                return True
+        if base.is_dir() and any((base / idx).is_file() for idx in INDEX_FILES):
+            return True
+    return False
+
+
 def import_cozumleme_hatalari(files: list[str]) -> list[str]:
-    """Değişen src dosyalarındaki çözülemeyen relative import'ları döner."""
+    """Değişen src dosyalarındaki çözülemeyen relative ve (Nuxt uygulamasında) alias import'larını döner."""
     hatalar = []
+    kok = _uygulama_koku()
     for f in files:
         rel = f.replace("\\", "/")
         if not rel.endswith(SRC_FILE_EXTS):
@@ -297,6 +332,10 @@ def import_cozumleme_hatalari(files: list[str]) -> list[str]:
         for spec in set(IMPORT_SPEC_RE.findall(metin)):
             if not _import_cozulur_mu(p.parent, spec):
                 hatalar.append(f"{rel}: '{spec}' çözülemedi")
+        if kok is not None:
+            for spec in set(ALIAS_SPEC_RE.findall(metin)):
+                if not _alias_cozulur_mu(kok, spec):
+                    hatalar.append(f"{rel}: '{spec}' çözülemedi (alias)")
     return hatalar
 
 
