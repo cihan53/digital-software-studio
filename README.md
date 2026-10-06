@@ -402,3 +402,12 @@ Render kapısı **tanı** üretir: çözülemeyen bileşenlerin tam listesi, her
 Araçsız roller (tek çağrılık üretim) görevin çıktıları arasında **zaten var olan dosyaları** `MEVCUT ÇIKTI DOSYASI` olarak girdi alır ve "sıfırdan yazma, yalnız gereken değişikliği yap, diğer ayarları koru" talimatı görür (en çok 6 dosya, dosya başına 40 KB; büyük dosyalar atlanır).
 
 İmport kapısı Nuxt uygulamasında (`planlama.dizinler.uygulama` altında `nuxt.config.*` varsa) alias import'larını da çözer: `#shared/x` → `<uygulama>/shared/x`, `~/x` ve `@/x` → `<uygulama>/app/x` (yoksa `<uygulama>/x`), `~~/x` ve `@@/x` → `<uygulama>/x`. Çözülemeyen alias `[BUILD]` talebine girer (eksik modül görev DONE kapanıp dev sunucuyu açılmaz bırakmasın). Nuxt olmayan projelerde alias denetlenmez.
+
+### Kapalı döngü onarım (issue #247)
+
+Hata olunca kural yazmak yerine **araçlı ajan çözer, motor aynı kapıyla doğrular**. `talep_id`'li geliştirme görevleri (kapıdan ya da müşteriden gelen) `scripts/onarim.py` döngüsüne girer:
+1. Talep başlığındaki etiket kapıyı seçer: `[RENDER]` render kapısı, `[BUILD]`/`[KAYNAK]` import kapısı (göreli + Nuxt alias), `[UAT]` smoke + canlı UAT, `[HİJYEN]` hijyen. Etiketsiz (müşteri) taleplerde tek tur.
+2. Tur 0'da kapı koşulur; zaten geçiyorsa ajan çağrılmaz.
+3. Geçmiyorsa araçlı ajan çağrılır: dosyaları okur, `Edit(workspace/**)` ile doğrudan düzenler, komutları kendisi çalıştırıp doğrular. Tur sonunda motor **aynı kapıyı** yeniden koşar (canlı gerektirenlerde yerel ortam yeniden başlatılır); geçmezse yeni kanıtla sonraki tur (`STUDIO_ONARIM_TUR`, varsayılan 3). `STUDIO_ONARIM=0` ile kapatılır.
+4. **Güvenlik:** yazma yalnız `workspace/**` (Claude'un yerel izin kuralı); Bash serbest ama tehlikeli komutlar yasak (`sudo`, `git push/reset/checkout/clean/rebase/config`, `pkill`, `rm -rf /`...; `--disallowedTools` izne baskındır); tur sonunda workspace dışı değişiklik geri alınır, çerçeve dosyaları değiştiyse `studio_updater` ile geri yüklenir; her tur öncesi git kontrol noktası. Devin/agy kendi izin modunda çalışır; kapsam ve bütünlük denetimleri onlar için de geçerlidir.
+5. Sensörler nereye baktığını söyler (`aranan: ...`), neyin yanlış olduğuna dair yorum yapmaz.

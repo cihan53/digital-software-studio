@@ -284,6 +284,13 @@ def _import_cozulur_mu(dosya_dir: Path, spec: str) -> bool:
     return False
 
 
+def _rel_veya_tam(p: Path) -> str:
+    try:
+        return str(Path(os.path.normpath(p)).relative_to(ROOT)).replace("\\", "/")
+    except ValueError:
+        return str(p)
+
+
 def _uygulama_koku() -> Path | None:
     """Nuxt uygulama dizini (planlama.dizinler.uygulama, varsayılan workspace/src/web); nuxt.config.* yoksa None (alias denetimi yapılmaz)."""
     try:
@@ -297,15 +304,17 @@ def _uygulama_koku() -> Path | None:
     return kok if kok.is_dir() and any(kok.glob("nuxt.config.*")) else None
 
 
-def _alias_cozulur_mu(kok: Path, spec: str) -> bool:
+def _alias_adaylari(kok: Path, spec: str) -> list[Path]:
     onek, _, geri = spec.partition("/")
     if onek == "#shared":
-        adaylar = [kok / "shared" / geri]
-    elif onek in ("~~", "@@"):
-        adaylar = [kok / geri]
-    else:                                             # '~' ve '@': Nuxt 4 srcDir (app/), Nuxt 3 köküne geri düşer
-        adaylar = [kok / "app" / geri, kok / geri]
-    for base in adaylar:
+        return [kok / "shared" / geri]
+    if onek in ("~~", "@@"):
+        return [kok / geri]
+    return [kok / "app" / geri, kok / geri]           # '~' ve '@': Nuxt 4 srcDir (app/), Nuxt 3 köküne geri düşer
+
+
+def _alias_cozulur_mu(kok: Path, spec: str) -> bool:
+    for base in _alias_adaylari(kok, spec):
         for ext in RESOLVE_EXTS:
             if Path(str(base) + ext).is_file():
                 return True
@@ -331,11 +340,12 @@ def import_cozumleme_hatalari(files: list[str]) -> list[str]:
             continue
         for spec in set(IMPORT_SPEC_RE.findall(metin)):
             if not _import_cozulur_mu(p.parent, spec):
-                hatalar.append(f"{rel}: '{spec}' çözülemedi")
+                hatalar.append(f"{rel}: '{spec}' çözülemedi (aranan: {_rel_veya_tam(p.parent / spec)}[.ts|.js|.vue|/index...])")
         if kok is not None:
             for spec in set(ALIAS_SPEC_RE.findall(metin)):
                 if not _alias_cozulur_mu(kok, spec):
-                    hatalar.append(f"{rel}: '{spec}' çözülemedi (alias)")
+                    aranan = ", ".join(_rel_veya_tam(b) for b in _alias_adaylari(kok, spec))
+                    hatalar.append(f"{rel}: '{spec}' çözülemedi (alias; aranan: {aranan}[.ts|.js|.vue|/index...])")
     return hatalar
 
 
