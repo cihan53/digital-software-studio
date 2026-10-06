@@ -280,9 +280,34 @@ if (karsilama) {
 const kalan = sonuc.filter((r) => r.sorunlar.length);
 const yon = sonuc.filter((r) => r.yonlendi && !r.sorunlar.length).length;
 if (yon && !liste.giris) uyari.push(`${yon} rota yönlendirildi (büyük olasılıkla oturum gerekiyor).`);
+// 'X is not defined' sunucu hatası: adı kaynak kodda ara, kullanım yerini (dosya:satır) TANI'ya ekle → düzeltme görevinin çıktısına girer (#237)
+function kullanimYerleri(ad) {
+  const bulunan = [];
+  const taban = path.join(ROOT, appDizin);
+  const rx = new RegExp(`\\b${ad.replace(/[^A-Za-z0-9_$]/g, '')}\\b`);
+  const gez = (d) => {
+    if (bulunan.length >= 3 || !fs.existsSync(d)) return;
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      if (['node_modules', '.nuxt', '.output', 'dist', '.git', 'tests'].includes(e.name)) continue;
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) gez(p);
+      else if (/\.(vue|ts|js|mjs)$/.test(e.name)) {
+        let satirlar; try { satirlar = fs.readFileSync(p, 'utf8').split('\n'); } catch { continue; }
+        const i = satirlar.findIndex((l) => rx.test(l) && !/^\s*(\/\/|\*)/.test(l));
+        if (i >= 0 && bulunan.length < 3) bulunan.push(`${path.relative(ROOT, p)}:${i + 1}`);
+      }
+    }
+  };
+  gez(taban);
+  return bulunan;
+}
 const taniSatirlar = [
   ...(cozulemeyen.size ? tani([...cozulemeyen]) : []),
-  ...[...sunucuHatalari].map(([m, n]) => `Sunucu hatası (${n} rota): ${m} — nedeni kaynak kodda bul (tanımsız ad/import, eksik dosya).`),
+  ...[...sunucuHatalari].map(([m, n]) => {
+    const ad = (/([A-Za-z_$][\w$]*) is not defined/.exec(m) || [])[1];
+    const yerler = ad ? kullanimYerleri(ad) : [];
+    return `Sunucu hatası (${n} rota): ${m} — nedeni kaynak kodda bul (tanımsız ad/import, eksik dosya).` + (yerler.length ? `\n  Kullanıldığı yer(ler): ${yerler.join(', ')}` : '');
+  }),
 ];
 const md = [`# Render kapısı raporu`, '', `Taban: ${taban} · rota: ${sonuc.length} · başarısız: ${kalan.length}`, '',
   ...(taniSatirlar.length ? ['## Tanı', ...taniSatirlar, ''] : []),
