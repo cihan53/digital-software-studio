@@ -1701,8 +1701,16 @@ def write_multi_file(dir_str: str, content: str) -> list[Path]:
     if not matches:
         print(f"  [!] '{dir_str}' için dosya işaretleyicisi bulunamadı; "
               f"tüm çıktı _CIKTI.md'ye yazılıyor.", file=sys.stderr)
-        base.mkdir(parents=True, exist_ok=True)
-        target = base / "_CIKTI.md"
+        src = (WORKSPACE / "src").resolve()
+        if src == base or src in base.parents:
+            # Kaynak ağacına yedek döküm bırakma: hijyen kapısı bunu sızıntı sayıp telafi zincirini tüketiyordu (#233).
+            slug = re.sub(r"[^A-Za-z0-9]+", "-", str(base.relative_to(WORKSPACE.resolve()))).strip("-").lower() or "cikti"
+            notlar = DOC_DIR / "cikti_notlari"
+            notlar.mkdir(parents=True, exist_ok=True)
+            target = notlar / f"{slug}.md"
+        else:
+            base.mkdir(parents=True, exist_ok=True)
+            target = base / "_CIKTI.md"
         target.write_text(content.rstrip() + "\n", encoding="utf-8")
         return [target]
 
@@ -2400,7 +2408,7 @@ def _auto_talep_uat(task: dict, uat_cikti: str, kaynak: str = "UAT",
         if kok_tid:
             k_talep = MT.getir(kok_tid) or {}
             zincir = int(k_talep.get("telafi_zincir") or 0) + 1
-            if zincir >= (RENDER_MAX_REMEDIATION if kaynak == "RENDER" else UAT_MAX_REMEDIATION):
+            if zincir >= (RENDER_MAX_REMEDIATION if kaynak in ("RENDER", "HİJYEN") else UAT_MAX_REMEDIATION):
                 not_metni = (
                     f"Otomatik {kaynak} telafi sınırı aşıldı ({zincir}/{UAT_MAX_REMEDIATION}). "
                     f"'{task['id']}' görevi yine başarısız oldu; Devre Kesici panoyu duraklattı."
