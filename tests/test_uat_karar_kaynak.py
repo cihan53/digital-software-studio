@@ -35,6 +35,32 @@ class UatKarari(unittest.TestCase):
         self.assertIsNone(E.uat_karari("/yok/yok.md"))
 
 
+class UatRedGecerliligi(unittest.TestCase):
+    """issue #253"""
+
+    def test_red_sayaci_insan_mudahalesinde_sifirlanir(self):
+        b = {"eylem": "Durum güncellendi: BEKLEMEDE", "durum": "BEKLEMEDE"}
+        self.assertEqual(E.uat_red_sayisi([b, b, b]), 3)
+        self.assertEqual(E.uat_red_sayisi([b, b, b, {"eylem": "x", "durum": "INSAN_GEREKLI"}, {"eylem": "İnsan: yeniden kuyruğa alındı", "durum": "BEKLEMEDE"}]), 0)
+        self.assertEqual(E.uat_red_sayisi([b, {"eylem": "İnsan: yeniden", "durum": "BEKLEMEDE"}, b]), 1)
+
+    def test_bayat_kanita_dayanan_red_yesil_kanitla_gecersiz(self):
+        rapor = ("| TLP-02 | kopya | **KALDI (BUG, önceki kanıt)** | bu oturumda doğrulanmadı |\n"
+                 "| TLP-03 | veri | **ÇALIŞTIRILMADI** | - |\n")
+        self.assertFalse(E.uat_red_gecerli(rapor, True))
+        self.assertTrue(E.uat_red_gecerli(rapor, False))        # kanıt kırmızı: ajan kararı geçerli
+        self.assertTrue(E.uat_red_gecerli(rapor, None))         # kanıt toplanamadı: ajan kararı geçerli
+
+    def test_calistirilmis_basarisiz_madde_red_kalir(self):
+        rapor = "| TLP-06 | konsol | **BAŞARISIZ** | TypeError: x undefined (playwright çıktısı) |\n"
+        self.assertTrue(E.uat_red_gecerli(rapor, True))
+
+    def test_kanit_yalniz_talepli_uat_gorevinde_toplanir(self):
+        self.assertEqual(E.uat_kaniti_topla({"id": "T1", "role": "web_engineer", "talep_id": "TALEP-1"}), "")
+        self.assertEqual(E.uat_kaniti_topla({"id": "T2", "role": "uat_auditor", "talep_id": None}), "")
+        self.assertIsNone(E._UAT_KANIT["T1"])
+
+
 class KaynakDizinleri(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
