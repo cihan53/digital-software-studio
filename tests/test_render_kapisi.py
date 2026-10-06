@@ -147,8 +147,11 @@ class RenderKapisi(unittest.TestCase):
             srv.shutdown()
 
     def test_sunucu_hatasi_nedeni_tanida(self):
-        r, kok = self._calistir(["/patla"])
+        r, kok = self._calistir(["/patla"], dosyalar={"workspace/src/web/app/components/shell/Arama.vue": "<script setup>\nconst x = useFoo()\n</script>",
+                                                     "workspace/src/web/app/components/Diger.vue": "<script setup>\n// useFoo yorum\n</script>"})
         self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("Kullanıldığı yer(ler): workspace/src/web/app/components/shell/Arama.vue:2", r.stdout)   # dosya:satır, yorum satırı sayılmaz
+        self.assertNotIn("Diger.vue", r.stdout)
         self.assertIn("Sunucu hatası (1 rota): 500 Server Error useFoo is not defined", r.stdout)   # talep metnine giren TANI'da neden var
 
     def test_karsilama_sayfasi_ortam_hatasi_atlanir(self):
