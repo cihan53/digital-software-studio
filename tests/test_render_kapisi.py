@@ -36,6 +36,12 @@ KORUMALI = ("<html><body><script>if(!localStorage.oturum)location.href='/login'<
 
 class Sunucu(BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path == "/patla":
+            self.send_response(500)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write("<html><body><h1>500 Server Error</h1><p>useFoo is not defined</p></body></html>".encode())
+            return
         govde = {"/iyi": IYI, "/kotu": KOTU, "/bos": BOS, "/login": LOGIN, "/korumali": KORUMALI, "/karsilama": KARSILAMA}.get(self.path, IYI).encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -139,6 +145,11 @@ class RenderKapisi(unittest.TestCase):
             self.assertIn("Otomatik giriş yapıldı: ceo", r.stdout)
         finally:
             srv.shutdown()
+
+    def test_sunucu_hatasi_nedeni_tanida(self):
+        r, kok = self._calistir(["/patla"])
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("Sunucu hatası (1 rota): 500 Server Error useFoo is not defined", r.stdout)   # talep metnine giren TANI'da neden var
 
     def test_karsilama_sayfasi_ortam_hatasi_atlanir(self):
         r, kok = self._calistir(["/karsilama"])
