@@ -64,7 +64,9 @@ function tani(cozulemeyen) {
     else satirlar.push(`- ${ad}: bu adla bir .vue dosyası bulunamadı (dosya eksik ya da ad uyuşmuyor).`);
   }
   const onekli = satirlar.some((x) => x.includes('klasör ön eki'));
-  return [`Çözülemeyen bileşenler (${cozulemeyen.length}): ${cozulemeyen.join(', ')}`, ...satirlar,
+  const yapilandirma = ['ts', 'js', 'mjs'].map((e) => path.join(appDizin, `nuxt.config.${e}`)).find((p) => fs.existsSync(path.join(ROOT, p)));
+  return [...(onekli && yapilandirma ? [`Düzeltilecek dosya: ${yapilandirma}`] : []),
+    `Çözülemeyen bileşenler (${cozulemeyen.length}): ${cozulemeyen.join(', ')}`, ...satirlar,
     ...(onekli ? ['Tek seferde çözüm: nuxt.config içinde `components: [{ path: \'~/components\', pathPrefix: false }]` (klasör adı ön ek olmaz); tek tek takma ad dosyası yazmayın.'] : [])];
 }
 

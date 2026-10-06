@@ -83,11 +83,14 @@ class RenderKapisi(unittest.TestCase):
         self.assertIn("sayfa boş", rapor)
 
     def test_tani_cozulemeyen_bilesen_ve_kayit_adi(self):
-        r, kok = self._calistir(["/kotu"], dosyalar={"workspace/src/web/app/components/shell/AppHeader.vue": "<template><div/></template>"})
+        r, kok = self._calistir(["/kotu"], dosyalar={"workspace/src/web/app/components/shell/AppHeader.vue": "<template><div/></template>",
+                                                     "workspace/src/web/nuxt.config.ts": "export default defineNuxtConfig({})"})
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("TANI", r.stdout)
         self.assertIn("ShellAppHeader", r.stdout)                            # Nuxt kayıt adı
         self.assertIn("pathPrefix: false", r.stdout)                         # tek seferde çözüm önerisi
+        self.assertIn("Düzeltilecek dosya: workspace/src/web/nuxt.config.ts", r.stdout)   # çözüm dosyası açık yol: düzeltme görevinin çıktısına girer
+        self.assertLess(r.stdout.index("Düzeltilecek dosya"), r.stdout.index("ShellAppHeader"))   # bileşen yollarından ÖNCE (çıktı sınırı 4)
         self.assertIn("## Tanı", (kok / "workspace/docs/render_raporu.md").read_text())
 
     def test_otomatik_giris_mock_tohumundan(self):
