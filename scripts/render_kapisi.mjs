@@ -230,6 +230,7 @@ fs.mkdirSync(goruntuDizin, { recursive: true });
 const sonuc = [];
 let karsilama = false;                                            // çerçevenin karşılama sayfası: uygulama değil ORTAM bozuk (#229)
 const cozulemeyen = new Set();
+const sunucuHatalari = new Map();                                // hata iletisi -> etkilenen rota sayısı
 let uyari = [];
 try {
   if (liste.giris) await girisYap(liste.giris);
@@ -247,6 +248,10 @@ try {
     for (const m of temiz) for (const x of m.matchAll(/Failed to resolve component: ([A-Za-z0-9_]+)/g)) cozulemeyen.add(x[1]);
     for (const m of temiz) if (SORUN.test(m) || /^(error|exception|http)/.test(m)) sorunlar.push(temizMesaj(m));
     if (await degerlendir(`/Welcome to Nuxt|nuxt-welcome/i.test(document.body?.innerText||'')||!!document.querySelector('[class*=nuxt-welcome],#__nuxt .nuxt-welcome')`)) karsilama = true;
+    if (temiz.some((m) => /^http 5\d\d/.test(m))) {                     // 5xx: Nuxt hata sayfasındaki neden (örn. "useX is not defined") bulguya eklenir (#235)
+      const neden = await degerlendir(`(document.body?.innerText||'').replace(/\\s+/g,' ').trim().slice(0,220)`);
+      if (neden && neden.length > 3) { sorunlar.push(`sunucu hatası: ${neden}`); sunucuHatalari.set(neden, (sunucuHatalari.get(neden) || 0) + 1); }
+    }
     if (bilgi.metin < 5) sorunlar.push('sayfa boş (görünen metin yok)');
     const catiBeklenir = !HARIC.has(son) && !HARIC.has(rota);
     if (catiBeklenir) {
@@ -275,7 +280,10 @@ if (karsilama) {
 const kalan = sonuc.filter((r) => r.sorunlar.length);
 const yon = sonuc.filter((r) => r.yonlendi && !r.sorunlar.length).length;
 if (yon && !liste.giris) uyari.push(`${yon} rota yönlendirildi (büyük olasılıkla oturum gerekiyor).`);
-const taniSatirlar = cozulemeyen.size ? tani([...cozulemeyen]) : [];
+const taniSatirlar = [
+  ...(cozulemeyen.size ? tani([...cozulemeyen]) : []),
+  ...[...sunucuHatalari].map(([m, n]) => `Sunucu hatası (${n} rota): ${m} — nedeni kaynak kodda bul (tanımsız ad/import, eksik dosya).`),
+];
 const md = [`# Render kapısı raporu`, '', `Taban: ${taban} · rota: ${sonuc.length} · başarısız: ${kalan.length}`, '',
   ...(taniSatirlar.length ? ['## Tanı', ...taniSatirlar, ''] : []),
   ...(uyari.length ? ['## Uyarılar', ...uyari.map((u) => `- ${u}`), ''] : []),
