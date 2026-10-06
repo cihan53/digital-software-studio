@@ -1591,6 +1591,76 @@ def uat_karari(rapor_yolu) -> str | None:
 UAT_RED_LIMIT = 2  # bu kadar UAT reddinden sonra talep insana devredilir
 
 
+def uat_red_sayisi(gecmis: list) -> int:
+    """UAT reddi sayısı: yalnız son insan müdahalesinden (INSAN_GEREKLI ya da 'İnsan:' kaydı) SONRAKİ 'BEKLEMEDE' dönüşleri (#253)."""
+    n = 0
+    for g in gecmis or []:
+        if g.get("durum") == "INSAN_GEREKLI" or str(g.get("eylem", "")).startswith("İnsan"):
+            n = 0
+        elif g.get("eylem") == "Durum güncellendi: BEKLEMEDE":
+            n += 1
+    return n
+
+
+_UAT_BAYAT_RX = re.compile(r"önceki|devral|bu oturumda|çalıştırılamad|çalıştırılmad", re.I)
+_UAT_KOTU_RX = re.compile(r"KALDI|BUG|BAŞARISIZ|FAIL", re.I)
+
+
+def uat_red_gecerli(metin: str, kanit_yesil: bool | None) -> bool:
+    """UAT ajanının REDDİ geçerli mi? Motor bu koşuda gerçek kanıtı topladı ve hepsi yeşilse, ret yalnız bu oturumda
+    ÇALIŞTIRILMIŞ ve başarısız bir maddeye dayanabilir; 'önceki oturum/çalıştırılamadı' gerekçeleri ret sayılmaz (#253).
+    kanit_yesil None (kanıt toplanamadı) veya False ise ajanın kararı geçerlidir."""
+    if not kanit_yesil:
+        return True
+    for l in (metin or "").splitlines():
+        if l.lstrip().startswith("|") and _UAT_KOTU_RX.search(l) and not _UAT_BAYAT_RX.search(l):
+            return True
+    return False
+
+
+_UAT_KANIT: dict[str, bool | None] = {}
+
+
+def uat_kaniti_topla(task: dict) -> str:
+    """UAT görevinde ajan çalışmadan ÖNCE motor gerçek kanıtı toplar (uygulama testleri, render, canlı UAT betiği) ve ajana girdi verir;
+    ajanın araç kısıtından/komut reddinden bağımsız. Sonuç _UAT_KANIT[görev] içinde: True hepsi yeşil, False en az biri kırmızı, None toplanamadı."""
+    _UAT_KANIT[task["id"]] = None
+    if not (task.get("talep_id") and "uat" in (task.get("role") or "").lower()):
+        return ""
+    bloklar, yesil = [], True
+    try:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import onarim as ON
+        ok, kanit = ON.testleri_kos(ROOT)
+        bloklar.append(f"- Uygulama testleri: {'GEÇTİ' if ok else 'BAŞARISIZ'}" + (f"\n```\n{kanit[-1500:]}\n```" if kanit else ""))
+        yesil &= ok
+    except Exception as e:
+        bloklar.append(f"- Uygulama testleri koşturulamadı: {e}")
+        yesil = None
+    for ad, betik in (("Render kapısı", "render_kapisi.mjs"), ("Canlı UAT betiği", "uat_live_audit.mjs")):
+        yol = resolve_script(betik)
+        if not yol.exists() or not shutil.which("node"):
+            continue
+        try:
+            r = subprocess.run(["node", str(yol)], cwd=ROOT, capture_output=True, text=True, timeout=300,
+                               env={**os.environ, "STUDIO_KOK": str(ROOT)})
+            cikti = ((r.stdout or "") + (r.stderr or "")).strip()
+            ok = r.returncode == 0
+            bloklar.append(f"- {ad}: {'GEÇTİ' if ok else 'BAŞARISIZ (çıkış %d)' % r.returncode}\n```\n{cikti[-1500:]}\n```")
+            if yesil is not None:
+                yesil &= ok
+        except Exception as e:
+            bloklar.append(f"- {ad} koşturulamadı: {e}")
+            yesil = None
+    if not bloklar:
+        return ""
+    _UAT_KANIT[task["id"]] = yesil
+    return ("\n===== MOTORUN BU KOŞUDA TOPLADIĞI KANIT (çalıştırılmış) =====\n" + "\n".join(bloklar) +
+            "\nBu kanıt senin yerine ÇALIŞTIRILDI: komut çalıştırman gerekmez. Raporunda bunu kullan; bu kanıtla çelişmeyen, "
+            "önceki oturumdan devralınmış kanıtı ret gerekçesi yapma. Ret yalnız çalıştırılmış ve başarısız bir maddeye dayanabilir.\n")
+
+
+
 def collect_inputs(agent: dict, strict: bool = True) -> str:
     """Ajanın girdilerini toplar.
 
@@ -2917,6 +2987,10 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
         return False
 
     inputs_text += "\n\n" + gorev_girdileri(task.get("description", ""), ciktilar=task.get("outputs"))
+    try:
+        inputs_text += uat_kaniti_topla(task)
+    except Exception as e:
+        print(f"     [uyarı] UAT kanıtı toplanamadı: {e}")
     task_brief = (
         f"\n--- BU GÖREV ---\n"
         f"Sprint: {sprint['id']} — {sprint['name']}\n"
@@ -3100,13 +3174,21 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
                             if o.endswith(".md"):
                                 rapor = o
                                 karar = uat_karari(ROOT / o)
+                                if karar == "RED":
+                                    try:
+                                        _metin = (ROOT / o).read_text(encoding="utf-8", errors="replace")
+                                    except OSError:
+                                        _metin = ""
+                                    if not uat_red_gecerli(_metin, _UAT_KANIT.get(task["id"])):
+                                        print("   ℹ️  [UAT] Ret gerekçesi bu koşuda çalıştırılmış kanıta dayanmıyor (motor kanıtı yeşil) → "
+                                              "ret sayılmadı, müşteri onayına sunuluyor.")
+                                        karar = None
                                 break
                     if karar == "RED":
                         # UAT reddetti: talebi müşteri onayına SUNMA; geliştirmeye
                         # geri dön (yeniden sprint). Döngü sınırı: INSAN_GEREKLI.
                         t_kayit = MT.getir(task["talep_id"]) or {}
-                        red_sayisi = sum(1 for g in t_kayit.get("gecmis", [])
-                                         if g.get("eylem") == "Durum güncellendi: BEKLEMEDE")
+                        red_sayisi = uat_red_sayisi(t_kayit.get("gecmis", []))
                         if red_sayisi >= UAT_RED_LIMIT:
                             MT.guncelle(task["talep_id"], durum="INSAN_GEREKLI",
                                         studio_notu=f"UAT {red_sayisi + 1}. kez reddetti "
