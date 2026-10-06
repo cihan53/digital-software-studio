@@ -1689,6 +1689,8 @@ def write_single_file(path_str: str, content: str) -> list[Path]:
     if out.suffix.lower() != ".md":
         content = strip_fence(content)
     content = temizle_arac_artefakti(content, path_str)
+    if out.suffix.lower() != ".md":
+        content = content.lstrip("\r\n")                                  # shebang 1. satırda kalsın (#243)
     out.write_text(content.rstrip() + "\n", encoding="utf-8")
     return [out]
 
@@ -1729,7 +1731,7 @@ def write_multi_file(dir_str: str, content: str) -> list[Path]:
             continue
 
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(temizle_arac_artefakti(strip_fence(body), raw_name).rstrip() + "\n", encoding="utf-8")
+        target.write_text(temizle_arac_artefakti(strip_fence(body.lstrip("\r\n")), raw_name).strip("\r\n") + "\n", encoding="utf-8")   # baştaki boş satır shebang'i 2. satıra iter (#243)
         written.append(target)
     return written
 
