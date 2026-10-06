@@ -21,6 +21,7 @@ CHROME = os.environ.get("CHROME_PATH") or next((p for p in (
 IYI = "<html><body><header>h</header><nav>n</nav><main>Merhaba dünya içerik</main></body></html>"
 KOTU = "<html><body><script>console.warn('[Vue warn]: Failed to resolve component: AppHeader')</script><main>içerik var</main></body></html>"
 BOS = "<html><body></body></html>"
+KARSILAMA = "<html><body><div class='nuxt-welcome'><h1>Welcome to Nuxt!</h1></div></body></html>"
 
 
 LOGIN = ("<html><body><header>h</header><nav>n</nav><main><form onsubmit='return false'>"
@@ -32,7 +33,7 @@ KORUMALI = ("<html><body><script>if(!localStorage.oturum)location.href='/login'<
 
 class Sunucu(BaseHTTPRequestHandler):
     def do_GET(self):
-        govde = {"/iyi": IYI, "/kotu": KOTU, "/bos": BOS, "/login": LOGIN, "/korumali": KORUMALI}.get(self.path, IYI).encode()
+        govde = {"/iyi": IYI, "/kotu": KOTU, "/bos": BOS, "/login": LOGIN, "/korumali": KORUMALI, "/karsilama": KARSILAMA}.get(self.path, IYI).encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
@@ -101,6 +102,13 @@ class RenderKapisi(unittest.TestCase):
         self.assertNotIn("→ /login", r.stdout)                              # korumalı rota gerçekten doğrulandı
         r2, _ = self._calistir(["/korumali"])                                # tohum yoksa uyarı, rota login'e yönlenir
         self.assertIn("test hesabı bulunamadı", r2.stdout)
+
+    def test_karsilama_sayfasi_ortam_hatasi_atlanir(self):
+        r, kok = self._calistir(["/karsilama"])
+        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)               # başarısız değil, atlandı: talep açılmaz
+        self.assertIn("ORTAM HATALI", r.stdout)
+        self.assertIn("nuxt dev -- --port", r.stdout)
+        self.assertFalse((kok / "workspace/docs/render_raporu.md").exists())  # sahte 'çatı eksik' raporu yazılmaz
 
     def test_canli_sistem_yoksa_atlanir(self):
         kok = Path(tempfile.mkdtemp())
