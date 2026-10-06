@@ -411,3 +411,18 @@ Hata olunca kural yazmak yerine **araçlı ajan çözer, motor aynı kapıyla do
 3. Geçmiyorsa araçlı ajan çağrılır: dosyaları okur, `Edit(workspace/**)` ile doğrudan düzenler, komutları kendisi çalıştırıp doğrular. Tur sonunda motor **aynı kapıyı** yeniden koşar (canlı gerektirenlerde yerel ortam yeniden başlatılır); geçmezse yeni kanıtla sonraki tur (`STUDIO_ONARIM_TUR`, varsayılan 3). `STUDIO_ONARIM=0` ile kapatılır.
 4. **Güvenlik:** yazma yalnız `workspace/**` (Claude'un yerel izin kuralı); Bash serbest ama tehlikeli komutlar yasak (`sudo`, `git push/reset/checkout/clean/rebase/config`, `pkill`, `rm -rf /`...; `--disallowedTools` izne baskındır); tur sonunda workspace dışı değişiklik geri alınır, çerçeve dosyaları değiştiyse `studio_updater` ile geri yüklenir; her tur öncesi git kontrol noktası. Devin/agy kendi izin modunda çalışır; kapsam ve bütünlük denetimleri onlar için de geçerlidir.
 5. Sensörler nereye baktığını söyler (`aranan: ...`), neyin yanlış olduğuna dair yorum yapmaz.
+
+### Faz planlama — onay kapılı (issue #249)
+
+Bir faz AKTIF olunca o faza ait sprintleri sabit bir şablon değil **planlayıcı rol** üretir; plan **insan onayından**
+geçmeden hiçbir sprint açılmaz. Mevcut panoya dokunulmaz, sprintler **eklenir**.
+
+1. **Tetik:** aktif faz ilk faz değilse (ilk faz brief'ten planlanır) ve pano tamamen kapalıysa koşucu kendiliğinden başlatır;
+   ya da panel Fazlar sekmesinde **🗂 Aktif Fazı Planla** / `./basla.sh --faz-planla` (koşucu kapalıyken).
+2. **Planlama sprinti:** T1 `sprint_planner` — brief, backlog, ekran envanteri, kabul kriterleri ve önceki faz raporlarını okuyup
+   `workspace/docs/faz_planlari/<FAZ>.json` yazar (şema: `_sema.md`, org şemasındaki build rollerinden üretilir).
+   T2 `role: human` onay kapısı (**Onaylar** sekmesi).
+3. **Doğrulama:** plan JSON'u kapıya gitmeden denetlenir (geçerli JSON, en fazla 5 sprint/6 görev, develop+test, tanımsız bağımlılık yok,
+   human rolü yok); geçersizse hata listesiyle planlayıcıya geri döner. Geçerliyse okunur `<FAZ>.md` üretilir.
+4. **Onay → ekleme:** sprintler yeniden numaralanıp (S{n}) görev/bağımlılık id'leri eşlenerek, uygulama dizini sözleşmesiyle panoya eklenir
+   (`<FAZ>.uygulandi` işareti, aynı plan iki kez uygulanmaz). **Ret** (gerekçeli) → planlayıcı notla planı yeniden üretir.

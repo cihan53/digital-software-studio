@@ -185,6 +185,7 @@
       <span class="soluk">Aktif faz kapanınca sıradaki faz açılır; o faza ait bekleyen talepler
         otomatik PLANLANDI olur. Talepleri başka faza Talepler sekmesindeki Faz sütunundan taşıyabilirsiniz.</span>
       <button onclick="fazIlerlet()">▶ Sonraki Faza Geç</button>
+      <button onclick="fazPlanla()">🗂 Aktif Fazı Planla</button>
     </div>
     <table class="tablo"><thead><tr>
       <th>ID</th><th>Faz</th><th>Durum</th><th>Kilit</th><th>Hedef Tarih</th><th>Önkoşul</th>
@@ -624,6 +625,14 @@ async function fazYukle(){
        <td class="soluk">${esc(f.onkosul_faz||'—')}</td></tr>`
     ).join('')||'<tr><td colspan="6" class="soluk">Faz tanımı yok.</td></tr>';
   }catch(e){}
+}
+async function fazPlanla(){
+  const f=(await(await fetch('/api/fazlar')).json()).fazlar?.fazlar?.find(x=>x.durum==='AKTIF');
+  if(!f){toast('Aktif faz yok.');return;}
+  if(!confirm(f.id+' için sprintleri planlayıcı üretecek; plan Onaylar sekmesinde sizin onayınızı bekler, onaylanmadan sprint açılmaz. Devam?'))return;
+  const d=await(await fetch('/api/kontrol',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({aksiyon:'faz_planla',faz:f.id})})).json();
+  toast(d.mesaj);
 }
 async function fazIlerlet(){
   if(!confirm('Aktif faz TAMAMLANDI yapılıp sıradaki faz AKTIF olacak.\nO faza ait bekleyen talepler planlanır. Devam?'))return;
