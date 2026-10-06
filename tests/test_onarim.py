@@ -139,3 +139,41 @@ class ClaudeYasakBayragi(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GercekDogrulama(unittest.TestCase):
+    """KAYNAK/BUILD kapısı uygulamanın testini koşar; telafi UAT bulgusunu girdi alır (issue #251)."""
+
+    def _uygulama(self, kod: int):
+        kok = Path(tempfile.mkdtemp())
+        d = kok / "workspace" / "src" / "web"
+        (d / "node_modules").mkdir(parents=True)
+        (d / "package.json").write_text(json.dumps({"scripts": {"test": f"echo kirmizi-cikti; exit {kod}"}}), encoding="utf-8")
+        return kok
+
+    def test_kirmizi_test_kapiyi_basarisiz_sayar(self):
+        kok = self._uygulama(1)
+        ok, kanit = ON.testleri_kos(kok)
+        self.assertFalse(ok)
+        self.assertIn("kirmizi-cikti", kanit)
+        ok, kanit = ON.kapi("KAYNAK", kok)(0)
+        self.assertFalse(ok)
+        self.assertIn("kirmizi-cikti", kanit)
+
+    def test_yesil_veya_betiksiz_gecer(self):
+        self.assertTrue(ON.testleri_kos(self._uygulama(0))[0])
+        kok = Path(tempfile.mkdtemp())
+        self.assertTrue(ON.testleri_kos(kok)[0])                      # uygulama yok → atla
+
+    def test_uat_bulgulari_istemde(self):
+        kok = Path(tempfile.mkdtemp())
+        (kok / "workspace/docs").mkdir(parents=True)
+        (kok / "workspace/docs/uat_kabul_raporu_TALEP-9.md").write_text(
+            "| ENV-01 | sunucu | **GEÇTİ** | ok |\n| TLP-02 | kopya | **KALDI (BUG)** | costLedger.test.ts:29 sohbet metni |\n"
+            "| TLP-03 | veri | **ÇALIŞTIRILMADI** | - |\n", encoding="utf-8")
+        b = ON.uat_bulgulari("TALEP-9", kok)
+        self.assertIn("costLedger.test.ts:29", b)
+        self.assertNotIn("ENV-01", b)
+        self.assertNotIn("TLP-03", b)
+        self.assertEqual(ON.uat_bulgulari(None, kok), "")
+        self.assertEqual(ON.uat_bulgulari("TALEP-1", kok), "")
