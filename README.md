@@ -427,3 +427,5 @@ geçmeden hiçbir sprint açılmaz. Mevcut panoya dokunulmaz, sprintler **ekleni
    human rolü yok); geçersizse hata listesiyle planlayıcıya geri döner. Geçerliyse okunur `<FAZ>.md` üretilir.
 4. **Onay → ekleme:** sprintler yeniden numaralanıp (S{n}) görev/bağımlılık id'leri eşlenerek, uygulama dizini sözleşmesiyle panoya eklenir
    (`<FAZ>.uygulandi` işareti, aynı plan iki kez uygulanmaz). **Ret** (gerekçeli) → planlayıcı notla planı yeniden üretir.
+
+**UAT güvenilirliği (issue #253):** talepli UAT görevinde ajan çalışmadan önce motor uygulama testlerini, render kapısını ve canlı UAT betiğini koşup çıktıyı ajana girdi verir (ajanın araç kısıtından bağımsız). Motor kanıtı yeşilken ret, yalnız bu oturumda çalıştırılmış ve başarısız bir tablo satırına dayanabilir; "önceki oturum/çalıştırılamadı" gerekçeli ret sayılmaz ve talep müşteri onayına gider. UAT ret sayacı yalnız son insan müdahalesinden (`INSAN_GEREKLI` ya da `İnsan:` kaydı) sonrasını sayar.
