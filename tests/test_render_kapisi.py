@@ -27,6 +27,9 @@ KARSILAMA = "<html><body><div class='nuxt-welcome'><h1>Welcome to Nuxt!</h1></di
 LOGIN = ("<html><body><header>h</header><nav>n</nav><main><form onsubmit='return false'>"
          "<input name='username'><input type='password' name='password'>"
          "<button type='submit' onclick=\"localStorage.oturum='1';location.href='/korumali'\">Giriş</button></form></main></body></html>")
+SPA_LOGIN = ("<html><body><div id='app'>yükleniyor</div><script>setTimeout(()=>{document.getElementById('app').innerHTML="
+             "\"<header>h</header><nav>n</nav><main><input name='username'><input type='password' name='password'>"
+             "<button type='submit' onclick=\\\"localStorage.oturum='1';location.href='/korumali'\\\">Giriş</button></main>\"},1800)</script></body></html>")
 KORUMALI = ("<html><body><script>if(!localStorage.oturum)location.href='/login'</script>"
             "<header>h</header><nav>n</nav><main>Gizli içerik burada</main></body></html>")
 
@@ -41,6 +44,18 @@ class Sunucu(BaseHTTPRequestHandler):
 
     def log_message(self, *a):
         pass
+
+
+class SunucuSpa(Sunucu):
+    """/login formu istemcide ~1,8 sn sonra çizilir (ssr:false SPA)."""
+    def do_GET(self):
+        if self.path == "/login":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(SPA_LOGIN.encode())
+        else:
+            super().do_GET()
 
 
 @unittest.skipUnless(CHROME and shutil.which("node"), "Chrome/node yok")
@@ -102,6 +117,28 @@ class RenderKapisi(unittest.TestCase):
         self.assertNotIn("→ /login", r.stdout)                              # korumalı rota gerçekten doğrulandı
         r2, _ = self._calistir(["/korumali"])                                # tohum yoksa uyarı, rota login'e yönlenir
         self.assertIn("test hesabı bulunamadı", r2.stdout)
+
+    def test_spa_login_formu_gec_cizilirse_beklenir(self):
+        s = socket.socket()
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+        s.close()
+        srv = HTTPServer(("127.0.0.1", port), SunucuSpa)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            kok = Path(tempfile.mkdtemp())
+            (kok / "workspace/docs").mkdir(parents=True)
+            (kok / "workspace/studio.config.json").write_text(json.dumps({"live": {"ports": [port]}}))
+            (kok / "workspace/uat_checklist.json").write_text(json.dumps({"rotalar": ["/korumali"], "cati": {"haric": []}}))
+            tohum = kok / "workspace/src/web/app/data/mock/auth.ts"
+            tohum.parent.mkdir(parents=True)
+            tohum.write_text("export const U = [{ username: 'ceo', password: 'Demo1234!' }]")
+            # checklist'te giris YOK: otomatik giriş formu beklemeli
+            r = subprocess.run(["node", str(ROOT / "scripts/render_kapisi.mjs")], env={**os.environ, "STUDIO_KOK": str(kok)}, capture_output=True, text=True, timeout=120)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("Otomatik giriş yapıldı: ceo", r.stdout)
+        finally:
+            srv.shutdown()
 
     def test_karsilama_sayfasi_ortam_hatasi_atlanir(self):
         r, kok = self._calistir(["/karsilama"])
