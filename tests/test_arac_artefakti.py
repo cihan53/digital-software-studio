@@ -65,6 +65,24 @@ class DosyaIsaretleyici(unittest.TestCase):
             E.check_output_path = eski
 
 
+class BasBosSatir(unittest.TestCase):
+    def test_shebang_ilk_satirda_yazilir(self):
+        eski = (E.check_output_path,)
+        d = Path(tempfile.mkdtemp())
+        try:
+            E.check_output_path = lambda p: (d / "betikler").resolve()
+            ya = E.write_multi_file("betikler/", "=== FILE: a.mjs ===\n#!/usr/bin/env node\nconsole.log(1)\n\nconsole.log(2)\n=== FILE: b.sh ===\r\n\n#!/bin/sh\necho x\n")
+            a = (d / "betikler" / "a.mjs").read_text()
+            self.assertTrue(a.startswith("#!/usr/bin/env node\n"), repr(a[:30]))
+            self.assertIn("console.log(1)\n\nconsole.log(2)", a)                  # iç boşluklar korunur
+            self.assertTrue((d / "betikler" / "b.sh").read_text().startswith("#!/bin/sh\n"))
+            E.check_output_path = lambda p: (d / "tek.mjs").resolve()
+            E.write_single_file("tek.mjs", "\n\n#!/usr/bin/env node\nx\n")
+            self.assertTrue((d / "tek.mjs").read_text().startswith("#!/usr/bin/env node"))
+        finally:
+            E.check_output_path, = eski
+
+
 class YedekDokum(unittest.TestCase):
     def test_isaretleyicisiz_cikti_src_disina_yazilir(self):
         d = Path(tempfile.mkdtemp()).resolve()
