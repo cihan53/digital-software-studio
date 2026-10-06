@@ -585,6 +585,20 @@ def kontrol(body: dict) -> dict:
             return {"ok": False, "mesaj": "sonuc 'onayla' veya 'reddet' olmalı."}
         except Exception as e:
             return {"ok": False, "mesaj": f"Talep modülü: {e}"}
+    if aks == "faz_planla":
+        # Faz için sprint planlamasını ister; koşucu planlayıcı + insan onay kapısı sprintini ekler (#249).
+        faz_id = (body.get("faz") or "").strip()
+        try:
+            sys.path.insert(0, str(ROOT / "scripts"))
+            import karar_verici_triage as KVT
+            faz = next((f for f in KVT.load_fazlar().get("fazlar", []) if f.get("id") == faz_id), None)
+        except Exception as e:
+            return {"ok": False, "mesaj": f"Faz modülü: {e}"}
+        if faz is None or faz.get("durum") != "AKTIF":
+            return {"ok": False, "mesaj": "Yalnız AKTIF faz planlanabilir."}
+        B.request("faz_planla", faz_id, kaynak="web")
+        B.audit("web", "faz_planla", detay={"faz": faz_id})
+        return {"ok": True, "mesaj": f"{faz_id} planlama istendi; koşucu planlama sprintini ekleyecek (plan insan onayından geçer)."}
     if aks == "faz_ilerlet":
         # Aktif fazı TAMAMLANDI yapıp sıradaki fazı AKTIF'e çeker; o faza
         # ait FAZ_BEKLIYOR talepler PLANLANDI olur. CLI'deki

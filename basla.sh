@@ -112,7 +112,7 @@ PYEOF
         node scripts/tarayici_test_izle.mjs
       fi
       exit 0 ;;
-  --incele|--review)
+  --faz-planla|--incele|--review)
       $PY studio_engine.py --review
       exit 0 ;;
   --tara|--scan|--kaynak-tara)
