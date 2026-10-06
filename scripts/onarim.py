@@ -55,6 +55,60 @@ def uygun_mu(task: dict) -> bool:
     return bool(task.get("talep_id")) and task.get("phase") == "develop" and (task.get("role") or "").lower() != "human"
 
 
+def uygulama_dizini(root: Path) -> Path:
+    try:
+        import studio_config as SC
+        import uygulama_dizini as UD
+        cfg = SC.load_config(root / "workspace" / "studio.config.json")
+    except Exception:
+        cfg = None
+    try:
+        import uygulama_dizini as UD
+        return root / UD.dizin(cfg)
+    except Exception:
+        return root / "workspace" / "src" / "web"
+
+
+def testleri_kos(root: Path, timeout_s: int = 240):
+    """Uygulamanın kendi test betiğini (package.json `test`) koşar: (ok, kanıt). Betik/bağımlılık yoksa atlanır (ok)."""
+    import json
+    d = uygulama_dizini(root)
+    pj = d / "package.json"
+    if not pj.is_file() or not (d / "node_modules").is_dir():
+        return True, ""
+    try:
+        betikler = (json.loads(pj.read_text(encoding="utf-8")).get("scripts") or {})
+    except (ValueError, OSError):
+        return True, ""
+    if "test" not in betikler:
+        return True, ""
+    pm = "pnpm" if (d / "pnpm-lock.yaml").exists() and shutil.which("pnpm") else "npm"
+    try:
+        r = subprocess.run([pm, "run", "test"], cwd=d, capture_output=True, text=True, timeout=timeout_s,
+                           env={**os.environ, "CI": "1"})
+    except (subprocess.TimeoutExpired, OSError) as e:
+        return False, f"test komutu koşamadı/zaman aşımı: {e}"
+    if r.returncode == 0:
+        return True, ""
+    return False, (f"`{pm} run test` başarısız (çıkış {r.returncode}):\n" + ((r.stdout or "") + (r.stderr or ""))[-3000:])
+
+
+_UAT_OK_RX = re.compile(r"GEÇTİ|PASS|ÇALIŞTIRILMADI|OK\b", re.I)
+_UAT_KOT_RX = re.compile(r"KALDI|BUG|BAŞARISIZ|FAIL|REDDED|KIRMIZI", re.I)
+
+
+def uat_bulgulari(talep_id: str | None, root: Path = ROOT, limit: int = 2500) -> str:
+    """Talebin önceki UAT raporundaki başarısız satırları (varsa): onarım ajanına girdi olur."""
+    if not talep_id:
+        return ""
+    p = root / "workspace" / "docs" / f"uat_kabul_raporu_{talep_id}.md"
+    if not p.is_file():
+        return ""
+    satirlar = [l.rstrip() for l in p.read_text(encoding="utf-8", errors="replace").splitlines()
+                if _UAT_KOT_RX.search(l) and not (_UAT_OK_RX.search(l) and not re.search(r"KALDI|BUG|BAŞARISIZ|FAIL", l, re.I))]
+    return "\n".join(satirlar)[:limit]
+
+
 def istem(task: dict, kapi: str | None, kanit: str, tur: int, azami: int) -> tuple[str, str]:
     kapi_metin = {
         "RENDER": "Başarı ölçütü: sayfalar tarayıcıda hatasız çizilmeli. Doğrulama komutu: `node scripts/render_kapisi.mjs` (canlı sistem açıkken; "
@@ -68,6 +122,9 @@ def istem(task: dict, kapi: str | None, kanit: str, tur: int, azami: int) -> tup
             f"\nTUR: {tur}/{azami}")
     if kanit:
         user += f"\n\nSON DOĞRULAMA ÇIKTISI (hâlâ başarısız):\n```\n{kanit.strip()[-3500:]}\n```"
+    uat = uat_bulgulari(task.get("talep_id"))
+    if uat:
+        user += f"\n\nÖNCEKİ UAT RAPORUNUN BAŞARISIZ BULGULARI (kapı geçse bile bunlar giderilmeli):\n```\n{uat}\n```"
     user += "\n\nDosyaları kendin oku, nedeni bul, düzelt ve doğrula."
     return SISTEM, user
 
@@ -135,7 +192,9 @@ def kapi(etiket_: str | None, root: Path = ROOT):
                 h = K.import_cozumleme_hatalari(src_dosyalari())
             finally:
                 K.ROOT = eski
-            return (not h, "\n".join(h[:25]))
+            ok_t, kanit_t = testleri_kos(root)
+            kanit = "\n".join(h[:25] + ([kanit_t] if kanit_t else []))
+            return (not h and ok_t, kanit)
         return f
     if etiket_ == "HİJYEN":
         def f(tur):
