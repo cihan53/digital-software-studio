@@ -410,6 +410,7 @@ Hata olunca kural yazmak yerine **araçlı ajan çözer, motor aynı kapıyla do
 2. Tur 0'da kapı koşulur; zaten geçiyorsa ajan çağrılmaz.
 3. Geçmiyorsa araçlı ajan çağrılır: dosyaları okur, `Edit(workspace/**)` ile doğrudan düzenler, komutları kendisi çalıştırıp doğrular. Tur sonunda motor **aynı kapıyı** yeniden koşar (canlı gerektirenlerde yerel ortam yeniden başlatılır); geçmezse yeni kanıtla sonraki tur (`STUDIO_ONARIM_TUR`, varsayılan 3). `STUDIO_ONARIM=0` ile kapatılır.
 4. **Güvenlik:** yazma yalnız `workspace/**` (Claude'un yerel izin kuralı); Bash serbest ama tehlikeli komutlar yasak (`sudo`, `git push/reset/checkout/clean/rebase/config`, `pkill`, `rm -rf /`...; `--disallowedTools` izne baskındır); tur sonunda workspace dışı değişiklik geri alınır, çerçeve dosyaları değiştiyse `studio_updater` ile geri yüklenir; her tur öncesi git kontrol noktası. Devin/agy kendi izin modunda çalışır; kapsam ve bütünlük denetimleri onlar için de geçerlidir.
+   `BUILD`/`KAYNAK` kapısı import çözümlemesine ek olarak uygulamanın kendi `package.json` `test` betiğini koşar (kırmızıysa çıktı ajana girdi olur); telafi isteminde talebin önceki UAT raporunun başarısız satırları da yer alır (issue #251).
 5. Sensörler nereye baktığını söyler (`aranan: ...`), neyin yanlış olduğuna dair yorum yapmaz.
 
 ### Faz planlama — onay kapılı (issue #249)
