@@ -7,12 +7,13 @@ Durum: **taslak (onay bekliyor)** · Kapsam: yalnız tasarım; kod sonraki issue
 Çerçeve (digital-software-studio) farklı türde projeleri (web, mobil, gömülü, backend) aynı akışla yürütmelidir:
 
 1. Basit bir kapsam yazılır; sistem inceler, eksikleri ve önerileri brief ekranıyla tamamlar.
-2. Kapsam sürecin her yerinde değişebilir; değişiklik boyutuna göre mevcut faz ilerler ya da yeni faz oluşur.
-3. Kapsam kesinleşince teknik gereksinimler planlanır, faz ve sprintlere bölünür.
-4. Geliştirme ortamı ve müşteri test ortamı hazırlanır.
-5. Ajanlar geliştirme ortamında kodu geliştirir, test eder, hataları kendileri çözer.
-6. Ajanlar gerçek ekran gezisiyle (UAT) doğrular; bulgular sprinte eklenir. Ortamı kıran hata anında çözülür.
-7. Tüm kapılardan geçenler müşteri test ortamında müşteri onayına sunulur; onaylananlar kaynak yönetimine alınır.
+2. Kapsam netleşince **organizasyon (rol kadrosu)** proje türüne göre kurulur ve onaylanır.
+3. Kapsam sürecin her yerinde değişebilir; değişiklik boyutuna göre mevcut faz ilerler ya da yeni faz oluşur.
+4. Kapsam kesinleşince teknik gereksinimler planlanır, faz ve sprintlere bölünür.
+5. Geliştirme ortamı ve müşteri test ortamı hazırlanır.
+6. Ajanlar geliştirme ortamında kodu geliştirir, test eder, hataları kendileri çözer.
+7. Ajanlar gerçek ekran gezisiyle (UAT) doğrular; bulgular sprinte eklenir. Ortamı kıran hata anında çözülür.
+8. Tüm kapılardan geçenler müşteri test ortamında müşteri onayına sunulur; onaylananlar kaynak yönetimine alınır.
 
 ## 2. Pilotlardan çıkan sorunlar (kanıt)
 
@@ -40,6 +41,7 @@ Durum: **taslak (onay bekliyor)** · Kapsam: yalnız tasarım; kod sonraki issue
 | # | Adım | Bugün | Bu tasarımla |
 |---|---|---|---|
 | 1-2 | Kapsam + brief görüşmesi | Var | Aynı |
+| 2b | Organizasyon kurulumu | Sabit rol kadrosu + planlayıcının dinamik rol sentezi; onay yok | §4a kadro önerisi ve onayı |
 | 3 | Kapsam değişikliği | Müşteri talebi var; etki analizi yok | §10.3 etki analizi ve faz önerisi |
 | 4-5 | Gereksinim, faz, sprint planı | Plan ve faz planlama (#249) var; gereksinim izlenebilirliği yok | §10.2 + gereksinim → test izi |
 | 6 | Geliştirme ortamı | Ajan yazdığı betik | §5 ortam sözleşmesi |
@@ -49,6 +51,29 @@ Durum: **taslak (onay bekliyor)** · Kapsam: yalnız tasarım; kod sonraki issue
 | 10 | Bulgular sprinte; ortamı kıran hata anında | Bulgu→talep→telafi var; acil hat yok | §11.2 acil hat |
 | 11 | Müşteri onayı | Durum var; test edilecek ortam yok | §9 |
 | 12 | Onaylananı kaynak yönetimine al | Görev bazlı otomatik commit; onaya bağlı yayın yok | §9.3 |
+
+## 4a. Organizasyon kurulumu
+
+Bugün: `org_chart.json` sabit bir kadro taşır (rol: sistem istemi, girdi/çıktı, aşama, araçlar, motor/model); planlayıcı bilinmeyen rol isterse motor dinamik rol sentezler. Kadro proje türüne göre ayrı kurulmaz, onay kapısı yoktur ve rol listesi web ağırlıklıdır.
+
+### 4a.1 Model: ortak çekirdek + tür uzmanları
+- **Ortak çekirdek (her projede):** CTO, ürün sahibi, sprint planlayıcı, devops, UAT denetçisi, güvenlik/gizlilik, kurtarma nöbetçisi, müşteri temsilcisi.
+- **Tür uzmanları (profilden gelir, §7):** web (web mühendisi, ekran gezgin testçi), mobil (platform mühendisi, cihaz testçisi), gömülü (firmware mühendisi, simülatör/donanım testçisi, imza sorumlusu), backend (backend mühendisi, veri mühendisi, yük/güvenlik testçisi).
+- Kadro **proje başına** `workspace/organizasyon.json` olarak tutulur; çerçevenin `org_chart.json`'ı varsayılan şablondur.
+
+### 4a.2 Rol şeması
+Her rol: `id`, görev ve sorumluluk, **yazma kapsamı** (hangi dosya/dizinler), **araç izinleri**, aşama, motor ve model, **bütçe payı**, sahip olduğu çıktılar (örn. ortam sözleşmesinin sahibi devops). Rol çıktıları dışında yazamaz (§8.3 kapsam denetimi bunu uygular).
+
+### 4a.3 Akış
+1. Kapsam ve brief bittikten sonra CTO ve ürün sahibi, tür profilinden başlayarak kadroyu önerir: hangi roller, kaç tane, hangi araç, hangi motor ve model.
+2. Öneri ayrı bir **kadro onayı** olarak panel Onaylar sekmesine düşer; insan düzenler/onaylar. Motor ve model ilk değeri burada belirlenir; sonradan kontrol panelinden değişir (§11.3).
+3. Onaydan sonra kadro kilitlenir; rol ekleme/çıkarma, gerekçe ve onayla (faz sırasında da) yapılabilir.
+
+### 4a.4 Dinamik rol sentezi (kontrol altında)
+Planlayıcı kadroda olmayan rol isterse rol **önerilen** durumda oluşur, kapsamı dar ve geçicidir; insan onayı olmadan kalıcı kadroya girmez. Onay gelene kadar görev bekler ya da mevcut en yakın role atanır.
+
+### 4a.5 Roller üzerinde kontroller
+Rol devre dışı bırakma (bugünkü `devre_disi`), rol bazında bütçe ve motor/model, rol bazında araç izni; hepsi kadro belgesinde ve panelde görünür.
 
 ## 5. Ortam sözleşmesi
 
@@ -198,6 +223,7 @@ Günlük görev ve bütçe bugünkü gibi. Eklenecek: **kimlik hatası ≠ kota*
 
 ## 13. Geçiş planı (PR dilimleri)
 
+0. **Organizasyon kurulumu:** `organizasyon.json` şeması, kadro önerisi ve onayı, kontrollü dinamik rol sentezi, tür profillerinden varsayılan kadro.
 1. **Ortam sözleşmesi çekirdeği:** şema, doğrulama, `komut`/`http`/`tarayici` adaptörleri, `calistir`/`saglik` yönetimi, web profili. Mevcut `yerel_ortam_yonet.py`, `build_checklist.json`, `smoke_checklist.json`, `uat_checklist.json` ve `studio.config.json` içindeki `kalite.*`/`live.ports` buna taşınır.
 2. **Araçlı ajan modu:** önce devops ve web/backend develop, sonra tüm develop; çıktı yazım kuralı; test/doküman görevleri eskisi gibi.
 3. **Kimlik/kota ayrımı** (küçük, bağımsız).
@@ -218,6 +244,7 @@ Her dilim: issue → branch → PR; testler ve README güncellemesi. Pilot (devi
 5. Acil hat koşan görevi böler mi, görev bitince mi araya girer? (Varsayım: görev bitince; ortam kırıksa hemen.)
 6. Kota faz başına da mı olsun?
 7. Paralel faz gerekir mi?
+8. Kadro onayı brief ekranının sonunda mı, ayrı sekmede mi? (Varsayım: Onaylar sekmesi.)
 
 ## 15. Kapsam dışı
 
