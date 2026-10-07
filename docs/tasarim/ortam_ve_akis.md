@@ -70,7 +70,7 @@ Her rol: `id`, görev ve sorumluluk, **yazma kapsamı** (hangi dosya/dizinler), 
 
 ### 4a.3 Akış
 1. Kapsam ve brief bittikten sonra CTO ve ürün sahibi, tür profilinden başlayarak kadroyu önerir: hangi roller, kaç tane, hangi araç, hangi motor ve model.
-2. Öneri ayrı bir **kadro onayı** olarak panel Onaylar sekmesine düşer; insan düzenler/onaylar. Motor ve model ilk değeri burada belirlenir; sonradan kontrol panelinden değişir (§11.3).
+2. **Kadro kararını sistem verir** (CTO + ürün sahibi rolleri): müşteri teknik kadro kararını veremeyebilir. Karar gerekçesiyle birlikte panel Onaylar sekmesinde **bilgilendirme kaydı** olarak görünür; insan isterse düzenler ya da geri alır (itiraz penceresi, kadro kilitlenmeden önce). Motor ve model ilk değeri de burada sistem tarafından seçilir; sonradan kontrol panelinden değişir (§11.3).
 3. Onaydan sonra kadro kilitlenir; rol ekleme/çıkarma, gerekçe ve onayla (faz sırasında da) yapılabilir.
 
 ### 4a.4 Dinamik rol sentezi (kontrol altında)
@@ -119,6 +119,16 @@ gizli      : [ gizli bilgi adları ]  -- değerleri sözleşmede yok (§12)
 ```
 
 Gömülü: `derle` çapraz derleme, `calistir` QEMU/Renode, `saglik` seri logda "boot ok" (`seri-log`), `dogrula` host'ta birim test + statik analiz, `gez` simülatörde senaryo. Mobil: `calistir` emülatör/simülatör, `saglik` ilk ekran göründü, `gez` `cihaz-ekran` adaptörü. Backend: `calistir` servis + test veritabanı, `saglik` `/health`, `gez` `senaryo` adaptörü (API çağrı dizisi).
+
+### 5.4 Müşteriden istenen girdiler (ortam gereksinimleri)
+
+Müşteri teknik kurulumu bilmeyebilir. Sistem, proje türü ve sözleşmeye göre **tüm gereksinimleri çıkarır ve tarif eder**; müşteri tarifi izleyip sağlar:
+- **Araçlar ve hesaplar:** gerekli yazılım/SDK, geliştirici hesapları, lisanslar.
+- **Bağlantılar ve ayarlar:** ağ/port, VPN, dış servis adresleri, ortam değişkenleri; adım adım yönerge.
+- **Anahtarlar:** mağaza API anahtarı, imzalama sertifikası/profili, SSH/transfer anahtarı, API anahtarları. Değerler §12 kurallarıyla saklanır; ajan görmez.
+- **Donanım (gömülü):** cihaz/programlayıcı/seri bağlantı ve bağlantı şeması (`donanim` adaptörü bunu kullanır).
+Panelde bir **müşteri girdileri** kontrol listesi bulunur; her madde "bekliyor / sağlandı / doğrulandı" durumundadır. Çerçeve sağlanan girdiyi (ör. bağlantı denemesi, anahtar geçerliliği) doğrular. Eksik girdi bir görevi bloke ederse müşteri panelde bilgilendirilir (§11.2 "bilinen sorun" mekanizması).
+**Mobil dağıtım:** müşteriden alınan anahtarlarla **fastlane** (`paketle`/`transfer` adımı) kullanılır; çerçeve yöntemi bilmez, sözleşmedeki komutu yönetir.
 
 ## 6. Doğrulayıcı adaptörler
 
@@ -200,8 +210,8 @@ Kapı geçerse "Sonraki faza geç" etkin olur; geçmezse düğme neyin eksik old
 ### 10.3 Kapsam değişikliği → etki analizi ve faz önerisi (yeni)
 Brief ekranından gelen değişiklik: planlayıcı/CTO rolü etkiyi çıkarır (hangi tamamlanmış iş yeniden açılır, hangi sprintler kayar, tahmini maliyet). Boyut küçükse aktif faza; büyükse "yeni faz öner" kararı insana sunulur. Karar insandadır.
 
-### 10.4 Faz bütçesi ve tarih (yeni, hafif)
-Faz başına toplam bütçe ve sapma uyarısı; hedef tarihi aşan faz için uyarı. Engelleme yok, görünürlük.
+### 10.4 Tarih uyarısı (yeni, hafif)
+Hedef tarihi aşan faz için uyarı; engelleme yok, görünürlük. **Faz başına bütçe v2 kapsamı dışıdır** (kota günlük kalır).
 
 ### 10.5 Varsayım
 Fazlar sıralıdır (paralel faz kapsam dışı).
@@ -219,7 +229,7 @@ Geliştirme veya müşteri ortamını kıran hata (`calistir`/`saglik` başarıs
 Görev ve rol bazında seçim bugün var; eklenecek: proje türü varsayılanı (ör. gömülüde derleme uzun olduğundan daha güçlü model), "araçlı ajan gerektirir" bilgisi.
 
 ### 11.4 Kota
-Günlük görev ve bütçe bugünkü gibi. Eklenecek: **kimlik hatası ≠ kota** ayrımı (`OAuth ... expired`, `credits balance too low` anlaşılır mesajla koşucuyu durdurur, yeniden denemeyi 5 saat beklemez); faz bütçesi (§10.4).
+Günlük görev ve bütçe bugünkü gibi. Eklenecek: **kimlik hatası ≠ kota** ayrımı (`OAuth ... expired`, `credits balance too low` anlaşılır mesajla koşucuyu durdurur, yeniden denemeyi 5 saat beklemez).
 
 ## 12. Güvenlik ve gizlilik
 
@@ -236,21 +246,21 @@ Günlük görev ve bütçe bugünkü gibi. Eklenecek: **kimlik hatası ≠ kota*
 4. **Faz çıkış kapısı** (+ gereksinim → test izi).
 5. **Müşteri test ortamı ve yayın akışı.**
 6. **Acil hat ve müşteri bilgilendirmesi** (bilinen sorun notu).
-7. **Kapsam değişikliği etki analizi ve faz önerisi; faz bütçesi/tarih.**
+7. **Kapsam değişikliği etki analizi ve faz önerisi; tarih uyarısı.**
 8. **Mobil, gömülü, backend adaptörleri ve profilleri** (her biri ayrı küçük PR).
 
 Her dilim: issue → branch → PR; testler ve README güncellemesi. Pilot (devin/claude) ortamlarında izlenir.
 
 ## 14. Açık sorular
 
-1. Gömülü projelerde gerçek donanım (HIL) şart mı; yoksa simülatör/emülatör varsayılan, donanım isteğe bağlı mı? (Varsayım: ikincisi.)
+1. ~~Gömülüde gerçek donanım~~ **Karar:** her tür araç, hesap, bağlantı ve donanım müşteriden istenebilir; sistem gereksinim listesini ve kurulum/bağlantı tarifini üretir, müşteri kurar (§5.4). `donanim` adaptörü bu yüzden ilk sürümde desteklenir (müşteri sağladığı cihaz/bağlantı ile).
 2. ~~Müşteri test ortamı aynı makinede mi, uzak mı?~~ **Karar:** varsayılan aynı makine; uzak hedef ve transfer yöntemi sözleşmeden seçilir (§9.2). Açık kalan: hangi transfer yöntemleri ilk sürümde desteklenecek (öneri: yerel, `komut`).
 3. ~~Yayın hedefi, onaylı sürüm dalı, etiket adı, PR sıklığı~~ **Kararlar:** `main` + etiket; etiket proje sürümü; `main`'e PR yalnız müşteri onayından sonra (§9.3).
-4. Mobilde dağıtım kanalı (TestFlight/APK/emülatör imajı) ve imzalama anahtarı yönetimi.
+4. ~~Mobil dağıtım kanalı ve imza~~ **Karar:** dağıtım için gereken anahtarlar (mağaza API anahtarı, imzalama sertifikası/profili) müşteriden alınır ve **fastlane** ile dağıtılır (§5.4, §12).
 5. ~~Acil hat koşan görevi böler mi?~~ **Karar:** bölmez, görev bitince araya girer; müşteri bilgilendirilir (§11.2). **Karar:** müşteri bildirim kanalı panel (müşteri sohbeti/durum ekranı); e-posta v2 kapsamı dışı.
-6. Kota faz başına da mı olsun?
-7. Paralel faz gerekir mi?
-8. Kadro onayı brief ekranının sonunda mı, ayrı sekmede mi? (Varsayım: Onaylar sekmesi.)
+6. ~~Faz başına kota~~ **Karar:** gerek yok (§10.4).
+7. ~~Paralel faz~~ **Karar:** şimdilik sıralı (§10.5).
+8. ~~Kadro onayı yeri~~ **Karar:** Onaylar sekmesinde bilgilendirme kaydı; kararı sistem verir, insan geri alabilir (§4a.3). Açık kalan: aynı "sistem karar verir" yaklaşımı ortam sözleşmesi ve faz planı için de geçerli olsun mu? (Öneri: evet, ama sözleşme/faz planı hatalıysa doğrulama kapısı zaten geri çevirir; insan yalnız görür.)
 
 ## 15. Kapsam dışı
 
