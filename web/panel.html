@@ -118,6 +118,7 @@
 <div class="sekmeler">
   <div class="sekme aktif" data-t="pano" onclick="sekmeAc('pano')">📋 Pano</div>
   <div class="sekme" data-t="canli" onclick="sekmeAc('canli')">📡 Canlı Çıktı</div>
+  <div class="sekme" data-t="akis" onclick="sekmeAc('akis')">🔭 Akış</div>
   <div class="sekme" data-t="audit" onclick="sekmeAc('audit')">🧾 Audit Log</div>
   <div class="sekme" data-t="cagri" onclick="sekmeAc('cagri')">🧠 İşlem Logları</div>
   <div class="sekme" data-t="talep" onclick="sekmeAc('talep')">📥 Talepler</div>
@@ -130,6 +131,7 @@
 </div>
 <div class="icerik">
   <div id="aktif" class="kart aktif-kart gizli"></div>
+  <div id="neden" class="kart gizli"></div>
 
   <section id="s-pano">
     <div class="ipucu">Görevleri sürükleyip bırakarak <b>öncelik önerisi</b> verirsiniz;
@@ -151,6 +153,25 @@
   <section id="s-canli" class="gizli">
     <div id="canli-meta" class="durum-hat"></div>
     <pre id="canli-out" style="min-height:320px;max-height:60vh;overflow-y:auto"></pre>
+  </section>
+
+  <section id="s-akis" class="gizli">
+    <div class="filtre">
+      <input id="a-gorev" placeholder="Görev (ör. S3-T2)" onchange="akisYukle()">
+      <select id="a-olay" onchange="akisYukle()">
+        <option value="">Olay (hepsi)</option>
+        <option value="arac_cagrisi">Ajan araç çağrıları</option>
+        <option value="gorev_durum">Görev durumu</option>
+        <option value="kontrol_istek">Kontrol istekleri</option>
+        <option value="talep_senkron">Talep senkronu</option>
+      </select>
+      <button onclick="akisYukle()">Yenile</button>
+      <span class="soluk">Satıra tıklayınca o görevin gerçek kod farkı açılır.</span>
+    </div>
+    <div id="akis-diff" class="kart gizli"></div>
+    <table class="tablo"><thead><tr>
+      <th>Zaman</th><th>Kaynak</th><th>Olay</th><th>Görev</th><th>Özet</th>
+    </tr></thead><tbody id="akis"></tbody></table>
   </section>
 
   <section id="s-audit" class="gizli">
@@ -229,9 +250,9 @@ function modalKapat(){ document.getElementById('modal').classList.add('gizli'); 
 
 function sekmeAc(t){
   document.querySelectorAll('.sekme').forEach(x=>x.classList.toggle('aktif', x.dataset.t===t));
-  for (const s of ['pano','canli','audit','cagri','talep','faz','brief','onay','dok','ortam','onz'])
+  for (const s of ['pano','canli','akis','audit','cagri','talep','faz','brief','onay','dok','ortam','onz'])
     document.getElementById('s-'+s).classList.toggle('gizli', s!==t);
-  if(t==='audit') auditYukle(); if(t==='cagri') cagriYukle();
+  if(t==='akis') akisYukle(); if(t==='audit') auditYukle(); if(t==='cagri') cagriYukle();
   if(t==='talep') talepYukle(); if(t==='canli') canliYukle(); if(t==='faz') fazYukle(); if(t==='onay') onayYukle(true); if(t==='brief') briefYukle(); if(t==='dok') dokYukle(); if(t==='ortam') ortamYukle('ortam'); if(t==='onz') ortamYukle('onz');
 }
 let aktifSekme='pano';
@@ -313,6 +334,12 @@ async function ozetYukle(){
           `<span class="soluk">${esc(d.aktif.backend||'')}/${esc(d.aktif.model||'')} · giden ${(d.aktif.prompt_chars||0).toLocaleString('tr')} krk · geçen ${gecen}</span>${aktivite}`;
       }
     } else ak.classList.add('gizli');
+    const nd=document.getElementById('neden');
+    if(d.neden){
+      nd.classList.remove('gizli');
+      nd.innerHTML=`⏸ <b>Şu an çalışan çağrı yok:</b> ${esc(d.neden.mesaj)}`+
+        (d.neden.eylem?` <span class="soluk">→ ${esc(d.neden.eylem)}</span>`:'');
+    } else nd.classList.add('gizli');
   }catch(e){}
 }
 
@@ -507,6 +534,30 @@ async function auditYukle(){
      <td class="soluk">${esc(r.talep_id||'')}</td>
      <td class="soluk" style="max-width:420px;overflow:hidden;text-overflow:ellipsis">${esc(r.detay||'')}</td></tr>`
   ).join('')||'<tr><td colspan="6" class="soluk">Kayıt yok.</td></tr>';
+}
+
+// ---------- akış (v2 gözlem) ----------
+const gok=g=>/^[A-Za-z0-9_.-]{1,40}$/.test(g||'');
+const AKIS_SIMGE={arac_cagrisi:'⚙',gorev_durum:'▣',kontrol_istek:'🎛',talep_senkron:'📥'};
+async function akisYukle(){
+  const g=document.getElementById('a-gorev').value.trim(), o=document.getElementById('a-olay').value;
+  const d=await(await fetch(`/api/akis?limit=300${g?'&gorev='+encodeURIComponent(g):''}${o?'&olay='+o:''}`)).json();
+  document.getElementById('akis').innerHTML=(d.akis||[]).map(r=>
+    `<tr style="${gok(r.gorev)?'cursor:pointer':''}" ${gok(r.gorev)?`onclick="degisiklikAc('${r.gorev}')"`:''}>
+     <td class="soluk">${esc((r.zaman||'').replace('T',' '))}</td><td>${esc(r.kaynak||'')}</td>
+     <td>${AKIS_SIMGE[r.olay]||''} ${esc(r.olay||'')}</td><td class="soluk">${esc(r.gorev||'')}</td>
+     <td class="soluk" style="max-width:520px;overflow:hidden;text-overflow:ellipsis">${esc(r.ozet||'')}</td></tr>`
+  ).join('')||'<tr><td colspan="5" class="soluk">Kayıt yok.</td></tr>';
+}
+async function degisiklikAc(g){
+  const kutu=document.getElementById('akis-diff');
+  kutu.classList.remove('gizli'); kutu.innerHTML='<span class="soluk">Fark yükleniyor…</span>';
+  const d=await(await fetch('/api/degisiklik?gorev='+encodeURIComponent(g))).json();
+  if(!d.ok){ kutu.innerHTML=`<span class="hata-mtn">${esc(d.mesaj||'Okunamadı')}</span>`; return; }
+  kutu.innerHTML=`<b>${esc(g)}</b> <span class="soluk">(${d.kaynak==='commit'?'commit '+esc((d.commit||'').slice(0,8)):'çalışma ağacı, henüz commit yok'})</span>`+
+    `<pre style="white-space:pre-wrap">${esc(d.stat||'(değişiklik yok)')}</pre>`+
+    `<pre style="max-height:420px;overflow:auto;white-space:pre">${esc(d.diff||'')}</pre>`+
+    (d.kesik?'<span class="soluk">Fark kısaltıldı.</span>':'');
 }
 
 // ---------- işlem logları ----------
@@ -845,7 +896,7 @@ ozetYukle(); panoYukle(); onayYukle(true);
 setInterval(ozetYukle,2500);
 setInterval(onayYukle,5000);
 setInterval(()=>{ if(aktifSekme==='pano')panoYukle(); if(aktifSekme==='canli')canliYukle();
-  if(aktifSekme==='audit')auditYukle(); if(aktifSekme==='faz')fazYukle(); },3000);
+  if(aktifSekme==='akis')akisYukle(); if(aktifSekme==='audit')auditYukle(); if(aktifSekme==='faz')fazYukle(); },3000);
 document.querySelectorAll('.sekme').forEach(x=>x.addEventListener('click',()=>aktifSekme=x.dataset.t));
 </script>
 </body>

@@ -104,6 +104,18 @@ def durum_ozeti() -> dict:
     except Exception:
         pass
     try:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import gozlem as GO
+        _brd = None
+        try:
+            _brd = B.load()
+        except Exception:
+            pass
+        out["neden"] = GO.bekleme_nedeni(_brd, ctrl, kosucu, out["onay_bekliyor"], out["canli"],
+                                         B.live_baslatilabilir(), GO.log_kuyrugu(ROOT), cur)
+    except Exception:
+        out["neden"] = None
+    try:
         out["motor_oneri"] = B.motor_oneri_oku()
         out["motor_override"] = B.motor_list()
     except Exception:
@@ -750,6 +762,17 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(onay_dosya(q.get("yol", [""])[0]))
         if path == "/api/canli":
             return self._json(canli())
+        if path == "/api/akis":
+            import gozlem as GO
+            try:
+                lim = max(1, min(int(q.get("limit", ["200"])[0]), 1000))
+            except ValueError:
+                lim = 200
+            return self._json({"ok": True, "akis": GO.akis(lim, (q.get("gorev", [""])[0] or None),
+                                                          (q.get("olay", [""])[0] or None), (q.get("kaynak", [""])[0] or None))})
+        if path == "/api/degisiklik":
+            import gozlem as GO
+            return self._json(GO.degisiklik(q.get("gorev", [""])[0]))
         if path == "/api/audit":
             limit = int(q.get("limit", ["200"])[0] or 200)
             return self._json({"ok": True, "log": B.audit_list(
