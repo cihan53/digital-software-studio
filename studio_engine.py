@@ -3302,6 +3302,38 @@ def spent_so_far() -> float:
     return total
 
 
+CANLI_DENEME_ARALIK_SN = 300
+CANLI_DENEME_SINIR = 3
+
+
+def _canli_otomatik_baslat(task: dict) -> bool:
+    """Canlı gerektiren görev sırada ve canlı kapalıysa yerel ortamı başlatır (yerel_ortam_yonet + sağlık bekleme).
+    5 dk arayla en çok 3 ardışık deneme; başarısızlık audit'e yazılır, panelde neden kartı gösterir. STUDIO_CANLI_OTOMATIK=0 kapatır."""
+    if os.getenv("STUDIO_CANLI_OTOMATIK", "1") == "0" or not B.live_baslatilabilir():
+        return False
+    st = run_board.__dict__.setdefault("_canli_oto", {"deneme": 0, "son": 0.0})
+    if st["deneme"] >= CANLI_DENEME_SINIR or time.time() - st["son"] < CANLI_DENEME_ARALIK_SN:
+        return False
+    st["deneme"] += 1
+    st["son"] = time.time()
+    print(f"\n[CANLI] {task['id']} canlı sistem gerektiriyor; yerel ortam başlatılıyor "
+          f"(deneme {st['deneme']}/{CANLI_DENEME_SINIR})...")
+    try:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import onarim as ON
+        ok = ON.ortam_hazirla(ROOT)
+    except Exception as e:
+        ok = False
+        print(f"  [!] ortam başlatılamadı: {e}")
+    B.audit("engine", "canli_otomatik_baslatma", gorev_id=task["id"], detay={"basarili": bool(ok), "deneme": st["deneme"]})
+    if ok and B.live_up():
+        st["deneme"] = 0
+        print("  [✓] canlı ortam hazır.")
+        return True
+    print("  [!] canlı ortam hazır olmadı; görev bekliyor (panel → Yerel Ortam log'una bakın).")
+    return False
+
+
 def otomatik_kurtar_ve_temizle(board: dict) -> int:
     """Yarım kalan, çöken veya önceki oturumlarda hata veren (FAILED / BLOCKED)
     görevleri kontrol eder; yetimleri ve geçici API hatası (503 / kapasite / ağ)
@@ -3635,6 +3667,11 @@ def run_board(org: dict, brief: str, once: bool = False,
                 board = B.load()
                 continue
         if B.needs_live(task) and not B.live_up():
+            # Canlı ortamı çerçeve kendisi açar (v2 ortam yönetimi); başarısızsa bekleme/hatırlatma eski gibi sürer.
+            _canli_otomatik_baslat(task)
+            if B.live_up():
+                board = B.load()
+                continue
             # ~2 dk'da bir hatırlat; görev READY kalır, live açılınca koşar.
             if getattr(run_board, "_live_warn", 0) % 24 == 0:
                 print(f"\n[⏸ CANLI BEKLENİYOR] {task['id']} için port "
@@ -3645,6 +3682,8 @@ def run_board(org: dict, brief: str, once: bool = False,
             board = B.load()
             continue
         run_board._live_warn = 0
+        if "_canli_oto" in run_board.__dict__:
+            run_board._canli_oto["deneme"] = 0
 
         B.mark(board, task["id"], B.RUNNING)
         B.save(board)
