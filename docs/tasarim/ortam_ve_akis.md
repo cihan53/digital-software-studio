@@ -246,6 +246,21 @@ Görev ve rol bazında seçim bugün var; eklenecek: proje türü varsayılanı 
 ### 11.4 Kota
 Günlük görev ve bütçe bugünkü gibi. Eklenecek: **kimlik hatası ≠ kota** ayrımı (`OAuth ... expired`, `credits balance too low` anlaşılır mesajla koşucuyu durdurur, yeniden denemeyi 5 saat beklemez).
 
+### 11.5 Gözlem paneli: her şeyi görmek
+
+İlke: **insan, sistemin ne yaptığını, ajanın ne yazdığını ve neyle uğraştığını panelden, ek bir araca gerek duymadan görür.** Bugün panelde Pano, Canlı Çıktı (koşan çağrının metin çıktısı), Audit Log ve İşlem Logları (çağrı başına istem/cevap) var; eksikler:
+
+1. **"Şimdi" kartı** (panelin en üstünde, her sekmede görünür): çalışan görev, rol, motor/model, aşama (sıra → kota → ajan → doğrulama), tur sayısı, geçen süre, bu görevin maliyeti; boştaysa **neden beklediği** (canlı kapalı, kota onayı, kimlik hatası, onay kapısı, bağımlılık) tek cümleyle ve ilgili düğmeyle.
+2. **Etkinlik akışı** (zaman çizelgesi, filtrelenebilir): görev başladı/bitti, ajan turu, **ajanın araç çağrıları** (okudu: dosya, yazdı: dosya, çalıştırdı: komut ve çıkış), kapı sonuçları (render, UAT, test, betik), onarım turları, telafi/talep açılışı, onay/bilgilendirme kayıtları, kota ve kimlik olayları. Her satır ilgili görev ve çağrıya bağlanır.
+3. **Değişiklik görünümü:** görev (ve tur) başına git farkı: değişen dosyalar, satır farkı (diff), eklenen/silinen test. "Ajan ne yazdı?" sorusunun cevabı çıktı özeti değil gerçek kod farkıdır.
+4. **Ajan konuşması:** tam istem ve cevap (bugünkü İşlem Logları) + araç çağrıları aynı ekranda. Motor araç çağrılarını sunuyorsa (claude akış çıktısı) gerçek zamanlı; sunmuyorsa (devin/agy) görev sonunda git farkı ve komut geçmişi ile yetinilir.
+5. **Ortam ve sağlık:** geliştirme/müşteri ortamı durumu, son sağlık sonucu, portlar, son loglar (sözleşmeden, §5).
+6. **Kota ve maliyet:** bugün ve dönem harcaması, rol ve görev bazında kırılım.
+7. **Bildirimler:** koşucu durduğunda (kimlik, kredi, kota, insan devri, ortam kırıldı) panelde belirgin uyarı; müşteriye gidenler ayrıca işaretlenir (§11.2).
+8. **Müşteri girdileri ve onay kuyruğu** özeti (§5.4, Onaylar sekmesi).
+
+Veri kaynağı yeni bir sistem değil: mevcut `audit_log` ve `.trace` olay akışı genişletilir (olay türleri ve araç çağrısı kaydı), panel bunu okur. Kayıtlarda gizli değerler maskelenir (§12).
+
 ## 12. Güvenlik ve gizlilik
 
 - Gizli değerler (imzalama anahtarı, API anahtarı, giriş bilgileri) sözleşmede ve ajan görünürlüğünde yok; yalnız adları (`gizli`) tutulur, değer ortam değişkeni olarak çerçeve süreçlerine verilir.
@@ -254,7 +269,8 @@ Günlük görev ve bütçe bugünkü gibi. Eklenecek: **kimlik hatası ≠ kota*
 
 ## 13. Geçiş planı (PR dilimleri)
 
-0. **Organizasyon kurulumu:** `organizasyon.json` şeması, kadro önerisi ve onayı, kontrollü dinamik rol sentezi, tür profillerinden varsayılan kadro.
+0. **Gözlem paneli (§11.5)** — önce bu: sonraki dilimlerin izlenmesini kolaylaştırır; mevcut `audit_log`/`.trace` olay akışı, "Şimdi" kartı, etkinlik akışı, değişiklik görünümü.
+0b. **Organizasyon kurulumu:** `organizasyon.json` şeması, kadro önerisi ve onayı, kontrollü dinamik rol sentezi, tür profillerinden varsayılan kadro.
 1. **Ortam sözleşmesi çekirdeği:** şema, doğrulama, `komut`/`http`/`tarayici` adaptörleri, `calistir`/`saglik` yönetimi, web profili. Mevcut `yerel_ortam_yonet.py`, `build_checklist.json`, `smoke_checklist.json`, `uat_checklist.json` ve `studio.config.json` içindeki `kalite.*`/`live.ports` buna taşınır.
 2. **Araçlı ajan modu:** önce devops ve web/backend develop, sonra tüm develop; çıktı yazım kuralı; test/doküman görevleri eskisi gibi.
 3. **Kimlik/kota ayrımı** (küçük, bağımsız).
