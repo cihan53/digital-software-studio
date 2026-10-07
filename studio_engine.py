@@ -1211,6 +1211,20 @@ def _call_claude(system_prompt: str, user_prompt: str, effort: str, model: str,
     except OSError:
         pass
     canli_kilit = threading.Lock()
+    arac_sayac = [0]
+
+    def _arac_olayi_kaydet(ad: str, ozet: str):
+        """Ajanın araç çağrısını kalıcı etkinliğe (audit_log) yazar (v2 gözlem, #259); çağrı başına en çok 400."""
+        if arac_sayac[0] >= 400:
+            return
+        arac_sayac[0] += 1
+        try:
+            sys.path.insert(0, str(ROOT / "scripts"))
+            import gozlem as GO
+            cur = json.loads((TRACE_DIR / "current.json").read_text(encoding="utf-8") or "{}")
+            GO.arac_olayi(ad, ozet, cur.get("task"), cur.get("role"))
+        except Exception:
+            pass
 
     def _canli_yaz(satir: str):
         try:
@@ -1234,6 +1248,7 @@ def _call_claude(system_prompt: str, user_prompt: str, effort: str, model: str,
                 elif b.get("type") == "tool_use":
                     ozet = json.dumps(b.get("input") or {}, ensure_ascii=False)
                     _canli_yaz(f"⚙ {b.get('name', '?')} {ozet[:140]}")
+                    _arac_olayi_kaydet(b.get("name", "?"), ozet)
         elif tur == "user":
             for b in (ev.get("message", {}).get("content") or []):
                 if isinstance(b, dict) and b.get("type") == "tool_result":
