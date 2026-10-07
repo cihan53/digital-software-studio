@@ -323,6 +323,29 @@ def _alias_cozulur_mu(kok: Path, spec: str) -> bool:
     return False
 
 
+def betik_sozdizimi_hatalari(files: list[str]) -> list[str]:
+    """Değişen .sh dosyaları `bash -n`, .mjs/.cjs dosyaları `node --check` ile denetlenir (#255)."""
+    import shutil
+    hatalar = []
+    for f in files:
+        p = ROOT / f
+        if not p.is_file():
+            continue
+        if p.suffix in (".sh", ".bash") and shutil.which("bash"):
+            cmd = ["bash", "-n", str(p)]
+        elif p.suffix in (".mjs", ".cjs") and shutil.which("node"):
+            cmd = ["node", "--check", str(p)]
+        else:
+            continue
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        except (subprocess.TimeoutExpired, OSError):
+            continue
+        if r.returncode != 0:
+            hatalar.append(f"{f}: sözdizimi hatası — {(r.stderr or r.stdout).strip().splitlines()[0][:200] if (r.stderr or r.stdout).strip() else ''}")
+    return hatalar
+
+
 def import_cozumleme_hatalari(files: list[str]) -> list[str]:
     """Değişen src dosyalarındaki çözülemeyen relative ve (Nuxt uygulamasında) alias import'larını döner."""
     hatalar = []
@@ -597,6 +620,17 @@ def gorev_kapilari(task: dict, pre_snapshot: set[str]) -> list[str]:
             for f_ in failures[:6]:
                 print(f"             - {f_}")
             notes.append(f"smoke başarısız ({failed})")
+
+    # 3b) Betik sözdizimi (workspace/ altındaki .sh/.mjs/.cjs): bozuk betik görevi tamamlandı sayılmaz (#255)
+    betikler = [f for f in files if f.replace("\\", "/").startswith("workspace/") and f.endswith((".sh", ".bash", ".mjs", ".cjs"))]
+    if betikler:
+        bsz = betik_sozdizimi_hatalari(betikler)
+        if bsz:
+            print(f"   ⚠️  [BETİK KAPISI] {len(bsz)} betikte sözdizimi hatası:")
+            for f_ in bsz[:6]:
+                print(f"         - {f_}")
+            uyarilari_dosyaya_yaz(task.get("id", "?"), bsz)
+            notes.append(f"derleme başarısız (betik {len(bsz)})")
 
     # 4) Develop çıktısı doğrulaması — kaynak dosya değiştiyse kod çalışmalı
     src_files = [f for f in files

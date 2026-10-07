@@ -429,3 +429,5 @@ geçmeden hiçbir sprint açılmaz. Mevcut panoya dokunulmaz, sprintler **ekleni
    (`<FAZ>.uygulandi` işareti, aynı plan iki kez uygulanmaz). **Ret** (gerekçeli) → planlayıcı notla planı yeniden üretir.
 
 **UAT güvenilirliği (issue #253):** talepli UAT görevinde ajan çalışmadan önce motor uygulama testlerini, render kapısını ve canlı UAT betiğini koşup çıktıyı ajana girdi verir (ajanın araç kısıtından bağımsız). Motor kanıtı yeşilken ret, yalnız bu oturumda çalıştırılmış ve başarısız bir tablo satırına dayanabilir; "önceki oturum/çalıştırılamadı" gerekçeli ret sayılmaz ve talep müşteri onayına gider. UAT ret sayacı yalnız son insan müdahalesinden (`INSAN_GEREKLI` ya da `İnsan:` kaydı) sonrasını sayar.
+
+**Betik güvenilirliği (issue #255):** shebang'li betik çıktılarında (`.sh/.mjs/.js/.py…`) ilk `#!` satırından önceki ajan anlatımı yazım anında atılır; kalite kapısı değişen `.sh` dosyalarını `bash -n`, `.mjs/.cjs` dosyalarını `node --check` ile denetler (hata → `derleme başarısız` notu, `[BUILD]` telafisi) ve onarım döngüsünün `BUILD/KAYNAK` kapısı `workspace/` betiklerinin sözdizimini de koşar.
