@@ -1,0 +1,226 @@
+# Tasarım: ortam sözleşmesi, araçlı ajan modu, müşteri ortamı ve faz çıkış kapısı
+
+Durum: **taslak (onay bekliyor)** · Kapsam: yalnız tasarım; kod sonraki issue'larda (bkz. §13).
+
+## 1. Amaç
+
+Çerçeve (digital-software-studio) farklı türde projeleri (web, mobil, gömülü, backend) aynı akışla yürütmelidir:
+
+1. Basit bir kapsam yazılır; sistem inceler, eksikleri ve önerileri brief ekranıyla tamamlar.
+2. Kapsam sürecin her yerinde değişebilir; değişiklik boyutuna göre mevcut faz ilerler ya da yeni faz oluşur.
+3. Kapsam kesinleşince teknik gereksinimler planlanır, faz ve sprintlere bölünür.
+4. Geliştirme ortamı ve müşteri test ortamı hazırlanır.
+5. Ajanlar geliştirme ortamında kodu geliştirir, test eder, hataları kendileri çözer.
+6. Ajanlar gerçek ekran gezisiyle (UAT) doğrular; bulgular sprinte eklenir. Ortamı kıran hata anında çözülür.
+7. Tüm kapılardan geçenler müşteri test ortamında müşteri onayına sunulur; onaylananlar kaynak yönetimine alınır.
+
+## 2. Pilotlardan çıkan sorunlar (kanıt)
+
+| Gözlem | Kök neden |
+|---|---|
+| devin `yerel_ortam.sh` dosyasının içeriği ajanın sohbet özeti oldu (iki kez) | Motor ajanın son cevabını çıktı dosyasına yazıyor; araçlı ajanlar (devin, agy, claude+araç) dosyayı kendileri düzenleyip özet yazıyor |
+| claude `costLedger.test.ts` sonuna sohbet metni sızdı, test kırmızı kaldı | Aynı sınıf |
+| Telafi üç kez "kapı zaten geçiyordu" dedi, UAT yine reddetti | Kapı ile gerçek hakem (UAT) farklı ölçüte bakıyordu; UAT ajanı komut çalıştıramadığı için eski kanıtla reddetti |
+| claude "kota" beklerken aslında OAuth oturumu düşmüştü | Kimlik hatası kota hatasından ayrılmıyor |
+| Her hata için kapı/kural ekleniyor | Ajan ile motor aynı doğrulama araçlarını kullanmıyor |
+| Yerel ortam betiğini ajan yazıyor, çerçeve yönetmiyor | Ortam tanımı yapısal veri değil, serbest betik |
+| Faz kapatma tamamen elle | Faz çıkış kriteri yok |
+
+## 3. İlkeler
+
+1. **Çerçeve proje türünü ve araçları bilmez.** Süreç yaşam döngüsünü, kanıt toplamayı, kapıları ve onayları yönetir; "nasıl derlenir/çalışır/doğrulanır" proje sözleşmesindedir.
+2. **Hata kural ile değil, kanıtla çözülür.** Ajan hatayı gerçek çıktısıyla görür, kendi aracıyla düzeltir, motor aynı ölçütle doğrular.
+3. **Ajan ve motor aynı doğrulama araçlarına bakar.** Biri başarılı diğeri başarısız diyemez.
+4. **Ajanın cevabı dosya değildir.** Araçlı modda cevap yalnız özettir; çıktı dosyaları ajan tarafından yazılır, motor yalnız "var mı, değişti mi, doğrulama geçti mi" bakar.
+5. **İnsan kararı yalnız karar gerektiren yerde:** sözleşme onayı, faz planı onayı, müşteri onayı, kota aşımı, devre kesici sonrası devir.
+6. **Gizli bilgi ajana görünmez** (§12).
+
+## 4. Akış ve mevcut durum
+
+| # | Adım | Bugün | Bu tasarımla |
+|---|---|---|---|
+| 1-2 | Kapsam + brief görüşmesi | Var | Aynı |
+| 3 | Kapsam değişikliği | Müşteri talebi var; etki analizi yok | §10.3 etki analizi ve faz önerisi |
+| 4-5 | Gereksinim, faz, sprint planı | Plan ve faz planlama (#249) var; gereksinim izlenebilirliği yok | §10.2 + gereksinim → test izi |
+| 6 | Geliştirme ortamı | Ajan yazdığı betik | §5 ortam sözleşmesi |
+| 7 | Müşteri test ortamı | Yok | §9 |
+| 8 | Ajan geliştirir/test eder/çözer | Yalnız onarımda | §8 araçlı ajan modu |
+| 9 | Gerçek ekran gezisi (UAT) | Web için var; canlıyı kullanıcı açıyor | §6 adaptörler; sözleşmeyle çerçeve açar |
+| 10 | Bulgular sprinte; ortamı kıran hata anında | Bulgu→talep→telafi var; acil hat yok | §11.2 acil hat |
+| 11 | Müşteri onayı | Durum var; test edilecek ortam yok | §9 |
+| 12 | Onaylananı kaynak yönetimine al | Görev bazlı otomatik commit; onaya bağlı yayın yok | §9.3 |
+
+## 5. Ortam sözleşmesi
+
+Dosya: `workspace/ortam.json` (proje başına, sürüm kontrolünde). Yapısal veridir; ajan çıktısıyla bozulamaz, doğrulanamıyorsa kabul edilmez.
+
+### 5.1 Alanlar
+
+```
+tur        : web | mobil | gomulu | backend (birden fazla olabilir; bölümler ayrı)
+kur        : bağımlılıkları hazırlayan komut(lar)
+derle      : kaynaktan çalıştırılabilir çıktı
+calistir   : { baslat, durdur, yeniden_baslat, log }  -- geliştirme ortamı
+saglik     : { dogrulayici, beklenen, zaman_asimi_sn }  -- "ayakta ve doğru mu?"
+dogrula    : [ { ad, dogrulayici, komut/parametre, beklenen } ]  -- iç döngü (hızlı)
+gez        : [ { ad, dogrulayici, senaryo } ]  -- UAT'nin motoru (gerçek kullanım)
+paketle    : { komut, cikti }  -- müşteri ortamına çıkacak sürüm
+musteri    : { baslat, durdur, saglik, port/hedef }
+tohum      : veri/durum başlatma (mock tohumu, test veritabanı)
+gizli      : [ gizli bilgi adları ]  -- değerleri sözleşmede yok (§12)
+```
+
+### 5.2 Yaşam döngüsü
+
+1. Teknoloji kararından sonra devops rolü, tür profilinden (§7) başlayarak sözleşmeyi yazar.
+2. Çerçeve sözleşmeyi **doğrular**: komutlar var mı; `calistir` ile `saglik` birlikte geçiyor mu; `dogrula` hatasız koşuyor mu. Geçmezse ajan kanıtla yeniden dener (§8 onarım döngüsü).
+3. İnsan onayı (onay kapısı). Onaydan sonra sözleşme kilitlenir; değiştirmek için sahip rol, sebep ve yeniden doğrulama gerekir.
+4. Çerçeve ortamı yönetir: başlat/durdur/yeniden başlat, PID, log, sağlık yoklaması, zaman aşımı. Ajan "yeniden başlat"ı sözleşmedeki komutla ister.
+
+### 5.3 Örnekler (kısaltılmış)
+
+```json
+{ "tur": ["web"],
+  "kur": ["pnpm install"], "derle": ["pnpm build"],
+  "calistir": {"baslat": "pnpm dev --port ${PORT}", "log": "workspace/logs/dev.log"},
+  "saglik": {"dogrulayici": "http", "hedef": "http://localhost:${PORT}/", "beklenen": 200, "zaman_asimi_sn": 90},
+  "dogrula": [{"ad":"tip","dogrulayici":"komut","komut":"pnpm typecheck"},
+              {"ad":"birim","dogrulayici":"komut","komut":"pnpm test"}],
+  "gez": [{"ad":"ekranlar","dogrulayici":"tarayici","senaryo":"workspace/uat_checklist.json"}] }
+```
+
+Gömülü: `derle` çapraz derleme, `calistir` QEMU/Renode, `saglik` seri logda "boot ok" (`seri-log`), `dogrula` host'ta birim test + statik analiz, `gez` simülatörde senaryo. Mobil: `calistir` emülatör/simülatör, `saglik` ilk ekran göründü, `gez` `cihaz-ekran` adaptörü. Backend: `calistir` servis + test veritabanı, `saglik` `/health`, `gez` `senaryo` adaptörü (API çağrı dizisi).
+
+## 6. Doğrulayıcı adaptörler
+
+Küçük katalog; proje sözleşmede seçer. Her adaptör aynı arayüzü uygular: `kos(parametre) -> {ok, kanit, sure}`.
+
+| Adaptör | Ne yapar | Türler |
+|---|---|---|
+| `komut` | Komutu koşar; çıkış kodu ve çıktı kanıttır | hepsi |
+| `http` | İstek, durum/gövde iddiası | web, backend |
+| `tarayici` | Gerçek tarayıcıda gezi; konsol, ağ, çizim denetimi (bugünkü `render_kapisi.mjs` ve `uat_live_audit.mjs`) | web |
+| `cihaz-ekran` | Emülatör/simülatörde dokunma, ekran görüntüsü, erişilebilirlik ağacı | mobil |
+| `seri-log` | Log/seri akışında beklenen satırı bekler; zaman aşımı | gömülü |
+| `senaryo` | HTTP/gRPC çağrı dizisi ve beklenen sonuçlar | backend |
+| `donanim` (isteğe bağlı) | Gerçek cihaza yaz, uçtan uca ölç | gömülü, ileride |
+
+## 7. Proje türü profilleri
+
+Profil, sözleşmenin başlangıç şablonu ve tür kontrol listesidir; araç adı sabitlemez, "bu tür için tipik adımlar" verir. Karışık projelerde birden fazla profil birleşir.
+
+- **web:** tarayıcı gezisi, çizim ve konsol hatası, erişilebilirlik, performans bütçesi, çevrim içi/dışı davranış.
+- **mobil:** ekran boyutları ve yönelim, izin akışları, çevrimdışı davranış, mağaza gereklilikleri.
+- **gömülü:** bellek/zamanlama bütçesi, kesme/yarış, başlatma ve güç, imza, güvenli güncelleme; donanımsız test edilebilirlik tasarım kararı.
+- **backend:** API sözleşmesi, veri geçişleri, yük/performans, güvenlik, gözlemlenebilirlik.
+
+## 8. Araçlı ajan modu
+
+Bugün yalnız talepli develop görevleri `scripts/onarim.py` döngüsüyle çalışır. Hedef: **tüm kod üreten görevler** (develop, devops; sonra test) bu modda.
+
+### 8.1 Akış
+
+1. Motor sözleşmeden ortamı hazırlar (`calistir` + `saglik`).
+2. Ajan çağrılır: workspace'te dosyaları kendisi okur/düzenler, sözleşmedeki `dogrula` komutlarını ve gerekirse `gez` adımlarını koşar.
+3. Tur sonunda motor **aynı** `dogrula`/`saglik` ölçütünü koşar. Geçerse görev kapanır; geçmezse kanıtla yeni tur (sınır: tur sayısı).
+4. Sınır aşılırsa insana devir (devre kesici).
+
+### 8.2 Çıktı yazım kuralı
+
+- Araçlı modda ajan cevabı çıktı dosyasına **yazılmaz**.
+- Motor çıktı için yalnız "dosya var mı, bu görevde değişti mi, doğrulama geçti mi" denetler.
+- Araçsız (salt metin üreten) roller (doküman, plan) eskisi gibi çalışır; shebang/anlatım temizliği yalnız bu yolda kalır.
+
+### 8.3 Güvenlik
+
+- Yazma kapsamı `workspace/**`; çerçeve dosyaları değiştirilirse tur sonunda geri alınır, bütünlük denetimi (bugünkü onarım mekanizması).
+- Komut yasakları (`sudo`, `git push/reset/...`, `pkill`) claude'da zorunlu; devin/agy kendi izin modunda: kapsam ve bütünlük denetimi onlar için de geçerli.
+- Tur öncesi git kontrol noktası.
+
+### 8.4 Maliyet
+
+Araçlı mod daha yavaş ve pahalıdır. Kademeli geçiş (§13) ve görev/rol bazında motor-model seçimi (§11.3) ile yönetilir. Gömülüde derleme uzun olduğu için tur zaman aşımı sözleşmeden okunur.
+
+## 9. Üç ortam ve yayın
+
+### 9.1 Geliştirme ortamı
+Sözleşmedeki `calistir`; sıcak yeniden yükleme varsa kullanır. Ajanlar ve UAT burada çalışır. Kıran hata acil hattı tetikler (§11.2).
+
+### 9.2 Müşteri test ortamı
+`paketle` çıktısından, **son onay adayı sürümden** kurulan sabit ortam; ayrı port/hedef ve ayrı tohum verisi. Geliştirme bozulsa etkilenmez. Müşteri onayı burada verilir (panel Onaylar sekmesinde bağlantı).
+Türe göre: web build + preview; mobil test dağıtımı/emülatör imajı; gömülü cihaza yazılabilir imaj ya da emülatör imajı; backend konteyner/ayrı örnek.
+
+### 9.3 Yayın
+Müşteri onayı sonrası: sürüm etiketi, kaynak yönetimine alma (varsayılan: `main`'e PR + etiket), geri alma talimatı (önceki etiket). Hedef sistem (git/başka) sözleşmede `yayin` bölümüyle tanımlanır; hangi dalın "onaylı sürüm" sayıldığı projeye göre ayarlanır. Gömülüde ek olarak imza adımı.
+
+## 10. Faz yönetimi
+
+### 10.1 Bugün
+`fazlar` (kimlik, ad, açıklama, durum PLANLANDI/AKTIF/TAMAMLANDI, hedef tarih, kilit, önkoşul faz). Talep triage: `ISTEK` değerlendirilir ve faza atanır, aktif olana kadar `FAZ_BEKLIYOR`; `HATA` fazı beklemez. `faz_ilerlet` yalnız durumu çevirir; faz için sprint planlama #249 ile geldi (planlayıcı + insan onayı).
+
+### 10.2 Faz çıkış kapısı (yeni)
+Fazı kapatmadan önce motor kontrol eder, eksiği söyler:
+- Fazın tüm sprintleri DONE; açık talep/telafi yok.
+- UAT geçti (bu faz için çalıştırılmış kanıt).
+- Müşteri test ortamında onay alındı (§9.2).
+- Gereksinim → test izi: fazın her kabul kriterinin bir doğrulaması var ve geçti.
+- Hedef tarihe göre sapma raporu (bilgi; engelleme değil).
+Kapı geçerse "Sonraki faza geç" etkin olur; geçmezse düğme neyin eksik olduğunu gösterir. İnsan zorla geçebilir (kayıt altına alınır).
+
+### 10.3 Kapsam değişikliği → etki analizi ve faz önerisi (yeni)
+Brief ekranından gelen değişiklik: planlayıcı/CTO rolü etkiyi çıkarır (hangi tamamlanmış iş yeniden açılır, hangi sprintler kayar, tahmini maliyet). Boyut küçükse aktif faza; büyükse "yeni faz öner" kararı insana sunulur. Karar insandadır.
+
+### 10.4 Faz bütçesi ve tarih (yeni, hafif)
+Faz başına toplam bütçe ve sapma uyarısı; hedef tarihi aşan faz için uyarı. Engelleme yok, görünürlük.
+
+### 10.5 Varsayım
+Fazlar sıralıdır (paralel faz kapsam dışı).
+
+## 11. Kontroller, kota, acil hat, motor
+
+### 11.1 Mevcut kontroller (korunur)
+Öncelik, atla, şuna geç, duraklat/durdur, kota onayı, görev bazında motor seçimi.
+
+### 11.2 Acil hat (yeni)
+Geliştirme veya müşteri ortamını kıran hata (`calistir`/`saglik` başarısız) sıra beklemeden iç döngüde çözülür; koşan görev bitince (ortam kırıksa hemen) araya girer. Ekran/süreç hatası sprint olur ama hemen istenebilir (öncelik).
+
+### 11.3 Motor ve model
+Görev ve rol bazında seçim bugün var; eklenecek: proje türü varsayılanı (ör. gömülüde derleme uzun olduğundan daha güçlü model), "araçlı ajan gerektirir" bilgisi.
+
+### 11.4 Kota
+Günlük görev ve bütçe bugünkü gibi. Eklenecek: **kimlik hatası ≠ kota** ayrımı (`OAuth ... expired`, `credits balance too low` anlaşılır mesajla koşucuyu durdurur, yeniden denemeyi 5 saat beklemez); faz bütçesi (§10.4).
+
+## 12. Güvenlik ve gizlilik
+
+- Gizli değerler (imzalama anahtarı, API anahtarı, giriş bilgileri) sözleşmede ve ajan görünürlüğünde yok; yalnız adları (`gizli`) tutulur, değer ortam değişkeni olarak çerçeve süreçlerine verilir.
+- Müşteri ortamı kaynak kodu ve anahtarlar içermeyen paket kullanır.
+- Her ajan işlemi `audit_log`'a düşer; sözleşme değişikliği ve zorla geçiş ayrıca kaydedilir.
+
+## 13. Geçiş planı (PR dilimleri)
+
+1. **Ortam sözleşmesi çekirdeği:** şema, doğrulama, `komut`/`http`/`tarayici` adaptörleri, `calistir`/`saglik` yönetimi, web profili. Mevcut `yerel_ortam_yonet.py`, `build_checklist.json`, `smoke_checklist.json`, `uat_checklist.json` ve `studio.config.json` içindeki `kalite.*`/`live.ports` buna taşınır.
+2. **Araçlı ajan modu:** önce devops ve web/backend develop, sonra tüm develop; çıktı yazım kuralı; test/doküman görevleri eskisi gibi.
+3. **Kimlik/kota ayrımı** (küçük, bağımsız).
+4. **Faz çıkış kapısı** (+ gereksinim → test izi).
+5. **Müşteri test ortamı ve yayın akışı.**
+6. **Acil hat.**
+7. **Kapsam değişikliği etki analizi ve faz önerisi; faz bütçesi/tarih.**
+8. **Mobil, gömülü, backend adaptörleri ve profilleri** (her biri ayrı küçük PR).
+
+Her dilim: issue → branch → PR; testler ve README güncellemesi. Pilot (devin/claude) ortamlarında izlenir.
+
+## 14. Açık sorular
+
+1. Gömülü projelerde gerçek donanım (HIL) şart mı; yoksa simülatör/emülatör varsayılan, donanım isteğe bağlı mı? (Varsayım: ikincisi.)
+2. Müşteri test ortamı aynı makinede ayrı port/süreç mi, yoksa uzak hedef mi? (Varsayım: aynı makine.)
+3. Yayın hedefi: `main`'e PR + etiket mi, başka akış mı? Hangi dal onaylı sürüm?
+4. Mobilde dağıtım kanalı (TestFlight/APK/emülatör imajı) ve imzalama anahtarı yönetimi.
+5. Acil hat koşan görevi böler mi, görev bitince mi araya girer? (Varsayım: görev bitince; ortam kırıksa hemen.)
+6. Kota faz başına da mı olsun?
+7. Paralel faz gerekir mi?
+
+## 15. Kapsam dışı
+
+- Belirli bir araç zincirine (Nuxt, Gradle, CMake…) gömülü kural.
+- Üretim ortamına dağıtım otomasyonu (müşteri onayına kadar).
+- Çok-AI karşılaştırma deneyinin yönetimi (ayrı çalışma).
