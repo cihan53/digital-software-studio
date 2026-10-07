@@ -113,6 +113,30 @@ class AkisVeDegisiklik(unittest.TestCase):
         self.assertEqual(d2["kaynak"], "calisma_agaci")
         self.assertIn("+3", d2["diff"])
 
+    def test_notes_dali_commitleri_karismaz(self):
+        r = self.tmp / "repo2"
+        r.mkdir()
+        g = lambda *a: subprocess.run(["git", *a], cwd=r, capture_output=True, text=True, check=True)
+        g("init", "-q")
+        g("config", "user.email", "t@t")
+        g("config", "user.name", "t")
+        (r / "a.txt").write_text("1\n")
+        g("add", ".")
+        g("commit", "-q", "-m", "studio: görev DONE — S1-T1")
+        gercek = g("rev-parse", "HEAD").stdout.strip()
+        (r / "n.txt").write_text("x\n")
+        g("add", ".")
+        g("commit", "-q", "-m", "studio: görev DONE — S1-T1 (not)")
+        g("update-ref", "refs/notes/blamely", "HEAD")
+        g("reset", "-q", "--hard", gercek)
+        self.assertEqual(GO.gorev_commit("S1-T1", r), gercek)
+
+    def test_ozet_ic_ice_json_acilir(self):
+        B.audit("engine", "kontrol_istek", detay={"flag": "onay_bekliyor", "deger": '{"sebep": "G\u00fcnl\u00fck b\u00fct\u00e7e"}'})
+        o = GO.akis(1)[0]["ozet"]
+        self.assertIn("Günlük bütçe", o)
+        self.assertNotIn("\\u", o)
+
     def test_gecersiz_gorev_kimligi_komuta_girmez(self):
         self.assertIsNone(GO.gorev_commit("x; rm -rf /"))
 

@@ -86,8 +86,29 @@ def bekleme_nedeni(board: dict | None, ctrl: dict, kosucu: bool, onay_bekliyor: 
     return {"kod": "bitti", "mesaj": "Tüm görevler tamamlandı; yeni talep ya da faz bekleniyor.", "eylem": "Fazlar sekmesi: aktif fazı planla"}
 
 
+def _ac(v):
+    """İç içe JSON metinlerini açar (audit detayı ayrıca kaçışlanmış JSON taşıyabilir)."""
+    if isinstance(v, str):
+        t = v.strip()
+        if t[:1] in "{[":
+            try:
+                return _ac(json.loads(t))
+            except (ValueError, TypeError):
+                return v
+        return v
+    if isinstance(v, dict):
+        return {k: _ac(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_ac(x) for x in v]
+    return v
+
+
 def _kisalt(v, n=220):
-    s = v if isinstance(v, str) else json.dumps(v, ensure_ascii=False)
+    v = _ac(v)
+    if isinstance(v, dict):
+        s = " · ".join(f"{k}={x if isinstance(x, str) else json.dumps(x, ensure_ascii=False)}" for k, x in v.items())
+    else:
+        s = v if isinstance(v, str) else json.dumps(v, ensure_ascii=False)
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
@@ -115,7 +136,7 @@ def gorev_commit(gorev_id: str, kok: Path = ROOT) -> str | None:
     if not re.fullmatch(r"[A-Za-z0-9_.-]{1,40}", gorev_id or ""):
         return None
     try:
-        r = subprocess.run(["git", "log", "--all", "-n", "1", "--format=%H", "--fixed-strings", f"--grep=görev DONE — {gorev_id}"],
+        r = subprocess.run(["git", "log", "--branches", "-n", "1", "--format=%H", "--fixed-strings", f"--grep=görev DONE — {gorev_id}"],
                            cwd=kok, capture_output=True, text=True, timeout=15)
     except (OSError, subprocess.TimeoutExpired):
         return None
