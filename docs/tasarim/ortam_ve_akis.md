@@ -181,7 +181,7 @@ Sözleşmedeki `calistir`; sıcak yeniden yükleme varsa kullanır. Ajanlar ve U
 Türe göre: web build + preview; mobil test dağıtımı/emülatör imajı; gömülü cihaza yazılabilir imaj ya da emülatör imajı; backend konteyner/ayrı örnek.
 
 ### 9.3 Yayın
-Müşteri onayı sonrası: sürüm etiketi, kaynak yönetimine alma (varsayılan: `main`'e PR + etiket), geri alma talimatı (önceki etiket). Hedef sistem (git/başka) sözleşmede `yayin` bölümüyle tanımlanır; hangi dalın "onaylı sürüm" sayıldığı projeye göre ayarlanır. Gömülüde ek olarak imza adımı.
+Müşteri onayı sonrası: sürüm etiketi, kaynak yönetimine alma (**karar: `main`'e PR + etiket**; onaylı sürüm = `main`'deki etiket, geliştirme dalları onaylı sayılmaz), geri alma talimatı (önceki etiket). Hedef sistem (git/başka) sözleşmede `yayin` bölümüyle tanımlanır; hangi dalın "onaylı sürüm" sayıldığı projeye göre ayarlanır. Gömülüde ek olarak imza adımı.
 
 ## 10. Faz yönetimi
 
@@ -245,7 +245,7 @@ Her dilim: issue → branch → PR; testler ve README güncellemesi. Pilot (devi
 
 1. Gömülü projelerde gerçek donanım (HIL) şart mı; yoksa simülatör/emülatör varsayılan, donanım isteğe bağlı mı? (Varsayım: ikincisi.)
 2. ~~Müşteri test ortamı aynı makinede mi, uzak mı?~~ **Karar:** varsayılan aynı makine; uzak hedef ve transfer yöntemi sözleşmeden seçilir (§9.2). Açık kalan: hangi transfer yöntemleri ilk sürümde desteklenecek (öneri: yerel, `komut`).
-3. Yayın hedefi: `main`'e PR + etiket mi, başka akış mı? Hangi dal onaylı sürüm?
+3. ~~Yayın hedefi ve onaylı sürüm dalı~~ **Karar:** `main` + etiket (§9.3). Açık kalan: etiket adlandırması (proje sürümü mü, faz/sprint mi?) ve geliştirme dalının (`studio/calisma` ya da sprint dalları) `main`'e PR sıklığı.
 4. Mobilde dağıtım kanalı (TestFlight/APK/emülatör imajı) ve imzalama anahtarı yönetimi.
 5. ~~Acil hat koşan görevi böler mi?~~ **Karar:** bölmez, görev bitince araya girer; müşteri bilgilendirilir (§11.2). Açık kalan: müşteri bildirim kanalı (panel müşteri sohbeti yeterli mi, e-posta gerekir mi?).
 6. Kota faz başına da mı olsun?
