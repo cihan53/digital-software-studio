@@ -272,7 +272,7 @@ Veri kaynağı yeni bir sistem değil: mevcut `audit_log` ve `.trace` olay akı�
 
 ## 13. Geçiş planı (PR dilimleri)
 
-0. **Gözlem paneli (§11.5)** — **büyük kısmı uygulandı (#260, #262, #264)**; kalan: ortam/sağlık, kota kırılımı, müşteri girdileri özeti. Önce bu yapıldı: sonraki dilimlerin izlenmesini kolaylaştırır; mevcut `audit_log`/`.trace` olay akışı, "Şimdi" kartı, etkinlik akışı, değişiklik görünümü.
+0. **Gözlem paneli (§11.5)** — **büyük kısmı uygulandı (#260, #262, #264)**; kalan: ortam/sağlık, kota kırılımı, müşteri girdileri özeti. Sonraki dilimlerin izlenmesini kolaylaştırır; mevcut `audit_log`/`.trace` olay akışı, "Şimdi" kartı, etkinlik akışı, değişiklik görünümü.
 0b. **Organizasyon kurulumu:** `organizasyon.json` şeması, kadro önerisi ve onayı, kontrollü dinamik rol sentezi, tür profillerinden varsayılan kadro.
 1. **Ortam sözleşmesi çekirdeği:** şema, doğrulama, `komut`/`http`/`tarayici` adaptörleri, `calistir`/`saglik` yönetimi, web profili. Mevcut `yerel_ortam_yonet.py`, `build_checklist.json`, `smoke_checklist.json`, `uat_checklist.json` ve `studio.config.json` içindeki `kalite.*`/`live.ports` buna taşınır.
 2. **Araçlı ajan modu:** önce devops ve web/backend develop, sonra tüm develop; çıktı yazım kuralı; test/doküman görevleri eskisi gibi.
