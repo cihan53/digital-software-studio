@@ -205,7 +205,7 @@ Fazı kapatmadan önce motor kontrol eder, eksiği söyler:
 - Müşteri test ortamında onay alındı (§9.2).
 - Gereksinim → test izi: fazın her kabul kriterinin bir doğrulaması var ve geçti.
 - Hedef tarihe göre sapma raporu (bilgi; engelleme değil).
-Kapı geçerse "Sonraki faza geç" etkin olur; geçmezse düğme neyin eksik olduğunu gösterir. İnsan zorla geçebilir (kayıt altına alınır).
+Kapı geçerse **sistem fazı kendisi ilerletir** (sonraki faz aktif olur, bildirim kaydı düşer); geçmezse neyin eksik olduğu panelde gösterilir. "Sonraki faza geç" düğmesi insan için zorla geçiş (kayıt altına alınır) ve geri alma (fazı yeniden açma) olarak kalır.
 
 ### 10.3 Kapsam değişikliği → etki analizi ve faz önerisi (yeni)
 Brief ekranından gelen değişiklik: planlayıcı/CTO rolü etkiyi çıkarır (hangi tamamlanmış iş yeniden açılır, hangi sprintler kayar, tahmini maliyet). Boyut küçükse aktif faza; büyükse "yeni faz öner" kararı insana sunulur. Karar insandadır.
@@ -213,7 +213,22 @@ Brief ekranından gelen değişiklik: planlayıcı/CTO rolü etkiyi çıkarır (
 ### 10.4 Tarih uyarısı (yeni, hafif)
 Hedef tarihi aşan faz için uyarı; engelleme yok, görünürlük. **Faz başına bütçe v2 kapsamı dışıdır** (kota günlük kalır).
 
-### 10.5 Varsayım
+### 10.5 Karar yetkisi
+
+Müşteri teknik karar veremeyebilir; faz kararlarını **sistem verir**, insan görür ve geri alabilir. Müşterinin kendi kararı (kabul) müşteride kalır.
+
+| Karar | Kim verir | İnsan rolü |
+|---|---|---|
+| Organizasyon kadrosu (§4a) | Sistem (CTO + ürün sahibi) | Bilgilendirme kaydı; kilitlenmeden önce düzenle/geri al |
+| Faz planı (sprintler) | Sistem (planlayıcı); plan doğrulama kapısından geçer | Bilgilendirme kaydı; geri alma (bugünkü #249 onay kapısı v2'de bilgilendirmeye döner) |
+| Faz geçişi (çıkış kapısı) | Sistem, kriterler sağlanınca | Zorla geçiş / geri açma |
+| Kapsam değişikliği: aktif faza mı, yeni faza mı | Sistem (etki analiziyle) | Bilgilendirme; geri alma |
+| Ortam sözleşmesi (§5) | Sistem yazar, çerçeve doğrular; **insan onayı v2'nin ilk sürümünde korunur** | Onay (ortamı ve anahtarları etkilediği için) |
+| Müşteri kabulü (adım 11) | **Müşteri** | Karar müşteride |
+
+Her sistem kararı gerekçesiyle `audit_log`'a ve panelde bilgilendirme kaydına düşer.
+
+### 10.6 Varsayım
 Fazlar sıralıdır (paralel faz kapsam dışı).
 
 ## 11. Kontroller, kota, acil hat, motor
@@ -259,8 +274,8 @@ Her dilim: issue → branch → PR; testler ve README güncellemesi. Pilot (devi
 4. ~~Mobil dağıtım kanalı ve imza~~ **Karar:** dağıtım için gereken anahtarlar (mağaza API anahtarı, imzalama sertifikası/profili) müşteriden alınır ve **fastlane** ile dağıtılır (§5.4, §12).
 5. ~~Acil hat koşan görevi böler mi?~~ **Karar:** bölmez, görev bitince araya girer; müşteri bilgilendirilir (§11.2). **Karar:** müşteri bildirim kanalı panel (müşteri sohbeti/durum ekranı); e-posta v2 kapsamı dışı.
 6. ~~Faz başına kota~~ **Karar:** gerek yok (§10.4).
-7. ~~Paralel faz~~ **Karar:** şimdilik sıralı (§10.5).
-8. ~~Kadro onayı yeri~~ **Karar:** Onaylar sekmesinde bilgilendirme kaydı; kararı sistem verir, insan geri alabilir (§4a.3). Açık kalan: aynı "sistem karar verir" yaklaşımı ortam sözleşmesi ve faz planı için de geçerli olsun mu? (Öneri: evet, ama sözleşme/faz planı hatalıysa doğrulama kapısı zaten geri çevirir; insan yalnız görür.)
+7. ~~Paralel faz~~ **Karar:** şimdilik sıralı (§10.6).
+8. ~~Kadro onayı yeri~~ ve ~~sistem karar verir kapsamı~~ **Karar:** kadro ve faz kararları (plan, geçiş, kapsam değişikliği yerleşimi) sistemde; ortam sözleşmesi v2 ilk sürümde insan onaylı; müşteri kabulü müşteride (§10.5).
 
 ## 15. Kapsam dışı
 
