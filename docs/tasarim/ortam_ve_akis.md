@@ -90,7 +90,7 @@ saglik     : { dogrulayici, beklenen, zaman_asimi_sn }  -- "ayakta ve doğru mu?
 dogrula    : [ { ad, dogrulayici, komut/parametre, beklenen } ]  -- iç döngü (hızlı)
 gez        : [ { ad, dogrulayici, senaryo } ]  -- UAT'nin motoru (gerçek kullanım)
 paketle    : { komut, cikti }  -- müşteri ortamına çıkacak sürüm
-musteri    : { baslat, durdur, saglik, port/hedef }
+musteri    : { hedef, transfer, baslat, durdur, saglik }  -- hedef: yerel | uzak; transfer: yöntem (§9.2)
 tohum      : veri/durum başlatma (mock tohumu, test veritabanı)
 gizli      : [ gizli bilgi adları ]  -- değerleri sözleşmede yok (§12)
 ```
@@ -173,6 +173,7 @@ Sözleşmedeki `calistir`; sıcak yeniden yükleme varsa kullanır. Ajanlar ve U
 
 ### 9.2 Müşteri test ortamı
 `paketle` çıktısından, **son onay adayı sürümden** kurulan sabit ortam; ayrı port/hedef ve ayrı tohum verisi. Geliştirme bozulsa etkilenmez. Müşteri onayı burada verilir (panel Onaylar sekmesinde bağlantı).
+**Hedef ve transfer:** müşteri ortamı varsayılan olarak **aynı makinede** (`hedef: yerel`, ayrı port/süreç) çalışır; ayrı bir makine de olabilir (`hedef: uzak`). Uzak hedefte `paketle` çıktısı sözleşmedeki **transfer yöntemiyle** taşınır; çerçeve yöntemi bilmez, yalnız "paketi hedefe ulaştır, kur, sağlık denetimini geçir" adımlarını yönetir. Aynı adaptör modeli: `transfer` seçenekleri `yerel` (aynı makine, kopyalama gerekmez), `rsync/scp`, `konteyner kaydı`, `git çekme` ve `komut` (proje kendi betiğini verir). Uzak hedefte kimlik bilgileri §12 kurallarıyla yönetilir (anahtar adı sözleşmede, değeri çerçeve sürecinde). Geri alma, bir önceki sürümü aynı transferle yeniden kurmaktır.
 Türe göre: web build + preview; mobil test dağıtımı/emülatör imajı; gömülü cihaza yazılabilir imaj ya da emülatör imajı; backend konteyner/ayrı örnek.
 
 ### 9.3 Yayın
@@ -238,7 +239,7 @@ Her dilim: issue → branch → PR; testler ve README güncellemesi. Pilot (devi
 ## 14. Açık sorular
 
 1. Gömülü projelerde gerçek donanım (HIL) şart mı; yoksa simülatör/emülatör varsayılan, donanım isteğe bağlı mı? (Varsayım: ikincisi.)
-2. Müşteri test ortamı aynı makinede ayrı port/süreç mi, yoksa uzak hedef mi? (Varsayım: aynı makine.)
+2. ~~Müşteri test ortamı aynı makinede mi, uzak mı?~~ **Karar:** varsayılan aynı makine; uzak hedef ve transfer yöntemi sözleşmeden seçilir (§9.2). Açık kalan: hangi transfer yöntemleri ilk sürümde desteklenecek (öneri: yerel, `komut`).
 3. Yayın hedefi: `main`'e PR + etiket mi, başka akış mı? Hangi dal onaylı sürüm?
 4. Mobilde dağıtım kanalı (TestFlight/APK/emülatör imajı) ve imzalama anahtarı yönetimi.
 5. Acil hat koşan görevi böler mi, görev bitince mi araya girer? (Varsayım: görev bitince; ortam kırıksa hemen.)
