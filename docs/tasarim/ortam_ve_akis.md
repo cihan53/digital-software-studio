@@ -282,6 +282,29 @@ Veri kaynağı yeni bir sistem değil: mevcut `audit_log` ve `.trace` olay akı�
 
 Her dilim: issue → branch → PR; testler ve README güncellemesi. Pilot (devin/claude) ortamlarında izlenir.
 
+### 13.1 Geriye uyumluluk ve pilotların geçişi
+
+Çalışan üç pilot (claude, gemini, devin) kesintisiz geçer; "büyük patlama" yok. Kurallar:
+
+1. **Her dilim eski davranışı korur:** yeni dosya (`organizasyon.json`, `ortam.json`) yoksa çerçeve bugünkü yolla çalışır. Yeni alanlar `studio.config.json` ve veritabanında isteğe bağlıdır; şema eklemeleri `CREATE IF NOT EXISTS` / `normalize` ile kendiliğinden yapılır.
+2. **İçe aktarma, yeniden kurulum değil:** pilotlar mevcut kadrodan ve dosyalardan **türetilen** belgelerle geçer:
+   - `organizasyon.json` ← `org_chart.json` + sentezlenmiş dinamik roller (karar kaydı: "mevcut kadro içe aktarıldı").
+   - `ortam.json` ← `workspace/yerel_ortam.sh`, `studio.config.json` (`live.ports`, `kalite.*`), `build_checklist.json`, `smoke_checklist.json`, `uat_checklist.json`. Çerçeve doğrular; insan sözleşmeyi onaylar; onaylanana kadar eski yol sürer.
+   - Mevcut fazlar (FAZ-1 TAMAMLANDI, FAZ-2 AKTIF vb.) olduğu gibi kalır; çıkış kapısı yalnız yeni kapanışlara uygulanır.
+3. **Araçlı ajan modu proje başına açılır** (`studio.config.json`); önce bir pilotta (öneri: devin, çünkü sorun orada çıktı), sonra diğerlerinde.
+4. **Deney bütünlüğü:** üç kol aynı çerçeve sürümünde ve aynı anda güncellenir; her müdahale `deney_mudahaleler.md`'ye kaydedilir; kolların karşılaştırılabilirliğini bozan dilimler (ör. araçlı mod) tüm kollara birlikte açılır ya da farkı kayda geçirilir.
+5. Her sync sonrası koşucu yeniden başlatılır (görev yarıda kalmasın diye motor kendiliğinden dokunmaz).
+
+| Dilim | Pilotlarda etkisi | Ek iş |
+|---|---|---|
+| Gözlem paneli | Hemen: mevcut `audit_log` ve `.trace` okunur | Yalnız sync + yeniden başlatma |
+| Organizasyon kurulumu | Mevcut kadro içe aktarılır, sistem kararı kaydedilir | İçe aktarma betiği |
+| Ortam sözleşmesi | Mevcut dosyalardan türetilir, onay sonrası geçer | İçe aktarma + sözleşme onayı |
+| Araçlı ajan modu | Proje başına bayrakla; devin'de önce | Bayrak açma |
+| Faz çıkış kapısı | Yeni kapanışlarda | Yok |
+| Müşteri ortamı ve yayın | Bir sonraki müşteri onayında | Hedef/transfer yapılandırması |
+| Acil hat | Hemen | Yok |
+
 ## 14. Açık sorular
 
 1. ~~Gömülüde gerçek donanım~~ **Karar:** her tür araç, hesap, bağlantı ve donanım müşteriden istenebilir; sistem gereksinim listesini ve kurulum/bağlantı tarifini üretir, müşteri kurar (§5.4). `donanim` adaptörü bu yüzden ilk sürümde desteklenir (müşteri sağladığı cihaz/bağlantı ile).
