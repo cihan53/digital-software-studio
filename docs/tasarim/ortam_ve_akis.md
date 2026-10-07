@@ -208,7 +208,8 @@ Fazlar sıralıdır (paralel faz kapsam dışı).
 Öncelik, atla, şuna geç, duraklat/durdur, kota onayı, görev bazında motor seçimi.
 
 ### 11.2 Acil hat (yeni)
-Geliştirme veya müşteri ortamını kıran hata (`calistir`/`saglik` başarısız) sıra beklemeden iç döngüde çözülür; koşan görev bitince (ortam kırıksa hemen) araya girer. Ekran/süreç hatası sprint olur ama hemen istenebilir (öncelik).
+Geliştirme veya müşteri ortamını kıran hata (`calistir`/`saglik` başarısız) **koşan görevi bölmez**: görev bitince sıradaki iş olarak araya girer ve iç döngüde çözülür. Hata ortamı kırdığı için koşan görev doğrulanamıyorsa görev bitiremeyeceğinden sınırı aşılınca normal devre kesici işler.
+**Müşteri bilgilendirilir:** müşteri ortamını etkileyen (ya da etkileyebilecek) bir acil hat açıldığında müşteri panelinde/sohbetinde "bilinen sorun" notu görünür: ne etkileniyor, durum (bekliyor / çözülüyor / çözüldü) ve çözülünce kapanış bilgisi. İnsan da panelde acil hat uyarısı görür. Ekran/süreç hatası sprint olur ama hemen istenebilir (öncelik).
 
 ### 11.3 Motor ve model
 Görev ve rol bazında seçim bugün var; eklenecek: proje türü varsayılanı (ör. gömülüde derleme uzun olduğundan daha güçlü model), "araçlı ajan gerektirir" bilgisi.
@@ -230,7 +231,7 @@ Günlük görev ve bütçe bugünkü gibi. Eklenecek: **kimlik hatası ≠ kota*
 3. **Kimlik/kota ayrımı** (küçük, bağımsız).
 4. **Faz çıkış kapısı** (+ gereksinim → test izi).
 5. **Müşteri test ortamı ve yayın akışı.**
-6. **Acil hat.**
+6. **Acil hat ve müşteri bilgilendirmesi** (bilinen sorun notu).
 7. **Kapsam değişikliği etki analizi ve faz önerisi; faz bütçesi/tarih.**
 8. **Mobil, gömülü, backend adaptörleri ve profilleri** (her biri ayrı küçük PR).
 
@@ -242,7 +243,7 @@ Her dilim: issue → branch → PR; testler ve README güncellemesi. Pilot (devi
 2. ~~Müşteri test ortamı aynı makinede mi, uzak mı?~~ **Karar:** varsayılan aynı makine; uzak hedef ve transfer yöntemi sözleşmeden seçilir (§9.2). Açık kalan: hangi transfer yöntemleri ilk sürümde desteklenecek (öneri: yerel, `komut`).
 3. Yayın hedefi: `main`'e PR + etiket mi, başka akış mı? Hangi dal onaylı sürüm?
 4. Mobilde dağıtım kanalı (TestFlight/APK/emülatör imajı) ve imzalama anahtarı yönetimi.
-5. Acil hat koşan görevi böler mi, görev bitince mi araya girer? (Varsayım: görev bitince; ortam kırıksa hemen.)
+5. ~~Acil hat koşan görevi böler mi?~~ **Karar:** bölmez, görev bitince araya girer; müşteri bilgilendirilir (§11.2). Açık kalan: müşteri bildirim kanalı (panel müşteri sohbeti yeterli mi, e-posta gerekir mi?).
 6. Kota faz başına da mı olsun?
 7. Paralel faz gerekir mi?
 8. Kadro onayı brief ekranının sonunda mı, ayrı sekmede mi? (Varsayım: Onaylar sekmesi.)
