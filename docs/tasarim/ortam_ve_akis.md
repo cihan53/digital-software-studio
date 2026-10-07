@@ -346,5 +346,8 @@ Pilot gözlemlerinden ve bu belgenin gözden geçirilmesinden çıkan alanlar. H
 12. **Dal stratejisi.** Pilotlarda tek `studio/calisma` dalı ve görev bazlı otomatik commit; yayın `main`+etiket (§9.3). → Çalışma dalı → müşteri onayında `main`'e PR; faz başına etiket; hotfix yolu (acil hat, §11.2) tanımlanır.
 13. **Dilim DoD ve risk kaydı.** Dilimlerin "bitti" ölçütü ve riskleri belgesiz. → Her dilim: testler yeşil, README, claude kolunda doğrulama, geriye uyumluluk kontrolü (§13.1); riskler `workspace/docs/risk_kaydi.md`.
 
-### Bekleyen kararlar
-Madde **3** (yazma kilidi), **7** (ölçütler), **1** (tasarım aşaması) — kullanıcıdan alınacak; diğerleri varsayılan öneriyle ilerler.
+### Kararlar (2026-10-07)
+- **Yazma kilidi (3):** istek kuyruğu. Koşucu `studio.db` yazımının sahibidir; panel/CLI değişiklikleri kuyruğa yazar, koşucu işler. Koşucu kapalıysa panel kilit alarak doğrudan yazar. Dilim 3d.
+- **Ölçütler (7):** başlangıç kümesi: görev/parite tamamlama oranı, UAT ilk geçiş oranı, insan müdahale sayısı (`deney_mudahaleler.md`). Maliyet/görev ve onarım turu sonraya (kota kayıtlarından türetilebilir).
+- **Tasarım aşaması (1):** v2'de ilk sınıf faz aşaması: tasarım çıktısı + sistem onayı (bilgilendirme kaydı) kodlamadan önce zorunlu; ayrı dilim.
+- Diğer maddeler varsayılan öneriyle ilerler.
