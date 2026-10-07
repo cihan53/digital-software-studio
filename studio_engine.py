@@ -1746,6 +1746,23 @@ def temizle_arac_artefakti(metin: str, ad: str = "") -> str:
     return yeni
 
 
+_BETIK_UZANTI = (".sh", ".bash", ".zsh", ".mjs", ".cjs", ".js", ".py", ".rb", ".pl")
+
+
+def shebang_oncesini_at(metin: str, ad: str = "") -> str:
+    """Betik dosyasının ilk '#!' satırından önceki anlatımı (ajanın sohbet metni) atar (#255); shebang yoksa ya da betik değilse dokunmaz."""
+    if not str(ad).lower().endswith(_BETIK_UZANTI):
+        return metin
+    satirlar = metin.splitlines(keepends=True)
+    for i, l in enumerate(satirlar[:20]):
+        if l.startswith("#!"):
+            if i and any(x.strip() for x in satirlar[:i]):
+                print(f"  [!] {ad}: shebang öncesi {i} satır anlatım atıldı.", file=sys.stderr)
+                return "".join(satirlar[i:])
+            return metin
+    return metin
+
+
 HISTORY_DIR = WORKSPACE / ".history"
 
 
@@ -1764,6 +1781,7 @@ def write_single_file(path_str: str, content: str) -> list[Path]:
     content = temizle_arac_artefakti(content, path_str)
     if out.suffix.lower() != ".md":
         content = content.lstrip("\r\n")                                  # shebang 1. satırda kalsın (#243)
+        content = shebang_oncesini_at(content, path_str)                  # öncesindeki anlatım (#255)
     out.write_text(content.rstrip() + "\n", encoding="utf-8")
     return [out]
 
@@ -1804,7 +1822,7 @@ def write_multi_file(dir_str: str, content: str) -> list[Path]:
             continue
 
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(temizle_arac_artefakti(strip_fence(body.lstrip("\r\n")), raw_name).strip("\r\n") + "\n", encoding="utf-8")   # baştaki boş satır shebang'i 2. satıra iter (#243)
+        target.write_text(shebang_oncesini_at(temizle_arac_artefakti(strip_fence(body.lstrip("\r\n")), raw_name).strip("\r\n"), raw_name) + "\n", encoding="utf-8")   # baştaki boş satır shebang'i 2. satıra iter (#243); öncesindeki anlatım atılır (#255)
         written.append(target)
     return written
 

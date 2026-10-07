@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import studio_engine as E
 
 # Etiketler parçalı kurulur: kaynak dosyanın kendisi araç çağrısı biçimi taşımasın.
@@ -103,6 +104,49 @@ class YedekDokum(unittest.TestCase):
             self.assertEqual(ya2[0].name, "_CIKTI.md")
         finally:
             E.check_output_path, E.WORKSPACE, E.DOC_DIR = eski
+
+
+class ShebangOncesi(unittest.TestCase):
+    """issue #255"""
+
+    def test_anlatim_atilir(self):
+        m = "Mevcut betiği inceliyorum.\n\n#!/usr/bin/env bash\necho 1\n"
+        self.assertEqual(E.shebang_oncesini_at(m, "workspace/yerel_ortam.sh"), "#!/usr/bin/env bash\necho 1\n")
+
+    def test_dokunulmayanlar(self):
+        self.assertEqual(E.shebang_oncesini_at("#!/bin/sh\nx\n", "a.sh"), "#!/bin/sh\nx\n")
+        self.assertEqual(E.shebang_oncesini_at("anlatim\n#!/bin/sh\n", "a.md"), "anlatim\n#!/bin/sh\n")      # betik değil
+        self.assertEqual(E.shebang_oncesini_at("echo 1\n# yorum\n", "a.sh"), "echo 1\n# yorum\n")            # shebang yok
+
+    def test_dosyaya_yazma(self):
+        eski = E.check_output_path
+        d = Path(tempfile.mkdtemp())
+        try:
+            E.check_output_path = lambda p: (d / "y.sh").resolve()
+            E.write_single_file("y.sh", "Anlatim burada.\n#!/usr/bin/env bash\necho 1\n")
+            self.assertTrue((d / "y.sh").read_text().startswith("#!/usr/bin/env bash\n"))
+            E.check_output_path = lambda p: (d / "m").resolve()
+            E.write_multi_file("m/", "=== FILE: a.sh ===\nAnlatim\n#!/bin/sh\necho 2\n")
+            self.assertTrue((d / "m" / "a.sh").read_text().startswith("#!/bin/sh\n"))
+        finally:
+            E.check_output_path = eski
+
+
+class BetikSozdizimi(unittest.TestCase):
+    def test_bozuk_betik_yakalanir(self):
+        import kalite_kapilari as K
+        d = Path(tempfile.mkdtemp())
+        (d / "workspace").mkdir()
+        (d / "workspace/iyi.sh").write_text("#!/usr/bin/env bash\necho ok\n")
+        (d / "workspace/bozuk.sh").write_text("Mevcut betiği inceliyorum (kontrol)\n#!/usr/bin/env bash\n")
+        eski = K.ROOT
+        try:
+            K.ROOT = d
+            h = K.betik_sozdizimi_hatalari(["workspace/iyi.sh", "workspace/bozuk.sh"])
+        finally:
+            K.ROOT = eski
+        self.assertEqual(len(h), 1)
+        self.assertIn("bozuk.sh", h[0])
 
 
 if __name__ == "__main__":
