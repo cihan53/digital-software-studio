@@ -1,6 +1,10 @@
-# Tasarım: ortam sözleşmesi, araçlı ajan modu, müşteri ortamı ve faz çıkış kapısı
+# Studio v2 — tasarım: organizasyon, ortam sözleşmesi, araçlı ajan modu, müşteri ortamı ve faz çıkış kapısı
 
-Durum: **taslak (onay bekliyor)** · Kapsam: yalnız tasarım; kod sonraki issue'larda (bkz. §13).
+Sürüm adı: **v2** · Durum: **taslak (onay bekliyor)** · Kapsam: yalnız tasarım; kod sonraki issue'larda (bkz. §13).
+
+## 0. Sürümleme: v2
+
+Bu belgedeki geliştirmelerin tamamı **v2** olarak anılır. Her dilim (§13) `v2:` önekli issue/PR başlığı ve `v2` etiketiyle açılır. Dilimler `main`'e normal akışla (patch) girer; v1.x hattı çalışmaya devam eder. v2'nin tamamlandığını gösteren son birleştirme `major:` önekiyle yapılır; release iş akışı `2.0.0` etiketini atar. Mevcut pilotlar (claude, devin, gemini) v1.x ile sürer; geçiş dilim dilim, `sync_studio.sh` ile.
 
 ## 1. Amaç
 
