@@ -3551,6 +3551,15 @@ def run_board(org: dict, brief: str, once: bool = False,
         except Exception as e:
             print(f"  [uyarı] faz plan kontrolü: {e}")
 
+        # Kapsam açığı denetimi (#271): biten denetim raporunu doğrula, eksik varsa fazları aç
+        try:
+            import kapsam_denetimi as KD
+            _, _cfg = _studio_config()
+            if KD.kontrol(board, _cfg):
+                B.save(board)
+        except Exception as e:
+            print(f"  [uyarı] kapsam denetimi kontrolü: {e}")
+
         sprint, task = goto if goto else B.next_ready(board)
 
         # Günlük kota: görev BAŞLAMADAN önce bakılır, sınır aşılmaz.
@@ -3620,6 +3629,19 @@ def run_board(org: dict, brief: str, once: bool = False,
                     continue
             except Exception as e:
                 print(f"  [uyarı] faz planlama tetiklenemedi: {e}")
+
+            # 3b. Kapsam açığı denetimi (#271): pano tamamen kapalıysa eksik kapsamı sistem kendisi arar
+            try:
+                import kapsam_denetimi as KD
+                _, _cfg = _studio_config()
+                sid = KD.tetikle(board, org, _cfg)
+                if sid:
+                    print(f"\n[KAPSAM DENETİMİ] {sid} eklendi: kaynak kapsam ile üretilen kod karşılaştırılacak, eksik varsa yeni faz açılacak.")
+                    B.refresh(board)
+                    B.save(board)
+                    continue
+            except Exception as e:
+                print(f"  [uyarı] kapsam denetimi tetiklenemedi: {e}")
 
             if once:
                 print("\n[i] Tek seferlik koşu: hazır görev yok, çıkılıyor.")

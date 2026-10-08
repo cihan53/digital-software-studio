@@ -26,6 +26,7 @@
     "scripts/render_kapisi.mjs",
     "scripts/onarim.py",
     "scripts/faz_planla.py",
+    "scripts/kapsam_denetimi.py",
     "scripts/gozlem.py",
     "scripts/birim_envanteri.py",
     "scripts/koruma_kontrol.py",
