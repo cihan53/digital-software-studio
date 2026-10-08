@@ -32,7 +32,7 @@ EN_FAZLA_FAZ = 3
 UI_UZANTILARI = {".vue", ".tsx", ".jsx", ".svelte", ".html", ".dart", ".kt", ".swift", ".xml", ".storyboard"}
 ATLA_DIZIN = {"node_modules", ".git", ".nuxt", ".output", "dist", "build", ".next", "__pycache__", ".trace", ".scratch"}
 ENVANTER_ADAYLARI = ("proje_kapsami.md", "workspace/docs/proje_kapsami.md", "workspace/docs/ekran_envanteri.md", "workspace/docs/backlog.md",
-                     "workspace/docs/kabul_kriterleri.md", "workspace/docs/rol_gorunurluk_matrisi.md")
+                     "workspace/docs/kabul_kriterleri.md", "workspace/docs/rol_gorunurluk_matrisi.md", "workspace/docs/envanter/_indeks.md")
 
 
 def acik_mi(cfg: dict | None) -> bool:
