@@ -558,7 +558,7 @@ def gorev_kapilari(task: dict, pre_snapshot: set[str]) -> list[str]:
 
     # 0a) Kaynak uygulandı mı — develop çıktısı yalnızca rapor/artefakt ise
     #     dosya listesi boş olsa bile yakala.
-    if kaynak_degisti_mi(task, files) is False:
+    if not task.get("onarim_muaf") and kaynak_degisti_mi(task, files) is False:
         msg = ("develop görevi workspace/src hedefliyor ama gerçek kaynak "
                "dosya değişmedi — çözüm yalnızca rapora/çıktı dokümanına "
                "yazılmış olabilir")
