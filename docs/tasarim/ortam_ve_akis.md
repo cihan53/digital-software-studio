@@ -279,6 +279,7 @@ Veri kaynağı yeni bir sistem değil: mevcut `audit_log` ve `.trace` olay akı�
 3. **Kimlik/kota ayrımı** (küçük, bağımsız): `OAuth expired` / `credits balance too low` → koşucu anlaşılır mesajla durur, 5 saat beklemez (§11.4).
 3b. **Bilgilendirme kaydı:** sistem kararlarının (kadro, faz planı, geçiş, kapsam yerleşimi) gerekçeli kaydı ve panelde geri alma düğmesi (§10.5). #250 faz planı onay kapısı bu dilimde bilgilendirmeye döner.
 3c. **Müşteri girdileri paneli:** §5.4 kontrol listesi (bekliyor/sağlandı/doğrulandı) ve doğrulama.
+3e. **Kapsam açığı denetimi (uygulandı, #271):** pano tamamen kapalıyken sistem kaynak envanteri ↔ üretilen kod ↔ SKIPPED görevleri karşılaştırır (`scripts/kapsam_denetimi.py`), envanterde geçen eksik birimleri fazlara böler, yeni fazı açar; faz planlama (#249) devralır. Kapatma: `kapsam_denetimi.acik=false`.
 3d. **Yazma kilidi ve ölçütler** (§16 sonucuna göre).
 4. **Faz çıkış kapısı** (+ gereksinim → test izi).
 5. **Müşteri test ortamı ve yayın akışı.**
