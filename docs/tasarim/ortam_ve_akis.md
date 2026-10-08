@@ -37,7 +37,7 @@ Bu belgedeki geliştirmelerin tamamı **v2** olarak anılır. Her dilim (§13) `
 2. **Hata kural ile değil, kanıtla çözülür.** Ajan hatayı gerçek çıktısıyla görür, kendi aracıyla düzeltir, motor aynı ölçütle doğrular.
 3. **Ajan ve motor aynı doğrulama araçlarına bakar.** Biri başarılı diğeri başarısız diyemez.
 4. **Ajanın cevabı dosya değildir.** Araçlı modda cevap yalnız özettir; çıktı dosyaları ajan tarafından yazılır, motor yalnız "var mı, değişti mi, doğrulama geçti mi" bakar.
-5. **İnsan kararı yalnız karar gerektiren yerde:** sözleşme onayı, faz planı onayı, müşteri onayı, kota aşımı, devre kesici sonrası devir.
+5. **İnsan kararı yalnız karar gerektiren yerde:** ortam sözleşmesi onayı (v2 ilk sürüm), müşteri kabulü, kota aşımı, devre kesici sonrası devir. Kadro, faz planı, faz geçişi ve kapsam yerleşimi kararlarını sistem verir; insan bilgilendirme kaydını görür ve geri alabilir (§10.5).
 6. **Gizli bilgi ajana görünmez** (§12).
 
 ## 4. Akış ve mevcut durum
@@ -45,7 +45,7 @@ Bu belgedeki geliştirmelerin tamamı **v2** olarak anılır. Her dilim (§13) `
 | # | Adım | Bugün | Bu tasarımla |
 |---|---|---|---|
 | 1-2 | Kapsam + brief görüşmesi | Var | Aynı |
-| 2b | Organizasyon kurulumu | Sabit rol kadrosu + planlayıcının dinamik rol sentezi; onay yok | §4a kadro önerisi ve onayı |
+| 2b | Organizasyon kurulumu | Sabit rol kadrosu + planlayıcının dinamik rol sentezi; onay yok | §4a sistem kadro önerir ve karar verir; insana bilgilendirme ve geri alma |
 | 3 | Kapsam değişikliği | Müşteri talebi var; etki analizi yok | §10.3 etki analizi ve faz önerisi |
 | 4-5 | Gereksinim, faz, sprint planı | Plan ve faz planlama (#249) var; gereksinim izlenebilirliği yok | §10.2 + gereksinim → test izi |
 | 6 | Geliştirme ortamı | Ajan yazdığı betik | §5 ortam sözleşmesi |
@@ -71,10 +71,10 @@ Her rol: `id`, görev ve sorumluluk, **yazma kapsamı** (hangi dosya/dizinler), 
 ### 4a.3 Akış
 1. Kapsam ve brief bittikten sonra CTO ve ürün sahibi, tür profilinden başlayarak kadroyu önerir: hangi roller, kaç tane, hangi araç, hangi motor ve model.
 2. **Kadro kararını sistem verir** (CTO + ürün sahibi rolleri): müşteri teknik kadro kararını veremeyebilir. Karar gerekçesiyle birlikte panel Onaylar sekmesinde **bilgilendirme kaydı** olarak görünür; insan isterse düzenler ya da geri alır (itiraz penceresi, kadro kilitlenmeden önce). Motor ve model ilk değeri de burada sistem tarafından seçilir; sonradan kontrol panelinden değişir (§11.3).
-3. Onaydan sonra kadro kilitlenir; rol ekleme/çıkarma, gerekçe ve onayla (faz sırasında da) yapılabilir.
+3. İtiraz penceresi kapanınca (ya da insan "tamam" deyince) kadro kilitlenir. Kilitten sonra rol ekleme/çıkarma (faz sırasında da) **gerekçeyle ve sistem kararıyla** yapılır; her değişiklik bilgilendirme kaydı düşer, insan geri alabilir.
 
 ### 4a.4 Dinamik rol sentezi (kontrol altında)
-Planlayıcı kadroda olmayan rol isterse rol **önerilen** durumda oluşur, kapsamı dar ve geçicidir; insan onayı olmadan kalıcı kadroya girmez. Onay gelene kadar görev bekler ya da mevcut en yakın role atanır.
+Planlayıcı kadroda olmayan rol isterse rol **önerilen** durumda oluşur, kapsamı dar ve geçicidir. CTO + ürün sahibi gerekçeyle kalıcı kadroya alır ya da reddeder (§4a.3 kilit sonrası kuralı); karar bilgilendirme kaydına düşer, insan geri alabilir. Karar gelene kadar görev bekler ya da mevcut en yakın role atanır.
 
 ### 4a.5 Roller üzerinde kontroller
 Rol devre dışı bırakma (bugünkü `devre_disi`), rol bazında bütçe ve motor/model, rol bazında araç izni; hepsi kadro belgesinde ve panelde görünür.
@@ -95,6 +95,7 @@ dogrula    : [ { ad, dogrulayici, komut/parametre, beklenen } ]  -- iç döngü 
 gez        : [ { ad, dogrulayici, senaryo } ]  -- UAT'nin motoru (gerçek kullanım)
 paketle    : { komut, cikti }  -- müşteri ortamına çıkacak sürüm
 musteri    : { hedef, transfer, baslat, durdur, saglik }  -- hedef: yerel | uzak; transfer: yöntem (§9.2)
+yayin      : { sistem, dal, etiket_bicimi, geri_alma }  -- varsayılan: git, main, vX.Y.Z (§9.3)
 tohum      : veri/durum başlatma (mock tohumu, test veritabanı)
 gizli      : [ gizli bilgi adları ]  -- değerleri sözleşmede yok (§12)
 ```
@@ -191,7 +192,7 @@ Sözleşmedeki `calistir`; sıcak yeniden yükleme varsa kullanır. Ajanlar ve U
 Türe göre: web build + preview; mobil test dağıtımı/emülatör imajı; gömülü cihaza yazılabilir imaj ya da emülatör imajı; backend konteyner/ayrı örnek.
 
 ### 9.3 Yayın
-Müşteri onayı sonrası: sürüm etiketi, kaynak yönetimine alma (**karar: `main`'e PR + etiket**; onaylı sürüm = `main`'deki etiket, geliştirme dalları onaylı sayılmaz). **Etiket = proje sürümü** (örn. `v1.2.0`; fazlar sürüm notunda görünür). **`main`'e PR yalnız müşteri onayından sonra** açılır (sprint sonunda ara PR yok), geri alma talimatı (önceki etiket). Hedef sistem (git/başka) sözleşmede `yayin` bölümüyle tanımlanır; hangi dalın "onaylı sürüm" sayıldığı projeye göre ayarlanır. Gömülüde ek olarak imza adımı.
+Müşteri onayı sonrası: sürüm etiketi, kaynak yönetimine alma (**karar: `main`'e PR + etiket**; onaylı sürüm = `main`'deki etiket, geliştirme dalları onaylı sayılmaz). **Etiket = proje sürümü** (örn. `v1.2.0`; fazlar sürüm notunda görünür). **`main`'e PR yalnız müşteri onayından sonra** açılır (sprint sonunda ara PR yok), geri alma talimatı (önceki etiket). Hedef sistem (git/başka) ve onaylı sürüm dalı ortam sözleşmesindeki `yayin` bölümüyle tanımlanır (§5.1; varsayılan: `main` + etiket). Gömülüde ek olarak imza adımı.
 
 ## 10. Faz yönetimi
 
@@ -208,7 +209,7 @@ Fazı kapatmadan önce motor kontrol eder, eksiği söyler:
 Kapı geçerse **sistem fazı kendisi ilerletir** (sonraki faz aktif olur, bildirim kaydı düşer); geçmezse neyin eksik olduğu panelde gösterilir. "Sonraki faza geç" düğmesi insan için zorla geçiş (kayıt altına alınır) ve geri alma (fazı yeniden açma) olarak kalır.
 
 ### 10.3 Kapsam değişikliği → etki analizi ve faz önerisi (yeni)
-Brief ekranından gelen değişiklik: planlayıcı/CTO rolü etkiyi çıkarır (hangi tamamlanmış iş yeniden açılır, hangi sprintler kayar, tahmini maliyet). Boyut küçükse aktif faza; büyükse "yeni faz öner" kararı insana sunulur. Karar insandadır.
+Brief ekranından gelen değişiklik: planlayıcı/CTO rolü etkiyi çıkarır (hangi tamamlanmış iş yeniden açılır, hangi sprintler kayar, tahmini maliyet). Boyut küçükse aktif faza; büyükse yeni faz açılır. Karar sistemdedir (§10.5): kapsam değişikliği etki analiziyle aktif faza ya da yeni faza yerleştirilir; insan bilgilendirme kaydını görür ve geri alabilir.
 
 ### 10.4 Tarih uyarısı (yeni, hafif)
 Hedef tarihi aşan faz için uyarı; engelleme yok, görünürlük. **Faz başına bütçe v2 kapsamı dışıdır** (kota günlük kalır).
@@ -250,7 +251,7 @@ Günlük görev ve bütçe bugünkü gibi. Eklenecek: **kimlik hatası ≠ kota*
 
 İlke: **insan, sistemin ne yaptığını, ajanın ne yazdığını ve neyle uğraştığını panelden, ek bir araca gerek duymadan görür.** Bugün panelde Pano, Canlı Çıktı (koşan çağrının metin çıktısı), Audit Log ve İşlem Logları (çağrı başına istem/cevap) var; eksikler:
 
-1. **"Şimdi" kartı** (panelin en üstünde, her sekmede görünür): çalışan görev, rol, motor/model, aşama (sıra → kota → ajan → doğrulama), tur sayısı, geçen süre, bu görevin maliyeti; boştaysa **neden beklediği** (canlı kapalı, kota onayı, kimlik hatası, onay kapısı, bağımlılık) tek cümleyle ve ilgili düğmeyle.
+1. **"Şimdi" kartı** (panelin en üstünde, her sekmede görünür; **uygulandı**, bkz. §13 dilim 0): çalışan görev, rol, motor/model, aşama (sıra → kota → ajan → doğrulama), tur sayısı, geçen süre, bu görevin maliyeti; boştaysa **neden beklediği** (canlı kapalı, kota onayı, kimlik hatası, onay kapısı, bağımlılık) tek cümleyle ve ilgili düğmeyle.
 2. **Etkinlik akışı** (zaman çizelgesi, filtrelenebilir): görev başladı/bitti, ajan turu, **ajanın araç çağrıları** (okudu: dosya, yazdı: dosya, çalıştırdı: komut ve çıkış), kapı sonuçları (render, UAT, test, betik), onarım turları, telafi/talep açılışı, onay/bilgilendirme kayıtları, kota ve kimlik olayları. Her satır ilgili görev ve çağrıya bağlanır.
 3. **Değişiklik görünümü:** görev (ve tur) başına git farkı: değişen dosyalar, satır farkı (diff), eklenen/silinen test. "Ajan ne yazdı?" sorusunun cevabı çıktı özeti değil gerçek kod farkıdır.
 4. **Ajan konuşması:** tam istem ve cevap (bugünkü İşlem Logları) + araç çağrıları aynı ekranda. Motor araç çağrılarını sunuyorsa (claude akış çıktısı) gerçek zamanlı; sunmuyorsa (devin/agy) görev sonunda git farkı ve komut geçmişi ile yetinilir.
@@ -258,6 +259,8 @@ Günlük görev ve bütçe bugünkü gibi. Eklenecek: **kimlik hatası ≠ kota*
 6. **Kota ve maliyet:** bugün ve dönem harcaması, rol ve görev bazında kırılım.
 7. **Bildirimler:** koşucu durduğunda (kimlik, kredi, kota, insan devri, ortam kırıldı) panelde belirgin uyarı; müşteriye gidenler ayrıca işaretlenir (§11.2).
 8. **Müşteri girdileri ve onay kuyruğu** özeti (§5.4, Onaylar sekmesi).
+
+**Durum:** 1 (neden kartı), 2 (Akış sekmesi: audit + claude araç çağrıları) ve 3 (görev git farkı) #260/#262 ile uygulandı; 4-8 kısmen ya da henüz yok. Canlı ortamı motor kendisi açar (#264, ara adım).
 
 Veri kaynağı yeni bir sistem değil: mevcut `audit_log` ve `.trace` olay akışı genişletilir (olay türleri ve araç çağrısı kaydı), panel bunu okur. Kayıtlarda gizli değerler maskelenir (§12).
 
@@ -269,11 +272,14 @@ Veri kaynağı yeni bir sistem değil: mevcut `audit_log` ve `.trace` olay akı�
 
 ## 13. Geçiş planı (PR dilimleri)
 
-0. **Gözlem paneli (§11.5)** — önce bu: sonraki dilimlerin izlenmesini kolaylaştırır; mevcut `audit_log`/`.trace` olay akışı, "Şimdi" kartı, etkinlik akışı, değişiklik görünümü.
+0. **Gözlem paneli (§11.5)** — **büyük kısmı uygulandı (#260, #262, #264)**; kalan: ortam/sağlık, kota kırılımı, müşteri girdileri özeti. Sonraki dilimlerin izlenmesini kolaylaştırır; mevcut `audit_log`/`.trace` olay akışı, "Şimdi" kartı, etkinlik akışı, değişiklik görünümü.
 0b. **Organizasyon kurulumu:** `organizasyon.json` şeması, kadro önerisi ve onayı, kontrollü dinamik rol sentezi, tür profillerinden varsayılan kadro.
 1. **Ortam sözleşmesi çekirdeği:** şema, doğrulama, `komut`/`http`/`tarayici` adaptörleri, `calistir`/`saglik` yönetimi, web profili. Mevcut `yerel_ortam_yonet.py`, `build_checklist.json`, `smoke_checklist.json`, `uat_checklist.json` ve `studio.config.json` içindeki `kalite.*`/`live.ports` buna taşınır.
 2. **Araçlı ajan modu:** önce devops ve web/backend develop, sonra tüm develop; çıktı yazım kuralı; test/doküman görevleri eskisi gibi.
-3. **Kimlik/kota ayrımı** (küçük, bağımsız).
+3. **Kimlik/kota ayrımı** (küçük, bağımsız): `OAuth expired` / `credits balance too low` → koşucu anlaşılır mesajla durur, 5 saat beklemez (§11.4).
+3b. **Bilgilendirme kaydı:** sistem kararlarının (kadro, faz planı, geçiş, kapsam yerleşimi) gerekçeli kaydı ve panelde geri alma düğmesi (§10.5). #250 faz planı onay kapısı bu dilimde bilgilendirmeye döner.
+3c. **Müşteri girdileri paneli:** §5.4 kontrol listesi (bekliyor/sağlandı/doğrulandı) ve doğrulama.
+3d. **Yazma kilidi ve ölçütler** (§16 sonucuna göre).
 4. **Faz çıkış kapısı** (+ gereksinim → test izi).
 5. **Müşteri test ortamı ve yayın akışı.**
 6. **Acil hat ve müşteri bilgilendirmesi** (bilinen sorun notu).
@@ -321,3 +327,27 @@ Her dilim: issue → branch → PR; testler ve README güncellemesi. Pilot (devi
 - Belirli bir araç zincirine (Nuxt, Gradle, CMake…) gömülü kural.
 - Üretim ortamına dağıtım otomasyonu (müşteri onayına kadar).
 - Çok-AI karşılaştırma deneyinin yönetimi (ayrı çalışma).
+
+## 16. Eksik alanlar (analizde ele alınmamış)
+
+Pilot gözlemlerinden ve bu belgenin gözden geçirilmesinden çıkan alanlar. Her madde: **sorun → öneri**; "Karar" işaretliler kullanıcıdan bekler, diğerleri varsayılan öneriyle ilerler.
+
+1. **Tasarım aşaması.** Bugün gereksinimden doğrudan kodlamaya geçiliyor; mimari/ekran/veri tasarımı onaysız. → Faz başına *tasarım → onay → kodlama*: tasarım çıktısı (`workspace/docs/`) ve sistem onayı (bilgilendirme kaydı) kodlama görevlerinin girdisi olur. **Karar:** v2'de ilk sınıf aşama mı, yoksa görev türü mü?
+2. **Keşif ve mod seçimi (sıfırdan / taşıma).** Pilotlar taşıma; sıfırdan başlama analizi #59'da. → Brief sonunda `mod` alanı (`sifirdan` | `tasima`); taşımada kaynak envanteri ve parite listesi zorunlu.
+3. **Eşzamanlı yazma kilidi.** Panel/CLI ile koşucu aynı `studio.db`'ye yazıyor; koşucu çalışırken pano düzenlemek kayıp yazma doğuruyor (şu an yalnız kural: düzenleme yapma). → Yazma tek yol üzerinden (koşucu sahibi; panel/CLI istek kuyruğuna yazar ya da sürücü kilidi `workspace/.control/yazma.kilit` alır). **Karar.**
+4. **Dayanıklılık, yedek, geri alma.** Yarım kalan yazma, bozuk dosya (devin `yerel_ortam.sh` olayı) ve db bozulmasına karşı sistematik koruma yok. → Tur öncesi git kontrol noktası (§8.3) yanında `studio.db` anlık yedeği (günlük + kritik geçişlerde), sürümlü sözleşme dosyaları, tek komutla geri dönüş.
+5. **Test stratejisi, regresyon belleği, gereksinim→test izi.** Bugün regresyon taraması ve smoke var; kabul kriteri ↔ test eşlemesi yok (§10.2 bunu varsayıyor). → Her gereksinimin test kimliği, düzeltilen her hata için kalıcı regresyon testi, iz tablosu.
+6. **Proje hafızası.** Ajanlar her çağrıda bağlamı yeniden kuruyor; alınan kararlar ve öğrenilenler taşınmıyor. → `workspace/docs/hafiza.md` (karar, sebep, tarih); rol istemlerine ilgili kısım enjekte edilir; gizli değer içermez (§12).
+7. **Başarı ölçütleri ve deney metrikleri.** Üç AI kolunun karşılaştırması için ortak ölçü yok. → Kol başına: tamamlanan görev/parite oranı, UAT ilk geçiş oranı, onarım turu/görev, insan müdahale sayısı (`deney_mudahaleler.md`), maliyet/görev, kapı yeniden açılma oranı. **Karar:** hangi ölçütler ve eşikler.
+8. **Güvenlik tehdit modeli.** §12 yalnız gizli değerleri kapsıyor. → Tehditler: ajanın komut yürütmesi, bağımlılık zinciri, istem enjeksiyonu (müşteri girdisi/web içeriği), müşteri ortamına sızıntı; her biri için kontrol ve sahibi rol (güvenlik/gizlilik).
+9. **Kalite boyutları.** Performans bütçesi, erişilebilirlik, i18n, tablo/liste sınırları §7'de yalnız tür kontrol listesi. → `dogrula`/`gez` adımı olarak sözleşmeye bağlanır, faz çıkış kapısında (§10.2) görünür.
+10. **Paketleme, dokümantasyon, on-premise.** Teslim edilen paket, kurulum/işletim dokümanı, müşteri sunucusunda çalıştırma tanımsız. → `paketle` çıktısına teslim dokümanı eklenir; on-premise `musteri.hedef: uzak` ile aynı yolu kullanır.
+11. **Müşteri/operatör yetki modeli.** Panelde herkes her şeyi yapabiliyor. → Roller: operatör (tam), müşteri (kabul, girdi sağlama, bilinen sorun görme), salt-okur; zorla geçiş ve kota onayı yalnız operatör.
+12. **Dal stratejisi.** Pilotlarda tek `studio/calisma` dalı ve görev bazlı otomatik commit; yayın `main`+etiket (§9.3). → Çalışma dalı → müşteri onayında `main`'e PR; faz başına etiket; hotfix yolu (acil hat, §11.2) tanımlanır.
+13. **Dilim DoD ve risk kaydı.** Dilimlerin "bitti" ölçütü ve riskleri belgesiz. → Her dilim: testler yeşil, README, claude kolunda doğrulama, geriye uyumluluk kontrolü (§13.1); riskler `workspace/docs/risk_kaydi.md`.
+
+### Kararlar (2026-10-07)
+- **Yazma kilidi (3):** istek kuyruğu. Koşucu `studio.db` yazımının sahibidir; panel/CLI değişiklikleri kuyruğa yazar, koşucu işler. Koşucu kapalıysa panel kilit alarak doğrudan yazar. Dilim 3d.
+- **Ölçütler (7):** başlangıç kümesi: görev/parite tamamlama oranı, UAT ilk geçiş oranı, insan müdahale sayısı (`deney_mudahaleler.md`). Maliyet/görev ve onarım turu sonraya (kota kayıtlarından türetilebilir).
+- **Tasarım aşaması (1):** v2'de ilk sınıf faz aşaması: tasarım çıktısı + sistem onayı (bilgilendirme kaydı) kodlamadan önce zorunlu; ayrı dilim.
+- Diğer maddeler varsayılan öneriyle ilerler.
