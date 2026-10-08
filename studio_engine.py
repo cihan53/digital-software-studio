@@ -2226,6 +2226,14 @@ def execute_pipeline(org: dict, brief: str, args):
             continue
         if agent.get("discovery") and not _kesif_sozlesmesi_gecerli(agent_id):
             continue
+        try:
+            import envanter_asamasi as EA
+            _, _c0 = _studio_config()
+            if agent_id in EA.TASARIM_ATLANAN_ROLLER and EA.gerekli(_c0):
+                print(f"\n---> [ERTELENDİ] {agent['title']} ({agent_id}): envanter aşamasından sonra panoda çalışacak")
+                continue
+        except ImportError:
+            pass
         outputs_exist = all(resolve_path(p).exists() for p in agent["outputs"])
         if agent_id in state["completed_steps"] and outputs_exist and not args.only:
             print(f"\n---> [ATLANDI] {agent['title']} ({agent_id})")
@@ -2275,6 +2283,23 @@ def run_planner(org: dict, brief: str, force: bool = False) -> dict:
     if B.board_exists() and not force:
         print("  [i] Mevcut pano kullanılıyor. Yeniden planlamak için --replan.")
         return B.load()
+
+    # Envanter aşaması (#273): kaynak tanımlıysa kod/plan öncesi kaynak sistemin tam envanteri çıkarılır
+    SC0, scfg0 = _studio_config()
+    try:
+        import envanter_asamasi as EA
+        if EA.gerekli(scfg0):
+            board = B.normalize(EA.baslangic_panosu(scfg0))
+            errs = B.validate(board)
+            if errs:
+                sys.exit("[HATA] envanter panosu geçersiz:\n  " + "\n  ".join(errs[:10]))
+            B.board_reset()
+            B.refresh(board)
+            B.save(board)
+            print("  [✓] Envanter aşaması başlatıldı: önce kaynak sistemin tam envanteri, sonra tasarım, sonra faz planı.")
+            return B.load()
+    except ImportError:
+        pass
 
     # planlama.uretici = "birim": keşif envanterinden deterministik plan (LLM planlayıcı kaba pano üretir; bkz. scripts/plan_birim.py)
     SC, scfg = _studio_config()
@@ -3550,6 +3575,15 @@ def run_board(org: dict, brief: str, once: bool = False,
                 B.save(board)
         except Exception as e:
             print(f"  [uyarı] faz plan kontrolü: {e}")
+
+        # Envanter aşaması (#273): rota listesi → birim envanteri → tasarım → plan
+        try:
+            import envanter_asamasi as EA
+            _, _cfg = _studio_config()
+            if EA.kontrol(board, org, _cfg):
+                B.save(board)
+        except Exception as e:
+            print(f"  [uyarı] envanter aşaması kontrolü: {e}")
 
         # Kapsam açığı denetimi (#271): biten denetim raporunu doğrula, eksik varsa fazları aç
         try:
