@@ -112,6 +112,9 @@ class Envanter(unittest.TestCase):
         sablon = next(t for _, t in B.all_tasks(self.board) if SABLON_BASLIK in t["title"])
         digerleri = [t for _, t in B.all_tasks(self.board) if t["title"].startswith(("Ekran tasarımı", "Paket"))]
         self.assertEqual(len(digerleri), 3)
+        g = next(t for _, t in B.all_tasks(self.board) if t["role"] == "security_lead")
+        paket = next(t for _, t in B.all_tasks(self.board) if t["title"].startswith("Paket"))
+        self.assertEqual(g["depends_on"], [paket["id"]])
         self.assertTrue(all(sablon["id"] in t["depends_on"] for t in digerleri))
 
     def test_kok_rolu_org_chartta_var_ve_araclari_okuma(self):

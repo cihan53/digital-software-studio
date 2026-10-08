@@ -34,7 +34,7 @@ DURUM = f"{DIZIN}/_durum.json"
 TASARIM_DIZIN = "workspace/docs/tasarim"
 SABLON = f"{TASARIM_DIZIN}/_ana_sablon.md"
 ANALIST, TASARIMCI = "envanter_analisti", "ui_designer"
-TASARIM_ATLANAN_ROLLER = {"ux_lead", "ui_designer", "design_auditor", "tech_scout"}   # kaynak okumadan envanter uydurmasınlar; görev olarak sonra çalışırlar
+TASARIM_ATLANAN_ROLLER = {"ux_lead", "ui_designer", "design_auditor", "tech_scout", "security_lead"}   # kaynak okumadan envanter uydurmasınlar; görev olarak sonra çalışırlar
 TURLER = {"ekran", "modal", "cekmece"}
 BASLIKLAR = ["Veri yapısı", "Bileşenler", "Tablolar", "Butonlar ve aksiyonlar", "Yönlendirmeler", "Modal ve çekmeceler", "Yetki ve görünürlük", "API çağrıları"]
 EN_FAZLA_GOREV_SPRINT = 6
@@ -239,6 +239,9 @@ def _tasarim_gorevleri(birimler: list[dict], cfg: dict) -> tuple[dict, list[dict
     gorevler = [{"title": "Paket ve kütüphane seçimi", "role": "tech_scout", "phase": "develop",
                  "description": f"Brief'teki teknoloji kararına ve ana şablondaki bileşen ihtiyaçlarına (tablo, grafik, form, i18n) göre paket/kütüphane seçimi. Girdi: {SABLON}, {INDEKS}",
                  "outputs": ["workspace/docs/paket_secim_raporu.md"], "depends_on": []}]
+    gorevler.append({"title": "Güvenlik ve gizlilik tasarımı", "role": "security_lead", "phase": "develop",
+                     "description": f"Teknik mimari, backlog ve paket seçimine göre güvenlik tasarımı ve tehdit modeli. Girdi: workspace/docs/paket_secim_raporu.md, {INDEKS}",
+                     "outputs": ["workspace/docs/guvenlik_tasarimi.md", "workspace/docs/tehdit_modeli.md"], "depends_on": []})
     for m, us in _gruplar([b for b in birimler], parca(cfg)):
         dosyalar = ", ".join(f"{EKRAN_DIZIN}/{u['id']}.md" for u in us)
         gorevler.append({"title": f"Ekran tasarımı: {m} ({', '.join(u['id'] for u in us)[:60]})", "role": TASARIMCI, "phase": "develop",
@@ -306,6 +309,10 @@ def kontrol(board: dict, org: dict | None = None, cfg: dict | None = None, kok: 
         for g in tasarim:
             g["depends_on"] = [sablon_id]
         ids += _gorev_ekle(board, "Ekran tasarımları", "Her ekranın envantere dayalı tasarımı", tasarim)
+        paket = next((t["id"] for _, t in B.all_tasks(board) if t["title"] == "Paket ve kütüphane seçimi"), None)
+        guvenlik = next((t for _, t in B.all_tasks(board) if t["title"] == "Güvenlik ve gizlilik tasarımı"), None)
+        if paket and guvenlik:
+            guvenlik["depends_on"] = [paket]
         durum["sprintler_tasarim"] = ids
         durum_yaz(durum, kok)
         B.audit("engine", "envanter_tamamlandi", detay={"birim": len(birimler), "eksik": len(eksik_toplam), "tasarim_gorevi": len(tasarim) + 1})
