@@ -2293,6 +2293,12 @@ def run_planner(org: dict, brief: str, force: bool = False) -> dict:
         print("  [i] Mevcut pano kullanılıyor. Yeniden planlamak için --replan.")
         return B.load()
 
+    try:                                              # brief kararları donar: geri dönüş noktası (#275)
+        import kontrol_noktasi as KN
+        KN.yoksa_olustur("brief-karari", "plan öncesi", ROOT)
+    except Exception:
+        pass
+
     # Envanter aşaması (#273): kaynak tanımlıysa kod/plan öncesi kaynak sistemin tam envanteri çıkarılır
     SC0, scfg0 = _studio_config()
     try:
