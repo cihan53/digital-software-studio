@@ -342,7 +342,16 @@ def preflight_env(force: bool = False) -> Path:
 # -------------------------------------------------------------
 # 2. ANTIGRAVITY MOTORU (agy CLI)
 # -------------------------------------------------------------
-BACKEND = os.getenv("STUDIO_BACKEND", "agy").lower()
+def _proje_backend() -> str:
+    """STUDIO_BACKEND yoksa proje yapılandırması (workspace/studio.config.json → deney.backend), o da yoksa agy."""
+    try:
+        d = json.loads((ROOT / "workspace" / "studio.config.json").read_text(encoding="utf-8")).get("deney") or {}
+        return d.get("backend") or "agy"
+    except (OSError, ValueError):
+        return "agy"
+
+
+BACKEND = (os.getenv("STUDIO_BACKEND") or _proje_backend()).lower()
 AGY_MODEL = os.getenv("STUDIO_AGY_MODEL", "gemini-3.8-flash-high")
 AGY_TIMEOUT = int(os.getenv("STUDIO_AGY_TIMEOUT", "1800"))
 # Devin AI arka ucu (devin CLI, -p print kipi; STUDIO_DEVIN_CLOUD=1 ile bulut oturumu).
@@ -2229,7 +2238,7 @@ def execute_pipeline(org: dict, brief: str, args):
         try:
             import envanter_asamasi as EA
             _, _c0 = _studio_config()
-            if agent_id in EA.TASARIM_ATLANAN_ROLLER and EA.gerekli(_c0):
+            if agent_id in EA.TASARIM_ATLANAN_ROLLER and EA.ertele(_c0):
                 print(f"\n---> [ERTELENDİ] {agent['title']} ({agent_id}): envanter aşamasından sonra panoda çalışacak")
                 continue
         except ImportError:
@@ -3836,7 +3845,7 @@ def main():
     args = ap.parse_args()
 
     global BACKEND, WORD_SCALE
-    BACKEND = (args.backend or os.getenv("STUDIO_BACKEND", "agy")).lower()
+    BACKEND = (args.backend or os.getenv("STUDIO_BACKEND") or _proje_backend()).lower()
     if args.word_scale:
         WORD_SCALE = args.word_scale
 
