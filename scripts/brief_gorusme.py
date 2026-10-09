@@ -91,6 +91,16 @@ def siradaki_rol(s: dict) -> str:
     return ROLLER[len(s["turlar"]) % len(ROLLER)]
 
 
+def _kontrol_noktasi() -> None:
+    """Brief kararları verildi: durum git'e commit + etiket olarak gönderilir (geri dönüş noktası, #275)."""
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import kontrol_noktasi as KN
+        KN.olustur("brief-karari", "brief görüşmesi tamamlandı", Path(__file__).resolve().parent.parent)
+    except Exception:
+        pass
+
+
 def soru_uret() -> dict:
     """Bekleyen cevapsız soru varsa onu döndürür; yoksa sıradaki rol yeni bir soru sorar. {tur|None, bitti}"""
     s = yukle()
@@ -112,6 +122,7 @@ def soru_uret() -> dict:
     if v.get("bitti") and len(s["turlar"]) >= len(ROLLER):
         s["durum"] = "tamam"
         kaydet(s)
+        _kontrol_noktasi()
         return {"tur": None, "bitti": True}
     tur = {"id": len(s["turlar"]) + 1, "rol": rol, "soru": str(v.get("soru") or YEDEK_SORULAR[rol]).strip()[:600],
            "secenekler": [str(x)[:120] for x in (v.get("secenekler") or [])][:3], "cevap": None, "zaman": _simdi()}
@@ -159,6 +170,8 @@ def bitir(durum: str = "tamam") -> dict:
     s = yukle()
     s["durum"] = durum
     kaydet(s)
+    if durum == "tamam":
+        _kontrol_noktasi()
     return {"ok": True}
 
 
