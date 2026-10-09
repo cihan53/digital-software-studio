@@ -47,6 +47,22 @@ cd "$(dirname "$0")" || exit 1
 
 PY=".venv/bin/python"
 [ -x "$PY" ] || PY="python3"
+
+# Backend/model: ortam değişkeni yoksa proje yapılandırmasından (workspace/studio.config.json → deney) alınır.
+# Panelden/elle başlatılsa da kolun backend'i (devin/claude/agy) değişmez.
+if [ -z "${STUDIO_BACKEND:-}" ] && [ -f workspace/studio.config.json ]; then
+  eval "$($PY - <<'PYEOF' 2>/dev/null
+import json
+d = json.load(open("workspace/studio.config.json", encoding="utf-8")).get("deney") or {}
+b, m = d.get("backend", ""), d.get("model", "")
+env = {"claude": "STUDIO_CLAUDE_MODEL", "agy": "STUDIO_AGY_MODEL", "devin": "STUDIO_DEVIN_MODEL"}.get(b)
+if b in ("claude", "agy", "devin"):
+    print(f'export STUDIO_BACKEND="{b}"')
+    if m and env:
+        print(f'export {env}="${{{env}:-{m}}}"')
+PYEOF
+)"
+fi
 LOG="workspace/logs/pipeline.log"
 red()  { printf "\033[31m%s\033[0m\n" "$*"; }
 grn()  { printf "\033[32m%s\033[0m\n" "$*"; }

@@ -79,6 +79,11 @@ def gerekli(cfg: dict | None, kok: Path = ROOT) -> bool:
     return acik_mi(cfg, kok) and durum_oku(kok).get("asama") is None
 
 
+def ertele(cfg: dict | None, kok: Path = ROOT) -> bool:
+    """Tasarım aşaması rolleri panoda çalışacak mı? Envanter aşaması açık ve henüz tamamlanmamışsa (yeniden başlatmalar dahil)."""
+    return acik_mi(cfg, kok) and durum_oku(kok).get("asama") != "tamam"
+
+
 def slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-") or "birim"
 

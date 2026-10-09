@@ -46,6 +46,13 @@ class Envanter(unittest.TestCase):
         self.assertFalse(EA.acik_mi({**self.cfg, "planlama": {"uretici": "birim"}}))
         self.assertFalse(EA.acik_mi({"source": {"path": str(self.tmp / "yok")}}))
 
+    def test_ertele_yeniden_baslatmada_da_surer(self):
+        self.assertTrue(EA.ertele(self.cfg, self.tmp))               # durum 'rotalar' (gerekli() artık False)
+        self.assertFalse(EA.gerekli(self.cfg, self.tmp))
+        EA.durum_yaz({"asama": "tamam"}, self.tmp)
+        self.assertFalse(EA.ertele(self.cfg, self.tmp))
+        self.assertFalse(EA.ertele({}, self.tmp))
+
     def test_baslangic_sadece_rota_gorevi(self):
         self.assertEqual(len(self.board["sprints"]), 1)
         t = self.board["sprints"][0]["tasks"][0]
