@@ -71,7 +71,14 @@ def durum_oku(kok: Path = ROOT) -> dict:
 def durum_yaz(durum: dict, kok: Path = ROOT) -> None:
     p = kok / DURUM
     p.parent.mkdir(parents=True, exist_ok=True)
+    eski = durum_oku(kok).get("asama")
     p.write_text(json.dumps(durum, ensure_ascii=False, indent=1), encoding="utf-8")
+    if durum.get("asama") != eski and eski is not None:         # aşama geçişi: geri dönüş noktası (#275)
+        try:
+            import kontrol_noktasi as KN
+            KN.olustur(f"envanter-{eski}-bitti", "", kok)
+        except Exception:
+            pass
 
 
 def gerekli(cfg: dict | None, kok: Path = ROOT) -> bool:

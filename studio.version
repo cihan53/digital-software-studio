@@ -28,6 +28,7 @@
     "scripts/faz_planla.py",
     "scripts/kapsam_denetimi.py",
     "scripts/envanter_asamasi.py",
+    "scripts/kontrol_noktasi.py",
     "scripts/gozlem.py",
     "scripts/birim_envanteri.py",
     "scripts/koruma_kontrol.py",
