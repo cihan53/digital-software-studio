@@ -95,7 +95,7 @@ Kural: kaynaktaki HER rota/ekran, içindeki HER modal ve çekmece ayrı birimdir
 """ + "\n".join(f"## {b}" for b in BASLIKLAR) + """
 
 İçerik kuralları: kaynak kodu oku; yalnız gördüğünü yaz; bilmediğine 'bilinmiyor', olmayana 'yok' yaz — başlık boş KALAMAZ, değer/davranış UYDURMA.
-Veri yapısı: ekranın kullandığı model/alanlar ve tipleri. Bileşenler: kullanılan bileşenler/widget'lar. Tablolar: kolonlar, sıralama/filtre/sayfalama.
+Veri yapısı: ekranın kullandığı model/alanlar ve tipleri. Bileşenler: kullanılan bileşenler/widget'lar; her widget için veri kaynağı (kendi API/servis çağrısı, üst bileşenden props ya da ortak store) ve sayfadaki yerleşimi (grid konumu/boyutu, biliniyorsa). Tablolar: kolonlar, sıralama/filtre/sayfalama.
 Butonlar ve aksiyonlar: her buton/menü öğesi → ne yapar (API/gezinme/modal). Yönlendirmeler: gelen ve giden rotalar. Modal ve çekmeceler: açan öğe, içerik, kendi birim id'si.
 Yetki ve görünürlük: rol/menü/özellik koşulları. API çağrıları: yöntem + uç + ne zaman.
 """
@@ -233,7 +233,8 @@ def _tasarim_gorevleri(birimler: list[dict], cfg: dict) -> tuple[dict, list[dict
     ornek = ", ".join(f"{EKRAN_DIZIN}/{b['id']}.md" for b in ekran_tur[:6])
     sablon = {"title": "Ana şablon ve tasarım sistemi", "role": TASARIMCI, "phase": "develop",
               "description": ("Kaynak sistemin envanterinden ortak kalıpları çıkararak ANA ŞABLONU tasarla: layout (üst çubuk, yan menü, içerik alanı), filtre/başlık düzeni, "
-                              "ortak bileşenler (tablo, kart, modal, çekmece, boş/yükleme/hata/yetkisiz durumları), karanlık mod, çoklu dil. Brief'teki stil politikasına uy. "
+                              "ortak bileşenler (tablo, kart, modal, çekmece, boş/yükleme/hata/yetkisiz durumları), karanlık mod, çoklu dil. Envanterde tekrar eden kalıpları "
+                              "ORTAK BİLEŞEN/WİDGET KATALOĞUNA çıkar (ad, kullanıldığı birimler, veri kaynağı, grid davranışı). Brief'teki stil ve mimari kurallara (bileşen/widget, veri çekme, grid layout) uy. "
                               f"Çıktılar: tasarım sistemi + ana şablon. Girdi: {INDEKS}, {ornek}"),
               "outputs": ["workspace/docs/tasarim_sistemi.md", SABLON], "depends_on": []}
     gorevler = [{"title": "Paket ve kütüphane seçimi", "role": "tech_scout", "phase": "develop",
@@ -245,7 +246,7 @@ def _tasarim_gorevleri(birimler: list[dict], cfg: dict) -> tuple[dict, list[dict
     for m, us in _gruplar([b for b in birimler], parca(cfg)):
         dosyalar = ", ".join(f"{EKRAN_DIZIN}/{u['id']}.md" for u in us)
         gorevler.append({"title": f"Ekran tasarımı: {m} ({', '.join(u['id'] for u in us)[:60]})", "role": TASARIMCI, "phase": "develop",
-                         "description": (f"Şu birimlerin her biri için ekran tasarımı: yerleşim, tablolar, butonlar/aksiyonlar, modal/çekmeceler, durumlar. Ana şablona ({SABLON}) uy. "
+                         "description": (f"Şu birimlerin her biri için ekran tasarımı: yerleşim, tablolar, butonlar/aksiyonlar, modal/çekmeceler, durumlar. Ana şablona ({SABLON}) ve brief'teki mimari kurallara uy; ortak bileşen/widget kataloğundaki parçaları kullan, yeni ortak parça gerekiyorsa katalog ekine yaz. "
                                          f"Envanterdeki hiçbir widget/aksiyon/modalı düşürme; iyileştirmeleri belirt. Girdi: {SABLON}, {dosyalar}"),
                          "outputs": [f"{TASARIM_DIZIN}/ekranlar/{slug(m)}.md"], "depends_on": []})
     for i, g in enumerate([g for g in gorevler if "/ekranlar/" in g["outputs"][0]], 1):   # çıktı adı çakışmasını önle
