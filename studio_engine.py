@@ -2979,10 +2979,15 @@ def _onarim_calistir(ON, task, sprint, agent, backend, model, effort, pre_task_g
             except Exception:
                 pass
 
+    acik_bulgu = ""
+    if task.get("talep_id") and uat_karari(ROOT / "workspace" / "docs" / f"uat_kabul_raporu_{task['talep_id']}.md") == "RED":
+        acik_bulgu = ON.uat_bulgulari(task["talep_id"], ROOT)
     sonuc = ON.dongu(kapi_f, ajan_cagir,
                      kontrol_noktasi=lambda tur: git_auto_commit(f"studio: onarım kontrol noktası — {task['id']} tur {tur}"),
-                     azami_tur=azami)
+                     azami_tur=azami, acik_bulgu=acik_bulgu)
     d, t = sonuc["durum"], sonuc["tur"]
+    if d == "zaten_gecti":
+        task["onarim_muaf"] = True          # kapı geçiyordu ve açık bulgu yok: kaynak değişmedi diye [KAYNAK] hatası sayılmaz (#269)
     B.audit("engine", "onarim", gorev_id=task["id"], detay={"durum": d, "tur": t, "kapi": etiket})
     return {"zaten_gecti": "onarım: kapı zaten geçiyordu", "cozuldu": f"onarım: çözüldü (tur {t})",
             "cozulemedi": f"onarım: {t} turda çözülemedi"}[d]
