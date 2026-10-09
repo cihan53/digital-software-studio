@@ -70,6 +70,13 @@ class Kapsam(unittest.TestCase):
              "fazlar": [{"ad": "A", "aciklama": "a", "birimler": ["/home"]}]}
         self.assertTrue(any("hiçbir fazda değil" in e for e in KD.rapor_dogrula(r, self.tmp)))
 
+    def test_faz_siniri_ayarlanabilir_ve_genis(self):
+        (self.tmp / "workspace/docs/ekran_envanteri.md").write_text(" ".join(f"/m{i}" for i in range(6)), encoding="utf-8")
+        r = {"tamam": False, "ozet": "x", "eksikler": [{"birim": f"/m{i}", "kanit": "k"} for i in range(6)],
+             "fazlar": [{"ad": f"M{i}", "aciklama": "a", "birimler": [f"/m{i}"]} for i in range(6)]}
+        self.assertEqual(KD.rapor_dogrula(r, self.tmp), [])                                  # modül başına faz serbest (6 > eski sınır 3)
+        self.assertTrue(any("en fazla 4" in e for e in KD.rapor_dogrula(r, self.tmp, {"kapsam_denetimi": {"en_fazla_faz": 4}})))
+
     def test_gecerli_rapor_ve_tamam(self):
         r = {"tamam": False, "ozet": "x", "eksikler": [{"birim": "/reports/weekly", "kanit": "yok"}],
              "fazlar": [{"ad": "Raporlar", "aciklama": "a", "birimler": ["/reports/weekly"]}]}
