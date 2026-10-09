@@ -99,7 +99,7 @@ def planlama_sprinti_ekle(board: dict, faz: dict, org: dict, cfg: dict | None = 
         "proje_kapsami.md", "workspace/docs/backlog.md", "workspace/docs/ekran_envanteri.md",
         "workspace/docs/kabul_kriterleri.md", "workspace/docs/fazlar.json", f"{PLAN_DIZIN}/_sema.md",
         "workspace/docs/uat_kabul_raporu*.md", "workspace/docs/render_raporu*.md",
-        "workspace/docs/bug_raporlari.md") if "*" in g or (kok / g).exists())
+        "workspace/docs/bug_raporlari.md", "workspace/docs/envanter/_indeks.md", "workspace/docs/tasarim/_ana_sablon.md") if "*" in g or (kok / g).exists())
     sid = f"S{len(board.get('sprints', [])) + 1}"
     ad = faz.get("ad", fid)
     plan_o = f"{PLAN_DIZIN}/{fid}.json"
