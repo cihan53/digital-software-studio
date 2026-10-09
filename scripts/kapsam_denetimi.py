@@ -28,7 +28,7 @@ import studio_board as B  # noqa: E402
 
 DIZIN = "workspace/docs/kapsam_denetimleri"
 KANIT = f"{DIZIN}/kapsam_kanit.md"
-EN_FAZLA_FAZ = 3
+EN_FAZLA_FAZ = 40                       # varsayılan üst sınır; kapsam_denetimi.en_fazla_faz ile değişir (modül başına faz olabilir)
 UI_UZANTILARI = {".vue", ".tsx", ".jsx", ".svelte", ".html", ".dart", ".kt", ".swift", ".xml", ".storyboard"}
 ATLA_DIZIN = {"node_modules", ".git", ".nuxt", ".output", "dist", "build", ".next", "__pycache__", ".trace", ".scratch"}
 ENVANTER_ADAYLARI = ("proje_kapsami.md", "workspace/docs/proje_kapsami.md", "workspace/docs/ekran_envanteri.md", "workspace/docs/backlog.md",
@@ -39,6 +39,10 @@ def acik_mi(cfg: dict | None) -> bool:
     if os.environ.get("STUDIO_KAPSAM_DENETIMI") == "0":
         return False
     return bool(((cfg or {}).get("kapsam_denetimi") or {}).get("acik", True))
+
+
+def en_fazla_faz(cfg: dict | None) -> int:
+    return max(1, int(((cfg or {}).get("kapsam_denetimi") or {}).get("en_fazla_faz", EN_FAZLA_FAZ)))
 
 
 def en_fazla(cfg: dict | None) -> int:
@@ -93,7 +97,7 @@ def kanit_yaz(board: dict, kok: Path = ROOT, cfg: dict | None = None) -> str:
     return KANIT
 
 
-def sema_metni() -> str:
+def sema_metni(cfg: dict | None = None) -> str:
     return f"""# Kapsam denetimi çıktı şeması
 
 Yalnızca GEÇERLİ JSON üret (kod çiti ve açıklama YOK):
@@ -102,7 +106,7 @@ Yalnızca GEÇERLİ JSON üret (kod çiti ve açıklama YOK):
   "fazlar": [{{"ad": "kısa ad", "aciklama": "bu fazda tamamlanacak kapsam", "birimler": ["eksikler listesinden birim adları"]}}]}}
 
 Kurallar: kaynak kapsamı anlatan dosyalardaki birimleri, kanıt dosyasındaki üretilen kaynak dosyalarıyla karşılaştır. Envanterde geçmeyen birim UYDURMA.
-Eksik yoksa {{"tamam": true, "ozet": "...", "eksikler": [], "fazlar": []}}. En fazla {EN_FAZLA_FAZ} faz; her eksik birim bir fazda olmalı;
+Eksik yoksa {{"tamam": true, "ozet": "...", "eksikler": [], "fazlar": []}}. En fazla {en_fazla_faz(cfg)} faz; her modül (ya da sıkı bağlı modül grubu) ayrı bir faz olabilir; her eksik birim bir fazda olmalı;
 benzer/aynı modül birimlerini aynı fazda topla; kritik ve bağımlılık veren birimler (kabuk, kimlik, ortak bileşen) önceki fazda olsun.
 """
 
@@ -155,7 +159,7 @@ def tetikle(board: dict, org: dict, cfg: dict | None = None, kok: Path = ROOT) -
     if not gerekli(board, kok, cfg):
         return None
     (kok / DIZIN).mkdir(parents=True, exist_ok=True)
-    (kok / DIZIN / "_sema.md").write_text(sema_metni(), encoding="utf-8")
+    (kok / DIZIN / "_sema.md").write_text(sema_metni(cfg), encoding="utf-8")
     kanit = kanit_yaz(board, kok, cfg)
     girdiler = ", ".join(envanter_dosyalari(kok, cfg) + [kanit, f"{DIZIN}/_sema.md"])
     no = _sonraki_no(kok)
@@ -187,8 +191,8 @@ def rapor_dogrula(rapor: object, kok: Path = ROOT, cfg: dict | None = None) -> l
     errs = []
     if not eksikler or not fazlar:
         errs.append("tamam=false iken en az bir eksik ve bir faz gerekli")
-    if len(fazlar) > EN_FAZLA_FAZ:
-        errs.append(f"en fazla {EN_FAZLA_FAZ} faz")
+    if len(fazlar) > en_fazla_faz(cfg):
+        errs.append(f"en fazla {en_fazla_faz(cfg)} faz")
     metin = ""
     for e in envanter_dosyalari(kok, cfg):
         try:
