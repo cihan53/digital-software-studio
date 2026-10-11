@@ -185,3 +185,28 @@ class Guvenlik277(unittest.TestCase):
         b2 = B.normalize({"sprints": [{"id": "S1", "name": "s", "order": 0, "tasks": [T("S1-T1", B.DONE), T("S1-T2", B.TODO)]}]})
         self.uygula("FAZ-2")
         self.assertIsNone(FP.otomatik_ilerlet(b2, self.tmp))                      # bitmemiş pano
+
+
+class Kaba279(unittest.TestCase):
+    """#279: tam envanter varsa brief'ten üretilmiş kaba ekran_envanteri.md girdi olmaz; betik modunda scripts yolu eklenir."""
+
+    def test_kaba_envanter_tam_envanter_varken_dislanir(self):
+        import faz_planla as FP
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            (tmp / "workspace/docs/envanter").mkdir(parents=True)
+            (tmp / "workspace/docs/ekran_envanteri.md").write_text("kaba", encoding="utf-8")
+            self.assertIn("workspace/docs/ekran_envanteri.md", KD.envanter_dosyalari(tmp))
+            (tmp / "workspace/docs/envanter/_indeks.md").write_text("tam", encoding="utf-8")
+            self.assertNotIn("workspace/docs/ekran_envanteri.md", KD.envanter_dosyalari(tmp))
+            self.assertIn("workspace/docs/envanter/_indeks.md", KD.envanter_dosyalari(tmp))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_motor_betik_modunda_scripts_yolunu_ekler(self):
+        import subprocess
+        r = subprocess.run([sys.executable, "-c", "import sys; sys.path[:] = [p for p in sys.path if not p.endswith('scripts')]; "
+                            "import runpy; sys.argv=['x','--help']; "
+                            "src=open('studio_engine.py',encoding='utf-8').read(); i=src.index('ROOT = Path(__file__)'); print('scripts' in src[i:i+400])"],
+                           cwd=ROOT, capture_output=True, text=True)
+        self.assertEqual(r.stdout.strip(), "True")
