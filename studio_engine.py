@@ -38,6 +38,8 @@ import studio_board as B
 # 1. ÇALIŞMA ALANI VE STATE
 # -------------------------------------------------------------
 ROOT = Path(__file__).resolve().parent
+if str(ROOT / "scripts") not in sys.path:      # lazy import'lar (envanter, kapsam, faz planlama...) betik modunda da çözülsün (#279)
+    sys.path.insert(0, str(ROOT / "scripts"))
 WORKSPACE = ROOT / "workspace"
 STATE_FILE = WORKSPACE / ".state.json"
 SCRATCH_DIR = WORKSPACE / ".scratch"
