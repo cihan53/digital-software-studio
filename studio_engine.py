@@ -3588,6 +3588,9 @@ def run_board(org: dict, brief: str, once: bool = False,
                 B.save(board)
             if FP.kontrol(board, org, _cfg):
                 B.save(board)
+            _yeni_faz = FP.otomatik_ilerlet(board)
+            if _yeni_faz:
+                print(f"\n[FAZ] Aktif faz tamamlandı; sistem {_yeni_faz} fazını başlattı.")
         except Exception as e:
             print(f"  [uyarı] faz plan kontrolü: {e}")
 
