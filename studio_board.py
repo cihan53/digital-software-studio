@@ -1288,6 +1288,14 @@ CANLI_GEREKTIRMEYEN_ROLLER = {"sprint_planner", "envanter_analisti", "ui_designe
                                "cto", "product_owner", "musteri_temsilcisi"}
 
 
+# Analiz/plan/tasarım görevleri ESKİ (referans) sistemi gözlemleyerek karar vermelidir; referans erişilemezse atlanmaz, bekletilir (#277).
+REFERANS_ROLLERI = {"envanter_analisti", "ui_designer", "ux_lead", "design_auditor", "sprint_planner"}
+
+
+def needs_referans(task: dict) -> bool:
+    return (task.get("role") or "").lower() in REFERANS_ROLLERI
+
+
 def needs_live(task: dict) -> bool:
     """Görev canlı sistem gerektiriyor mu? (UAT ve ziyaretçi/test sürüşleri)"""
     role = (task.get("role") or "").lower()
