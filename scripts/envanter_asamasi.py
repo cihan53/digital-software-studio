@@ -164,7 +164,7 @@ def baslangic_panosu(cfg: dict, kok: Path = ROOT) -> dict:
     sprint = {"id": "S1", "name": "Envanter — rota listesi", "goal": "Kaynak sistemdeki tüm ekran, modal ve çekmecelerin doğrulanmış listesi", "planned_days": 1,
               "tasks": [{"id": "S1-T1", "title": "Kaynak rota ve modal listesi", "role": ANALIST, "phase": "develop",
                          "description": (f"Kaynak proje ({kaynak}) kodunu oku ve TÜM ekranları (yönlendirme tanımlarından), her ekranın modal ve çekmecelerini ayrı birim olarak listele. "
-                                         f"Şema ve kurallar _sema.md'de. Çıktı yalnız JSON. Girdi: {DIZIN}/_sema.md"),
+                                         f"Şema ve kurallar _sema.md'de.{referans_notu(cfg)} Çıktı yalnız JSON. Girdi: {DIZIN}/_sema.md"),
                          "outputs": [ROTALAR], "depends_on": []}]}
     durum_yaz({"asama": "rotalar"}, kok)
     B.audit("engine", "envanter_asamasi_baslatildi", detay={"kaynak": str(kaynak)})
@@ -197,6 +197,19 @@ def _gruplar(birimler: list[dict], n: int) -> list[tuple[str, list[dict]]]:
     return sonuc
 
 
+def referans_notu(cfg: dict) -> str:
+    """Görev açıklamalarına: kaynak koda ek olarak referans (eski) sistemde doğrulama talimatı."""
+    try:
+        import referans_sistem as RS
+        t = RS.tanim(cfg)
+    except ImportError:
+        return ""
+    if not t["url"]:
+        return ""
+    return (f" REFERANS SİSTEM (eski sistem, SALT-OKUMA): {t['url']} — yalnız kaynak koddan karar verme; erişebiliyorsan ekranı/modalı/tabloyu referans sistemde de doğrula, "
+            "çelişki ya da doğrulanamayan kısım için 'referansta doğrulanamadı' ya da 'referansta farklı' notu düş (giriş gerektiren sayfalarda uydurma).")
+
+
 def _envanter_gorevleri(birimler: list[dict], cfg: dict) -> list[dict]:
     kaynak = kaynak_yolu(cfg)
     gorevler = []
@@ -205,7 +218,7 @@ def _envanter_gorevleri(birimler: list[dict], cfg: dict) -> list[dict]:
         gorevler.append({"title": f"Envanter: {m} ({', '.join(u['id'] for u in us)[:60]})", "role": ANALIST, "phase": "develop",
                          "description": (f"Kaynak proje ({kaynak}) kodunu oku; şu birimlerin HER BİRİ için AYRI dosya yaz ({EKRAN_DIZIN}/<id>.md): {liste}. "
                                          f"Her dosyada şu başlıkların HEPSİ dolu olmalı: {', '.join(BASLIKLAR)}. Şema/kurallar: {DIZIN}/_sema.md. "
-                                         f"Bilmediğine 'bilinmiyor' yaz, uydurma. Girdi: {DIZIN}/_sema.md"),
+                                         f"Bilmediğine 'bilinmiyor' yaz, uydurma.{referans_notu(cfg)} Girdi: {DIZIN}/_sema.md"),
                          "outputs": [f"{EKRAN_DIZIN}/"], "depends_on": []})
     return gorevler
 

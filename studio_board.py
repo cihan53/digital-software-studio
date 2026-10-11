@@ -1284,9 +1284,23 @@ def live_up() -> bool:
     return all(live_status().values())
 
 
+CANLI_GEREKTIRMEYEN_ROLLER = {"sprint_planner", "envanter_analisti", "ui_designer", "ux_lead", "design_auditor", "tech_scout", "security_lead",
+                               "cto", "product_owner", "musteri_temsilcisi"}
+
+
+# Analiz/plan/tasarım görevleri ESKİ (referans) sistemi gözlemleyerek karar vermelidir; referans erişilemezse atlanmaz, bekletilir (#277).
+REFERANS_ROLLERI = {"envanter_analisti", "ui_designer", "ux_lead", "design_auditor", "sprint_planner"}
+
+
+def needs_referans(task: dict) -> bool:
+    return (task.get("role") or "").lower() in REFERANS_ROLLERI
+
+
 def needs_live(task: dict) -> bool:
     """Görev canlı sistem gerektiriyor mu? (UAT ve ziyaretçi/test sürüşleri)"""
     role = (task.get("role") or "").lower()
+    if role in CANLI_GEREKTIRMEYEN_ROLLER:          # plan/analiz/tasarım görevleri 'UAT' ya da 'ziyaretçi' kelimesini yalnız konu olarak anar (#277)
+        return False
     txt = f"{task.get('title', '')} {task.get('description', '')}".lower()
     return ("uat" in role or "uat" in txt
             or "visitor" in role or "ziyaret" in txt

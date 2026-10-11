@@ -3588,6 +3588,9 @@ def run_board(org: dict, brief: str, once: bool = False,
                 B.save(board)
             if FP.kontrol(board, org, _cfg):
                 B.save(board)
+            _yeni_faz = FP.otomatik_ilerlet(board)
+            if _yeni_faz:
+                print(f"\n[FAZ] Aktif faz tamamlandı; sistem {_yeni_faz} fazını başlattı.")
         except Exception as e:
             print(f"  [uyarı] faz plan kontrolü: {e}")
 
@@ -3713,6 +3716,32 @@ def run_board(org: dict, brief: str, once: bool = False,
             time.sleep(5)
             board = B.load()
             continue
+
+        # Analiz/plan/tasarım görevi REFERANS (eski) sistemi gözlemlemelidir; kaynak kodu/canlı adresi erişilemezse görev atlanmaz, bekletilir (#277).
+        try:
+            import referans_sistem as RS
+            _, _cr = _studio_config()
+            if B.needs_referans(task) and RS.tanimli(_cr):
+                _ok, _neden = RS.hazir_mi(_cr)
+                if not _ok:
+                    if once:
+                        print(f"\n[⚠ UYARI] {task['id']} referans sistem gerektiriyor: {_neden}. Görev bekletildi.")
+                        break
+                    alt_s, alt_t = B.next_ready(board, uygun=lambda t: not B.needs_referans(t) and not (B.needs_live(t) and not B.live_up()))
+                    if alt_t is not None:
+                        print(f"\n[↪] {task['id']} referans sistemi bekliyor ({_neden}); bu arada {alt_t['id']} yürütülüyor.")
+                        sprint, task = alt_s, alt_t
+                    else:
+                        if getattr(run_board, "_ref_uyari", 0) + 300 < time.time():
+                            run_board._ref_uyari = time.time()
+                            print(f"\n[⏸ REFERANS BEKLENİYOR] {task['id']} · {_neden}")
+                            print("   Eski sistem (kaynak kodu / canlı adres) erişilebilir olunca devam eder. Tanım: workspace/studio.config.json → referans / source.")
+                            B.audit("engine", "referans_bekleniyor", gorev_id=task["id"], detay={"neden": _neden})
+                        time.sleep(30)
+                        board = B.load()
+                        continue
+        except ImportError:
+            pass
 
         # UAT/canlı test görevi canlı ortam gerektirir. Kapalıysa görevi
         # koşturma (garanti-fail + talep spam'i): READY'de beklet.

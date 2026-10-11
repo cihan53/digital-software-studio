@@ -33,6 +33,7 @@ class Kapsam(unittest.TestCase):
         (self.tmp / "workspace/src/web/node_modules/x.vue").write_text("", encoding="utf-8")
         self.board = B.normalize({"sprints": [{"id": "S1", "name": "s1", "order": 0, "tasks": [T("S1-T1", B.DONE), T("S1-T2", B.SKIPPED)]}]})
         B.refresh(self.board)
+        KVT.save_fazlar({"fazlar": [{"id": "FAZ-1", "ad": "ilk", "durum": "TAMAMLANDI"}]})        # bekleyen faz yok: denetim çalışabilir
 
     def tearDown(self):
         B.DB_PATH, KVT.FAZLAR_FILE = self.eski
@@ -87,7 +88,8 @@ class Kapsam(unittest.TestCase):
     def test_kontrol_fazlari_acar_ve_dongu_durur(self):
         KVT.save_fazlar({"fazlar": [{"id": "FAZ-1", "ad": "a", "durum": "TAMAMLANDI"}, {"id": "FAZ-2", "ad": "b", "durum": "AKTIF"}]})
         (self.tmp / "workspace/docs/faz_planlari").mkdir(parents=True)
-        (self.tmp / "workspace/docs/faz_planlari/FAZ-2.json").write_text("{}", encoding="utf-8")  # FAZ-2 zaten planlandı
+        (self.tmp / "workspace/docs/faz_planlari/FAZ-2.json").write_text("{}", encoding="utf-8")
+        (self.tmp / "workspace/docs/faz_planlari/FAZ-2.uygulandi").write_text("1", encoding="utf-8")  # FAZ-2 planlandı ve uygulandı
         KD.tetikle(self.board, {}, None, self.tmp)
         rapor = {"tamam": False, "ozet": "x", "eksikler": [{"birim": "/reports/weekly", "kanit": "yok"}],
                  "fazlar": [{"ad": "Raporlar", "aciklama": "a", "birimler": ["/reports/weekly"]}]}
@@ -119,3 +121,67 @@ class Kapsam(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Guvenlik277(unittest.TestCase):
+    """#277: bekleyen faz varken denetim açılmaz, ad tekrarı açılmaz, plan görevi canlı gerektirmez, sistem fazı ilerletir."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.eski = (B.DB_PATH, KVT.FAZLAR_FILE)
+        B.DB_PATH = self.tmp / "t.db"
+        KVT.FAZLAR_FILE = self.tmp / "fazlar.json"
+        (self.tmp / "workspace/docs/faz_planlari").mkdir(parents=True)
+        (self.tmp / "workspace/docs/ekran_envanteri.md").write_text("/a /b", encoding="utf-8")
+        self.board = B.normalize({"sprints": [{"id": "S1", "name": "s", "order": 0, "tasks": [T("S1-T1", B.DONE)]}]})
+        B.refresh(self.board)
+
+    def tearDown(self):
+        B.DB_PATH, KVT.FAZLAR_FILE = self.eski
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def uygula(self, fid):
+        (self.tmp / f"workspace/docs/faz_planlari/{fid}.uygulandi").write_text("1", encoding="utf-8")
+
+    def test_bekleyen_faz_varken_denetim_acilmaz(self):
+        KVT.save_fazlar({"fazlar": [{"id": "FAZ-1", "ad": "a", "durum": "AKTIF"}, {"id": "FAZ-2", "ad": "b", "durum": "PLANLANDI"}]})
+        self.uygula("FAZ-1")
+        self.assertFalse(KD.gerekli(self.board, self.tmp, None))
+
+    def test_planlanmamis_aktif_fazda_denetim_acilmaz_planlisinda_acilir(self):
+        KVT.save_fazlar({"fazlar": [{"id": "FAZ-1", "ad": "a", "durum": "AKTIF"}]})
+        self.assertFalse(KD.gerekli(self.board, self.tmp, None))
+        self.uygula("FAZ-1")
+        self.assertTrue(KD.gerekli(self.board, self.tmp, None))
+
+    def test_ayni_adli_faz_tekrar_acilmaz(self):
+        KVT.save_fazlar({"fazlar": [{"id": "FAZ-1", "ad": "Raporlar", "durum": "AKTIF"}]})
+        rapor = {"fazlar": [{"ad": "raporlar", "aciklama": "a", "birimler": ["/a"]}]}
+        self.assertEqual(KD.fazlari_ac(rapor), [])
+        self.assertEqual(KVT.load_fazlar()["fazlar"][0]["durum"], "AKTIF")        # aktif faz boşuna kapatılmaz
+
+    def test_plan_gorevi_canli_gerektirmez(self):
+        t = {"role": "sprint_planner", "title": "plan", "description": "UAT/render raporlarını oku, ziyaretçi bulguları"}
+        self.assertFalse(B.needs_live(t))
+        self.assertTrue(B.needs_live({"role": "uat_auditor", "title": "x", "description": ""}))
+
+    def test_canli_gerekcesiyle_atlanan_plan_gorevi_yeniden_acilir(self):
+        import faz_planla as FP
+        org = {"hierarchy": [{"id": "sprint_planner", "stage": "design", "outputs": []}, {"id": "web_engineer", "stage": "build", "outputs": ["workspace/src/"]}]}
+        KVT.save_fazlar({"fazlar": [{"id": "FAZ-1", "ad": "a", "durum": "TAMAMLANDI"}, {"id": "FAZ-2", "ad": "b", "durum": "AKTIF"}]})
+        FP.planlama_sprinti_ekle(self.board, {"id": "FAZ-2", "ad": "b"}, org, None, kok=self.tmp)
+        pid = next(t["id"] for _, t in B.all_tasks(self.board) if t["role"] == "sprint_planner")
+        B.mark(self.board, pid, B.SKIPPED, "canlı ortam tanımsız (yerel_ortam.sh yok); ortam kurulunca yeniden açın")
+        self.assertTrue(FP.kontrol(self.board, org, None, kok=self.tmp))
+        self.assertIn(next(t["status"] for _, t in B.all_tasks(self.board) if t["id"] == pid), (B.TODO, B.READY))
+
+    def test_otomatik_ilerlet(self):
+        import faz_planla as FP
+        KVT.save_fazlar({"fazlar": [{"id": "FAZ-1", "ad": "a", "durum": "AKTIF"}, {"id": "FAZ-2", "ad": "b", "durum": "PLANLANDI", "kilitli": True}]})
+        self.assertIsNone(FP.otomatik_ilerlet(self.board, self.tmp))              # plan uygulanmadı
+        self.uygula("FAZ-1")
+        self.assertEqual(FP.otomatik_ilerlet(self.board, self.tmp), "FAZ-2")
+        self.assertIsNone(FP.otomatik_ilerlet(self.board, self.tmp))              # FAZ-2'nin planı yok
+        b2 = B.normalize({"sprints": [{"id": "S1", "name": "s", "order": 0, "tasks": [T("S1-T1", B.DONE), T("S1-T2", B.TODO)]}]})
+        self.uygula("FAZ-2")
+        self.assertIsNone(FP.otomatik_ilerlet(b2, self.tmp))                      # bitmemiş pano
