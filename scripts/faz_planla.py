@@ -111,7 +111,7 @@ def planlama_sprinti_ekle(board: dict, faz: dict, org: dict, cfg: dict | None = 
             {"id": f"{sid}-T1", "title": f"{fid} sprint planı", "role": "sprint_planner", "phase": "develop",
              "description": (f"{fid} fazını planla: «{ad}» — {faz.get('aciklama', '')}. Brief, backlog, ekran envanteri ve önceki faz sonuçlarını "
                              f"(UAT/render/hata raporları, açık bulgular) oku; fazın KALAN kapsamını sprintlere böl. Şema ve kurallar _sema.md'de. "
-                             f"Çıktı yalnız JSON. Girdi: {girdiler}"),
+                             f"Çıktı yalnız JSON. Eski (referans) sistem tanımlıysa fazı planlarken kaynak koda ek olarak onu da esas al. Girdi: {girdiler}"),
              "outputs": [plan_o], "depends_on": []},
             {"id": f"{sid}-T2", "title": f"{fid} planı insan onayı", "role": "human", "phase": "test",
              "description": f"İnsan onayı: {PLAN_DIZIN}/{fid}.md planını oku. Onay → sprintler panoya eklenir; ret (gerekçeli) → plan notla yeniden üretilir.",
