@@ -127,7 +127,7 @@ class Envanter(unittest.TestCase):
     def test_kok_rolu_org_chartta_var_ve_araclari_okuma(self):
         org = json.loads((ROOT / "org_chart.json").read_text(encoding="utf-8"))
         r = next(a for a in org["hierarchy"] if a["id"] == EA.ANALIST)
-        self.assertEqual(set(r["tools"]), {"Read", "Glob", "Grep"})
+        self.assertEqual(set(r["tools"]), {"Read", "Glob", "Grep", "WebFetch"})      # yazma yok; referans sistemi okumak için WebFetch
         self.assertTrue(any(a["id"] == EA.TASARIMCI for a in org["hierarchy"]))
 
 
