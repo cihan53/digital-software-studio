@@ -237,6 +237,11 @@ def kontrol(board: dict, org: dict | None = None, cfg: dict | None = None, kok: 
         plan_t, onay_t = _planlama_gorevleri(board, fid)
         if plan_t is None or onay_t is None or uygulandi_yolu(fid, kok).exists():
             continue
+        if plan_t["status"] == B.SKIPPED and "canlı ortam tanımsız" in (plan_t.get("note") or ""):
+            B.mark(board, plan_t["id"], B.TODO, "plan görevi canlı ortam gerekçesiyle atlanmıştı; plan canlı sistem gerektirmez, yeniden açıldı")
+            B.refresh(board)
+            degisti = True
+            continue
         if plan_t["status"] == B.DONE and onay_t["status"] in (B.TODO, B.READY):
             plan, errs = plan_oku(fid, kok)
             if errs:
@@ -274,3 +279,21 @@ def tetikle(board: dict, org: dict, cfg: dict | None = None, zorla: str | None =
         if faz is None:
             return None
     return planlama_sprinti_ekle(board, faz, org, cfg, kok)
+
+
+def otomatik_ilerlet(board: dict, kok: Path = ROOT) -> str | None:
+    """Asgari faz çıkış kapısı (#277): aktif fazın planı uygulanmış ve pano tamamen bitmişse sistem fazı kendisi ilerletir.
+    Yalnız plan dosyası uygulanmış fazlarda çalışır (eski pilotların ilk fazına dokunmaz). Açılan sonraki fazın id'sini döndürür."""
+    faz, idx = aktif_faz(kok)
+    if faz is None or not uygulandi_yolu(faz["id"], kok).exists():
+        return None
+    tum = [t for _, t in B.all_tasks(board)]
+    if not tum or any(t["status"] not in B.TERMINAL for t in tum):
+        return None
+    import karar_verici_triage as KVT
+    fazlar = KVT.load_fazlar().get("fazlar", [])
+    if idx + 1 >= len(fazlar) or not KVT.faz_ilerlet():
+        return None
+    yeni = KVT.load_fazlar()["fazlar"][idx + 1]["id"]
+    B.audit("engine", "faz_otomatik_ilerledi", detay={"eski": faz["id"], "yeni": yeni, "atlanan_gorev": sum(1 for t in tum if t["status"] == B.SKIPPED)})
+    return yeni

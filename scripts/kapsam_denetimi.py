@@ -146,6 +146,17 @@ def gerekli(board: dict, kok: Path = ROOT, cfg: dict | None = None) -> bool:
             return False
     except Exception:
         pass
+    try:                                                  # yalnız son faz planı uygulanıp bittiyse: bekleyen (PLANLANDI) ya da planlanmamış aktif faz varken yeni faz seti açılmaz (#277)
+        import faz_planla as FP2
+        import karar_verici_triage as KVT
+        fazlar = KVT.load_fazlar().get("fazlar", [])
+        if any(f.get("durum") == "PLANLANDI" for f in fazlar):
+            return False
+        aktif = next((f for f in fazlar if f.get("durum") == "AKTIF"), None)
+        if aktif is not None and not FP2.uygulandi_yolu(aktif["id"], kok).exists():
+            return False
+    except Exception:
+        pass
     gorevler = _denetim_gorevleri(board)
     for kid in gorevler:
         if _sonuc(kid, kok) is None:                      # sonuçlanmamış denetim var
@@ -239,6 +250,10 @@ def fazlari_ac(rapor: dict) -> list[str]:
     import karar_verici_triage as KVT
     data = KVT.load_fazlar()
     fazlar = data.setdefault("fazlar", [])
+    mevcut_adlar = {(f.get("ad") or "").strip().lower() for f in fazlar}
+    yeni_fazlar = [f for f in rapor["fazlar"] if f["ad"].strip().lower() not in mevcut_adlar]       # aynı adlı faz yeniden açılmaz (#277)
+    if not yeni_fazlar:
+        return []
     for f in fazlar:
         if f.get("durum") == "AKTIF":
             f["durum"], f["kilitli"] = "TAMAMLANDI", True
@@ -246,7 +261,7 @@ def fazlari_ac(rapor: dict) -> list[str]:
     no = max(sayilar, default=0)
     onceki = fazlar[-1]["id"] if fazlar else None
     acilan = []
-    for i, f in enumerate(rapor["fazlar"]):
+    for i, f in enumerate(yeni_fazlar):
         no += 1
         fid = f"FAZ-{no}"
         birimler = ", ".join(str(b) for b in f["birimler"])
@@ -282,7 +297,7 @@ def kontrol(board: dict, cfg: dict | None = None, kok: Path = ROOT) -> bool:
             B.audit("engine", "kapsam_denetimi_tamam", detay={"denetim": kid, "ozet": rapor.get("ozet", "")[:200]})
         else:
             acilan = fazlari_ac(rapor)
-            (kok / DIZIN / f"{kid}.uygulandi").write_text("faz:" + ",".join(acilan), encoding="utf-8")
+            (kok / DIZIN / f"{kid}.uygulandi").write_text(("faz:" + ",".join(acilan)) if acilan else "tamam", encoding="utf-8")
             B.audit("engine", "kapsam_fazlari_acildi", detay={"denetim": kid, "fazlar": acilan, "eksik": len(rapor["eksikler"]), "ozet": rapor.get("ozet", "")[:200]})
         degisti = True
     return degisti
