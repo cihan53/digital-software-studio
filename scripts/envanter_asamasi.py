@@ -279,13 +279,115 @@ def _tasarim_gorevleri(birimler: list[dict], cfg: dict) -> tuple[dict, list[dict
     return sablon, gorevler
 
 
+ONIZLEME_DIZIN = f"{TASARIM_DIZIN}/onizleme"
+HTML_TALIMAT = ("Çıktı TEK dosyalık STATİK HTML önizleme olsun: satır içi CSS, betik (<script>) YOK, harici kaynak (CDN, font, görsel URL) YOK. "
+                "Ekran/birim başına ayrı bölüm; sticky başlık (ekran adı + filtre barı + aksiyonlar), grid layout ile widget/tablo/modal-çekmece yerleşimi, "
+                "boş/yükleme/hata/yetkisiz durumları görsel olarak gösterilsin. Sayı, isim, kişi verisi UYDURMA: veri alanlarında 'veri yok' iskeleti kullan. "
+                "Tasarım dokümanındaki hiçbir widget/aksiyon/modalı düşürme.")
+
+
+def html_acik(cfg: dict | None) -> bool:
+    return bool(((cfg or {}).get("envanter") or {}).get("html_onizleme", True))
+
+
+def onizleme_eksikleri(yol: Path) -> list[str]:
+    """Statik HTML önizleme geçerli mi? (var, HTML, betik/harici kaynak yok, boş değil)"""
+    if not yol.exists():
+        return ["dosya yok"]
+    m = yol.read_text(encoding="utf-8", errors="ignore")
+    ml = m.lower()
+    eksik = []
+    if "<html" not in ml and "<!doctype" not in ml:
+        eksik.append("HTML değil")
+    if len(m.strip()) < 400:
+        eksik.append("içerik çok kısa")
+    if "<script" in ml:
+        eksik.append("<script> kullanılmış")
+    if re.search(r"(src|href)\s*=\s*[\"']https?://", ml) or re.search(r"url\(\s*[\"']?https?://", ml) or "@import" in ml:
+        eksik.append("harici kaynak kullanılmış")
+    return eksik
+
+
+def _onizleme_ekle(board: dict, cfg: dict, durum: dict, kok: Path = ROOT) -> bool:
+    """Ana şablon ve her ekran tasarımı için HTML önizleme görevleri ekler (yalnız bir kez). Eklediyse True."""
+    if "sprintler_onizleme" in durum or not html_acik(cfg):
+        return False
+    tum = [t for _, t in B.all_tasks(board)]
+    sablon = next((t for t in tum if SABLON in (t.get("outputs") or [])), None)
+    tasarimlar = [t for t in tum if any(o.startswith(f"{TASARIM_DIZIN}/ekranlar/") for o in (t.get("outputs") or []))]
+    if sablon is None or not tasarimlar:
+        return False
+
+    def bagimlilik(t):
+        return [t["id"]] if t["status"] not in B.TERMINAL else []
+
+    gorevler = [{"title": "Önizleme: ana şablon", "role": TASARIMCI, "phase": "develop",
+                 "description": (f"Ana şablonun ({SABLON}) ve tasarım sistemi (workspace/docs/tasarim_sistemi.md) görsel önizlemesi: layout, ortak bileşenler, durumlar. {HTML_TALIMAT} "
+                                 f"Girdi: {SABLON}, workspace/docs/tasarim_sistemi.md"),
+                 "outputs": [f"{ONIZLEME_DIZIN}/_ana_sablon.html"], "depends_on": bagimlilik(sablon)}]
+    for t in tasarimlar:
+        md = t["outputs"][0]
+        ad = md.rsplit("/", 1)[1].rsplit(".", 1)[0]
+        gorevler.append({"title": f"Önizleme: {ad}", "role": TASARIMCI, "phase": "develop",
+                         "description": (f"{md} tasarımının görsel önizlemesi; ana şablona ({SABLON}) uy. {HTML_TALIMAT} Girdi: {md}, {SABLON}"),
+                         "outputs": [f"{ONIZLEME_DIZIN}/{ad}.html"], "depends_on": bagimlilik(t)})
+    ids = _gorev_ekle(board, "Tasarım önizlemeleri", "Ana şablon ve her ekran tasarımı için statik HTML önizleme", gorevler)
+    durum["sprintler_onizleme"] = ids
+    durum_yaz(durum, kok)
+    B.audit("engine", "envanter_onizleme_eklendi", detay={"gorev": len(gorevler)})
+    B.refresh(board)
+    return True
+
+
+def _onizleme_bekliyor(board: dict, durum: dict) -> bool:
+    gorevler = [t for s in board["sprints"] if s["id"] in durum.get("sprintler_onizleme", []) for t in s["tasks"]]
+    return bool(gorevler) and any(t["status"] not in B.TERMINAL for t in gorevler)
+
+
+def _onizleme_dogrula(board: dict, durum: dict, kok: Path = ROOT) -> bool:
+    """Önizleme görevleri bitince çıktıları doğrular; geçersizi yeniden açar (≤TEKRAR_SINIRI). Panoyu değiştirdiyse True."""
+    gorevler = [t for s in board["sprints"] if s["id"] in durum.get("sprintler_onizleme", []) for t in s["tasks"]]
+    if not gorevler or any(t["status"] not in B.TERMINAL for t in gorevler):
+        return False
+    tekrar = durum.setdefault("tekrar", {})
+    yeniden = 0
+    gecersiz = []
+    for t in gorevler:
+        e = onizleme_eksikleri(kok / t["outputs"][0])
+        if not e:
+            continue
+        k = f"onz:{t['id']}"
+        if tekrar.get(k, 0) >= TEKRAR_SINIRI:
+            gecersiz.append(t["outputs"][0])
+            continue
+        tekrar[k] = tekrar.get(k, 0) + 1
+        t["description"] = re.sub(r"\n\nGEÇERSİZ ÖNİZLEME:.*$", "", t["description"], flags=re.S) + "\n\nGEÇERSİZ ÖNİZLEME: " + "; ".join(e) + " — düzeltip dosyayı yeniden yaz."
+        B.mark(board, t["id"], B.TODO, "önizleme geçersiz: " + e[0])
+        yeniden += 1
+    if yeniden:
+        durum_yaz(durum, kok)
+        B.refresh(board)
+        return True
+    durum["onizleme_dogrulandi"] = True
+    durum["onizleme_gecersiz"] = gecersiz
+    durum_yaz(durum, kok)
+    B.audit("engine", "envanter_onizleme_dogrulandi", detay={"gecersiz": len(gecersiz)})
+    return True
+
+
 def kontrol(board: dict, org: dict | None = None, cfg: dict | None = None, kok: Path = ROOT) -> bool:
     """Her koşucu turunda: aşamaları ilerletir. Panoyu değiştirdiyse True."""
     durum = durum_oku(kok)
     asama = durum.get("asama")
-    if asama is None or asama == "tamam":
+    if asama is None:
         return False
     degisti = False
+    if asama in ("plan", "tamam") and "sprintler_onizleme" not in durum and "sprintler_tasarim" in durum:      # tasarımı önizlemesiz bitmiş projeye telafi
+        degisti = _onizleme_ekle(board, cfg or {}, durum, kok) or degisti
+    if durum.get("sprintler_onizleme") and not durum.get("onizleme_dogrulandi"):
+        degisti = _onizleme_dogrula(board, durum, kok) or degisti
+    if asama == "tamam":
+        return degisti
     if asama == "rotalar":
         _, t = _task_sprint(board, "S1-T1")
         if t is None or t["status"] != B.DONE:
@@ -341,13 +443,16 @@ def kontrol(board: dict, org: dict | None = None, cfg: dict | None = None, kok: 
             guvenlik["depends_on"] = [paket]
         durum["sprintler_tasarim"] = ids
         durum_yaz(durum, kok)
+        _onizleme_ekle(board, cfg or {}, durum, kok)
         B.audit("engine", "envanter_tamamlandi", detay={"birim": len(birimler), "eksik": len(eksik_toplam), "tasarim_gorevi": len(tasarim) + 1})
         B.refresh(board)
         return True
     if asama == "tasarim":
         gorevler = [t for s in board["sprints"] if s["id"] in durum.get("sprintler_tasarim", []) for t in s["tasks"]]
         if not gorevler or any(t["status"] not in B.TERMINAL for t in gorevler):
-            return False
+            return degisti
+        if durum.get("sprintler_onizleme") and not durum.get("onizleme_dogrulandi"):         # plan, önizlemeler doğrulanınca başlar
+            return degisti
         try:
             import faz_planla as FP
             faz, _ = FP.aktif_faz(kok)
