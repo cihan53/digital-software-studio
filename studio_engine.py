@@ -3243,7 +3243,16 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
                     and t.get("status") not in B.TERMINAL
                     for _, t in B.all_tasks(board)
                 )
-                if not baska_acik_gorev:
+                oto_kapandi = False
+                if not baska_acik_gorev:                      # deterministik kapı talebi: onarım gerçek kapıdan geçti → müşteri onayı/canlı UAT beklenmez (#285)
+                    _tk = MT.getir(task["talep_id"]) or {}
+                    if (_tk.get("baslik") or "").startswith(("[BUILD]", "[KAYNAK]", "[HİJYEN]")) and "uat" not in (task.get("role") or "").lower():
+                        MT.guncelle(task["talep_id"], durum="COZULDU",
+                                    studio_notu=f"Telafi görevi {task['id']} gerçek kalite kapısından geçti; talep otomatik kapatıldı.")
+                        B.audit("engine", "kapi_talebi_cozuldu", gorev_id=task["id"], detay={"talep": task["talep_id"]})
+                        print(f"   ✅ [KAPI TALEBİ] {task['talep_id']} onarım kapıdan geçti → COZULDU (kaynak görevin bağımlıları açılır).")
+                        oto_kapandi = True
+                if not baska_acik_gorev and not oto_kapandi:
                     karar = None
                     rapor = None
                     if "uat" in (task.get("role") or "").lower():
