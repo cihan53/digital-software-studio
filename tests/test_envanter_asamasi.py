@@ -50,7 +50,7 @@ class Envanter(unittest.TestCase):
         self.assertTrue(EA.ertele(self.cfg, self.tmp))               # durum 'rotalar' (gerekli() artık False)
         self.assertFalse(EA.gerekli(self.cfg, self.tmp))
         EA.durum_yaz({"asama": "tamam"}, self.tmp)
-        self.assertFalse(EA.ertele(self.cfg, self.tmp))
+        self.assertTrue(EA.ertele(self.cfg, self.tmp))               # tamamlansa da tasarım rolleri brief'ten yeniden çalışmaz (#287)
         self.assertFalse(EA.ertele({}, self.tmp))
 
     def test_baslangic_sadece_rota_gorevi(self):
