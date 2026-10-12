@@ -208,6 +208,8 @@ KATEGORILER = [
 # ==============================================================================
 # AI DANIŞMA KATMANI — AGY → Claude → Sessiz Fallback
 # ==============================================================================
+TALEP_MAX_SPRINT = int(os.getenv("STUDIO_TALEP_MAX_SPRINT", "3"))      # bir talep için en fazla sprint (#281)
+
 
 def ai_danisma(talep: dict, kategori_id: str) -> str:
     """
@@ -617,6 +619,15 @@ def otomatik_musteri_talepleri_senkronize_et() -> int:
                      "INSAN_GEREKLI", "ONAY_BEKLIYOR"):
             continue
         if tid in acik_talep_idler:
+            continue
+        # Aynı talep için sprint üretimi sınırlı (#281): tüm görevleri atlanmış/bitmiş talep sonsuza dek yeniden sprinte alınmaz.
+        onceki_sprint = {sp["id"] for sp in board.get("sprints", []) for tk in sp["tasks"]
+                         if tk.get("talep_id") == tid or re.search(rf"\[{re.escape(tid)}\]", tk.get("title", ""))}
+        if len(onceki_sprint) >= TALEP_MAX_SPRINT:
+            MT.guncelle(tid, durum="INSAN_GEREKLI",
+                        studio_notu=f"{len(onceki_sprint)} sprintte çözülemedi/atlandı; döngü kesildi, insan kararı gerekli (ortam ya da talep kapsamı kontrol edilmeli).")
+            B.audit("engine", "talep_sprint_siniri", detay={"talep": tid, "sprint": len(onceki_sprint)})
+            print(f"  [!] {tid}: {len(onceki_sprint)} sprint denendi → INSAN_GEREKLI (sonsuz yeniden açma engellendi).")
             continue
         # İşlemdeki talep için açık görev varsa dokunma; ancak açık görevi kalmamışsa
         # (çökmüş veya atlanmışsa) sprinte yeniden alınmasını sağla.
