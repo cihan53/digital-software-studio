@@ -87,8 +87,9 @@ def gerekli(cfg: dict | None, kok: Path = ROOT) -> bool:
 
 
 def ertele(cfg: dict | None, kok: Path = ROOT) -> bool:
-    """Tasarım aşaması rolleri panoda çalışacak mı? Envanter aşaması açık ve henüz tamamlanmamışsa (yeniden başlatmalar dahil)."""
-    return acik_mi(cfg, kok) and durum_oku(kok).get("asama") != "tamam"
+    """Tasarım aşaması rolleri (ux_lead, ui_designer, design_auditor, tech_scout, security_lead) tasarım aşamasında hiç çalışmaz: envanter aşaması açık projelerde
+    yalnız pano görevi olarak (envanterden sonra) çalışırlar; aşama tamamlansa da brief'ten kaba belge üretmek için yeniden çalıştırılmazlar (#287)."""
+    return acik_mi(cfg, kok)
 
 
 def slug(s: str) -> str:
