@@ -95,11 +95,14 @@ def planlama_sprinti_ekle(board: dict, faz: dict, org: dict, cfg: dict | None = 
     d = kok / PLAN_DIZIN
     d.mkdir(parents=True, exist_ok=True)
     (d / "_sema.md").write_text(sema_metni(org), encoding="utf-8")
-    girdiler = ", ".join(g for g in (
-        "proje_kapsami.md", "workspace/docs/backlog.md", "workspace/docs/ekran_envanteri.md",
+    kaba = "workspace/docs/ekran_envanteri.md"            # brief'ten üretilmiş kaba liste: tam envanter (envanter/_indeks.md) varsa girdi OLMAZ (#279)
+    adaylar = (
+        "proje_kapsami.md", "workspace/docs/backlog.md", kaba,
         "workspace/docs/kabul_kriterleri.md", "workspace/docs/fazlar.json", f"{PLAN_DIZIN}/_sema.md",
         "workspace/docs/uat_kabul_raporu*.md", "workspace/docs/render_raporu*.md",
-        "workspace/docs/bug_raporlari.md", "workspace/docs/envanter/_indeks.md", "workspace/docs/tasarim/_ana_sablon.md") if "*" in g or (kok / g).exists())
+        "workspace/docs/bug_raporlari.md", "workspace/docs/envanter/_indeks.md", "workspace/docs/tasarim/_ana_sablon.md")
+    tam_envanter = (kok / "workspace/docs/envanter/_indeks.md").exists()
+    girdiler = ", ".join(g for g in adaylar if not (tam_envanter and g == kaba) and ("*" in g or (kok / g).exists()))
     sid = f"S{len(board.get('sprints', [])) + 1}"
     ad = faz.get("ad", fid)
     plan_o = f"{PLAN_DIZIN}/{fid}.json"
