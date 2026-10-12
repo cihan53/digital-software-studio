@@ -51,12 +51,13 @@ def en_fazla(cfg: dict | None) -> int:
 
 def envanter_dosyalari(kok: Path = ROOT, cfg: dict | None = None) -> list[str]:
     """Kaynak kapsamı anlatan, var olan dosyalar (kök-göreli). Keşif çıktısı ve '*envanter*' adlı dokümanlar dahil."""
-    bulunan = [g for g in ENVANTER_ADAYLARI if (kok / g).exists()]
+    tam = (kok / "workspace/docs/envanter/_indeks.md").exists()            # tam envanter varsa brief'ten üretilmiş kaba ekran_envanteri.md kullanılmaz (#279)
+    bulunan = [g for g in ENVANTER_ADAYLARI if (kok / g).exists() and not (tam and g == "workspace/docs/ekran_envanteri.md")]
     docs = kok / "workspace" / "docs"
     if docs.exists():
         for p in sorted(docs.glob("*envanter*")):
             r = p.relative_to(kok).as_posix()
-            if r not in bulunan and p.is_file():
+            if r not in bulunan and p.is_file() and not (tam and r == "workspace/docs/ekran_envanteri.md"):
                 bulunan.append(r)
     cikti = ((cfg or {}).get("analysis") or {}).get("output_dir")
     if cikti:
