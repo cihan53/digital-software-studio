@@ -2511,6 +2511,8 @@ def _auto_talep_uat(task: dict, uat_cikti: str, kaynak: str = "UAT",
 
     Açılan talep id'sini döner; açılmadıysa/devre kesici devredeyse None.
     """
+    if (task.get("role") or "").lower() in B.CANLI_GEREKTIRMEYEN_ROLLER:       # plan/analiz/tasarım görevi canlı denetimden talep doğurmaz (#281)
+        return None
     try:
         scripts_dir = str(ROOT / "scripts")
         if scripts_dir not in sys.path:
@@ -2648,7 +2650,7 @@ def _verify_task_execution_core(task: dict, sprint: dict, interactive: bool = Fa
     note_parts = []
 
     # 1. UAT KABUL DENETİMİ (uat_auditor veya UAT görevleri)
-    if role == "uat_auditor" or "uat" in (title + " " + task.get("description", "")).lower():
+    if role == "uat_auditor" or (B.needs_live(task) and "uat" in (title + " " + task.get("description", "")).lower()):
         print(f"\n   🎯 [UAT KABUL DENETİM KAPISI] {task['id']} · {title}")
         uat_script = resolve_script("uat_live_audit.mjs")
         if uat_script.exists():
