@@ -39,6 +39,28 @@ class Dongu(unittest.TestCase):
         self.assertEqual(guncel[0][0], "TALEP-009")
         self.assertEqual(guncel[0][1]["durum"], "INSAN_GEREKLI")
 
+    def _sync(self, baslik):
+        board = {"sprints": [{"id": "S1", "name": "s", "order": 0, "tasks": [T("S1-T1", B.DONE)]}]}
+        talep = {"id": "TALEP-050", "durum": "PLANLANDI", "tur": "HATA", "baslik": baslik, "aciklama": "a", "cozum_plani": "workspace/docs/cozum_planlari/TALEP-050.md"}
+        guncel = []
+        with mock.patch.object(B, "load", return_value=board), mock.patch.object(B, "reconcile_talepler_and_board", return_value=None), \
+                mock.patch.object(B, "save"), mock.patch.object(B, "audit"), mock.patch.object(SY.MT, "load_data", return_value={"talepler": [talep]}), \
+                mock.patch.object(SY.MT, "getir", return_value=talep), \
+                mock.patch.object(SY.MT, "guncelle", side_effect=lambda tid, **kw: guncel.append((tid, kw))):
+            SY.otomatik_musteri_talepleri_senkronize_et()
+        return board, guncel
+
+    def test_kapi_talebinde_uat_gorevi_eklenmez(self):
+        board, guncel = self._sync("[BUILD] S27-T1 derleme/import doğrulaması başarısız: x")
+        yeni = board["sprints"][-1]["tasks"]
+        self.assertEqual([t["role"] == "uat_auditor" for t in yeni], [False])
+        self.assertEqual(len(yeni), 1)
+        self.assertEqual(guncel[0][1]["durum"], "GELISTIRILIYOR")
+
+    def test_normal_talepte_uat_gorevi_vardir(self):
+        board, _ = self._sync("Dashboard filtresi çalışmıyor")
+        self.assertEqual([t["role"] for t in board["sprints"][-1]["tasks"]][-1], "uat_auditor")
+
 
 if __name__ == "__main__":
     unittest.main()
