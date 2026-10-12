@@ -115,7 +115,7 @@ class Envanter(unittest.TestCase):
         self.assertEqual(EA.durum_oku(self.tmp)["asama"], "tasarim")
         self.assertTrue((self.tmp / EA.INDEKS).exists())
         roller = [t["role"] for _, t in B.all_tasks(self.board) if t["role"] == EA.TASARIMCI]
-        self.assertEqual(len(roller), 3)                                       # ana şablon + 2 modül
+        self.assertEqual(len(roller), 6)                                       # ana şablon + 2 modül tasarımı + 3 önizleme
         sablon = next(t for _, t in B.all_tasks(self.board) if SABLON_BASLIK in t["title"])
         digerleri = [t for _, t in B.all_tasks(self.board) if t["title"].startswith(("Ekran tasarımı", "Paket"))]
         self.assertEqual(len(digerleri), 3)
@@ -123,6 +123,80 @@ class Envanter(unittest.TestCase):
         paket = next(t for _, t in B.all_tasks(self.board) if t["title"].startswith("Paket"))
         self.assertEqual(g["depends_on"], [paket["id"]])
         self.assertTrue(all(sablon["id"] in t["depends_on"] for t in digerleri))
+
+    def _tasarima_gec(self):
+        self.rapor([self.B("a"), self.B("b", modul="ayar", kaynak="src/settings.ts")])
+        EA.kontrol(self.board, {}, self.cfg, self.tmp)
+        d = self.tmp / EA.EKRAN_DIZIN
+        d.mkdir(parents=True)
+        for i in ("a", "b"):
+            (d / f"{i}.md").write_text(TAM, encoding="utf-8")
+        for s in self.board["sprints"][1:]:
+            for t in s["tasks"]:
+                B.mark(self.board, t["id"], B.DONE, "ok")
+        EA.kontrol(self.board, {}, self.cfg, self.tmp)
+
+    def test_onizleme_gorevleri_tasarima_bagli_ve_planı_bekletir(self):
+        self._tasarima_gec()
+        onz = [t for _, t in B.all_tasks(self.board) if t["title"].startswith("Önizleme:")]
+        self.assertEqual(len(onz), 3)
+        self.assertTrue(all(t["outputs"][0].startswith(EA.ONIZLEME_DIZIN) and t["outputs"][0].endswith(".html") for t in onz))
+        self.assertTrue(all("<script>" not in t["description"] or "YOK" in t["description"] for t in onz))
+        self.assertEqual(EA.durum_oku(self.tmp)["asama"], "tasarim")
+        for t in [t for _, t in B.all_tasks(self.board) if t["role"] == EA.TASARIMCI]:
+            B.mark(self.board, t["id"], B.DONE, "ok")
+        EA.kontrol(self.board, {}, self.cfg, self.tmp)                  # önizleme dosyaları yok → yeniden açılır, plana geçilmez
+        self.assertEqual(EA.durum_oku(self.tmp)["asama"], "tasarim")
+        self.assertTrue(any("GEÇERSİZ ÖNİZLEME" in t["description"] for _, t in B.all_tasks(self.board)))
+
+    def test_onizleme_dogrulama_kurallari(self):
+        d = self.tmp / "o.html"
+        d.write_text("<html><body>" + "x" * 500 + "</body></html>", encoding="utf-8")
+        self.assertEqual(EA.onizleme_eksikleri(d), [])
+        d.write_text("<html><body>" + "x" * 500 + "<script>1</script></body></html>", encoding="utf-8")
+        self.assertIn("<script> kullanılmış", EA.onizleme_eksikleri(d))
+        d.write_text('<html><head><link href="https://cdn.x/a.css"></head>' + "x" * 500, encoding="utf-8")
+        self.assertIn("harici kaynak kullanılmış", EA.onizleme_eksikleri(d))
+        self.assertEqual(EA.onizleme_eksikleri(self.tmp / "yok.html"), ["dosya yok"])
+
+    def test_gecerli_onizlemeler_plana_gecirir(self):
+        self._tasarima_gec()
+        (self.tmp / EA.ONIZLEME_DIZIN).mkdir(parents=True)
+        for _, t in B.all_tasks(self.board):
+            if t["title"].startswith("Önizleme:"):
+                (self.tmp / t["outputs"][0]).write_text("<html><body>" + "x" * 500 + "</body></html>", encoding="utf-8")
+        for _, t in B.all_tasks(self.board):
+            B.mark(self.board, t["id"], B.DONE, "ok")
+        EA.kontrol(self.board, {}, self.cfg, self.tmp)
+        self.assertTrue(EA.durum_oku(self.tmp)["onizleme_dogrulandi"])
+        EA.kontrol(self.board, {}, self.cfg, self.tmp)
+        self.assertEqual(EA.durum_oku(self.tmp)["asama"], "plan")
+
+    def test_kapali_ayarda_onizleme_yok(self):
+        cfg = {**self.cfg, "envanter": {"html_onizleme": False}}
+        self.rapor([self.B("a")])
+        EA.kontrol(self.board, {}, cfg, self.tmp)
+        d = self.tmp / EA.EKRAN_DIZIN
+        d.mkdir(parents=True)
+        (d / "a.md").write_text(TAM, encoding="utf-8")
+        for s in self.board["sprints"][1:]:
+            for t in s["tasks"]:
+                B.mark(self.board, t["id"], B.DONE, "ok")
+        EA.kontrol(self.board, {}, cfg, self.tmp)
+        self.assertFalse(any(t["title"].startswith("Önizleme:") for _, t in B.all_tasks(self.board)))
+
+    def test_tasarimi_bitmis_projeye_telafi(self):
+        self._tasarima_gec()
+        d = EA.durum_oku(self.tmp)
+        d.pop("sprintler_onizleme"); d["asama"] = "tamam"; d.pop("onizleme_dogrulandi", None)       # eski proje: önizleme kaydı yok
+        EA.durum_yaz(d, self.tmp)
+        self.board["sprints"] = [s for s in self.board["sprints"] if not any(t["title"].startswith("Önizleme:") for t in s["tasks"])]
+        for _, t in B.all_tasks(self.board):
+            B.mark(self.board, t["id"], B.DONE, "ok")
+        self.assertTrue(EA.kontrol(self.board, {}, self.cfg, self.tmp))
+        onz = [t for _, t in B.all_tasks(self.board) if t["title"].startswith("Önizleme:")]
+        self.assertEqual(len(onz), 3)
+        self.assertTrue(all(t["depends_on"] == [] for t in onz))                              # tasarım zaten bitmiş
 
     def test_kok_rolu_org_chartta_var_ve_araclari_okuma(self):
         org = json.loads((ROOT / "org_chart.json").read_text(encoding="utf-8"))
