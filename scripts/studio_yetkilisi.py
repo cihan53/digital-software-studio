@@ -208,6 +208,7 @@ KATEGORILER = [
 # ==============================================================================
 # AI DANIŞMA KATMANI — AGY → Claude → Sessiz Fallback
 # ==============================================================================
+KAPI_TALEP_ONEKLERI = ("[BUILD]", "[KAYNAK]", "[HİJYEN]")        # deterministik kalite kapısı talepleri (#285)
 TALEP_MAX_SPRINT = int(os.getenv("STUDIO_TALEP_MAX_SPRINT", "3"))      # bir talep için en fazla sprint (#281)
 
 
@@ -692,6 +693,12 @@ def otomatik_musteri_talepleri_senkronize_et() -> int:
             "talep_id": tid,
         }
         tasks.append(dev_task)
+
+        # Deterministik kapı talepleri ([BUILD]/[KAYNAK]/[HİJYEN]) canlı UAT gerektirmez: onarım turu aynı kapıdan geçmiştir (#285)
+        if (t.get("baslik") or "").startswith(KAPI_TALEP_ONEKLERI):
+            MT.guncelle(tid, durum="GELISTIRILIYOR",
+                        studio_notu=f"Sprint {sid} panosuna eklendi ({dev_task_id}); kapı talebi: canlı UAT gerekmez, onarım kapıdan geçince otomatik kapanır.")
+            continue
 
         # 2. UAT & Canlı Doğrulama Görevi
         uat_task_id = f"{sid}-T{task_counter}"
