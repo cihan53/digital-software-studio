@@ -129,9 +129,13 @@ def istem(task: dict, kapi: str | None, kanit: str, tur: int, azami: int) -> tup
     return SISTEM, user
 
 
-def dongu(kapi_kostur, ajan_cagir, kontrol_noktasi=None, azami_tur: int = TUR_VARSAYILAN, log=print) -> dict:
-    """kapi_kostur(tur) -> (ok, kanit); ajan_cagir(tur, kanit); kontrol_noktasi(tur) (git kontrol noktası, isteğe bağlı)."""
+def dongu(kapi_kostur, ajan_cagir, kontrol_noktasi=None, azami_tur: int = TUR_VARSAYILAN, log=print, acik_bulgu: str = "") -> dict:
+    """kapi_kostur(tur) -> (ok, kanit); ajan_cagir(tur, kanit); kontrol_noktasi(tur) (git kontrol noktası, isteğe bağlı).
+    acik_bulgu: talebin önceki UAT reddinden kalan açık bulgular; doluysa kapı geçse bile ajan en az 1 tur çağrılır (#269)."""
     ok, kanit = kapi_kostur(0)
+    if ok and acik_bulgu:
+        log("   [onarım] kapı geçiyor ama önceki UAT reddinin açık bulgusu var; ajan çağrılıyor.")
+        ok, kanit = False, "Önceki UAT reddinden açık bulgular (kapı bunları ölçmüyor):\n" + acik_bulgu
     if ok:
         log("   [onarım] kapı zaten geçiyor; ajan çağrılmadı.")
         return {"durum": "zaten_gecti", "tur": 0, "kanit": kanit}

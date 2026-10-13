@@ -177,3 +177,31 @@ class GercekDogrulama(unittest.TestCase):
         self.assertNotIn("TLP-03", b)
         self.assertEqual(ON.uat_bulgulari(None, kok), "")
         self.assertEqual(ON.uat_bulgulari("TALEP-1", kok), "")
+
+
+class AcikBulgu(unittest.TestCase):
+    """issue #269"""
+
+    def test_kapi_gecse_de_acik_bulguda_ajan_cagrilir(self):
+        cagri = []
+        s = ON.dongu(lambda tur: (True, ""), lambda tur, k: cagri.append((tur, k)), azami_tur=2, log=lambda *a: None,
+                     acik_bulgu="| UAT-B1 | SelectItem value='' | KALDI |")
+        self.assertEqual(len(cagri), 1)
+        self.assertIn("UAT-B1", cagri[0][1])
+        self.assertEqual(s["durum"], "cozuldu")
+
+    def test_bulgu_yoksa_eski_davranis(self):
+        cagri = []
+        s = ON.dongu(lambda tur: (True, ""), lambda tur, k: cagri.append(tur), log=lambda *a: None)
+        self.assertEqual((s["durum"], cagri), ("zaten_gecti", []))
+
+    def test_kaynak_kapisi_onarim_muaf(self):
+        import kalite_kapilari as K
+        eski = K.kaynak_degisti_mi
+        K.kaynak_degisti_mi = lambda t, f: False
+        try:
+            t = {"id": "T", "role": "web_engineer", "phase": "develop", "outputs": ["workspace/src/web/"]}
+            self.assertIn("kaynak uygulanmadı", K.gorev_kapilari(dict(t), set()))
+            self.assertNotIn("kaynak uygulanmadı", K.gorev_kapilari({**t, "onarim_muaf": True}, set()))
+        finally:
+            K.kaynak_degisti_mi = eski
