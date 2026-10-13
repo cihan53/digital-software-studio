@@ -2855,7 +2855,7 @@ def self_healing_code_check(target: str) -> tuple[bool, str]:
     return True, ""
 
 
-KOTA_BEKLEME_SN = int(os.getenv("STUDIO_KOTA_BEKLEME_SN", str(6 * 3600)))
+KOTA_BEKLEME_SN = int(os.getenv("STUDIO_KOTA_BEKLEME_SN", "0"))      # 0 = sınırsız: onay gelene dek koşucu çıkmaz (#289)
 
 
 def kota_onayi_bekle(tahmin: float, azami_sn: int | None = None, aralik: float = 5.0) -> bool:
@@ -2864,7 +2864,7 @@ def kota_onayi_bekle(tahmin: float, azami_sn: int | None = None, aralik: float =
     azami = KOTA_BEKLEME_SN if azami_sn is None else azami_sn
     bas = time.time()
     son_hatirlat = bas
-    while time.time() - bas < azami:
+    while azami <= 0 or time.time() - bas < azami:
         time.sleep(aralik)
         if B.is_set("stop") or B.is_set("force"):
             print("\n[DURDURULDU] kota onayı beklenirken durdurma isteği alındı.")
@@ -3736,6 +3736,15 @@ def run_board(org: dict, brief: str, once: bool = False,
             _, _cr = _studio_config()
             if B.needs_referans(task) and RS.tanimli(_cr):
                 _ok, _neden = RS.hazir_mi(_cr)
+                if not _ok and RS.bekleme_asildi(_cr):            # sınırlı bekleme doldu: görev 'referans doğrulanamadı' notuyla sürer (#289)
+                    B.clear("referans_bekliyor")
+                    task["description"] = (task.get("description") or "") + "\n\nREFERANS DOĞRULANAMADI: eski sistem erişilemedi; yalnız kaynak koda dayan ve çıktıya 'referansta doğrulanamadı' notu düş."
+                    B.audit("engine", "referans_atlandi", gorev_id=task["id"], detay={"neden": _neden})
+                    print(f"\n[⚠ REFERANS ATLANDI] {task['id']} · {_neden} — bekleme süresi doldu, görev kaynak koda dayanarak sürüyor (çıktı 'referansta doğrulanamadı' notu taşır).")
+                    _ok = True
+                if _ok:
+                    if B.is_set("referans_bekliyor"):
+                        B.clear("referans_bekliyor")
                 if not _ok:
                     if once:
                         print(f"\n[⚠ UYARI] {task['id']} referans sistem gerektiriyor: {_neden}. Görev bekletildi.")
@@ -3750,6 +3759,7 @@ def run_board(org: dict, brief: str, once: bool = False,
                             print(f"\n[⏸ REFERANS BEKLENİYOR] {task['id']} · {_neden}")
                             print("   Eski sistem (kaynak kodu / canlı adres) erişilebilir olunca devam eder. Tanım: workspace/studio.config.json → referans / source.")
                             B.audit("engine", "referans_bekleniyor", gorev_id=task["id"], detay={"neden": _neden})
+                        B.request("referans_bekliyor", json.dumps({"gorev": task["id"], "neden": _neden, "baslangic": RS.bekleme_baslangici(_cr)}, ensure_ascii=False), kaynak="engine")
                         time.sleep(30)
                         board = B.load()
                         continue
