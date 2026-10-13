@@ -51,8 +51,23 @@ RED    = "\033[31m"; BOLD   = "\033[1m";  DIM    = "\033[2m"
 NC     = "\033[0m"
 
 
+def ds_path_adaylari():
+    """Çerçeve konumu: STUDIO_DS_PATH, projedeki .studio-version → ds_path, sonra sabit konumlar (#293)."""
+    adaylar = []
+    env = os.getenv("STUDIO_DS_PATH")
+    if env:
+        adaylar.append(Path(env).expanduser())
+    try:
+        kayit = json.loads(LOCAL_VERSION_FILE.read_text(encoding="utf-8")).get("ds_path")
+        if kayit:
+            adaylar.append(Path(kayit))
+    except (OSError, ValueError):
+        pass
+    return adaylar + list(DS_LOCAL_PATHS)
+
+
 def ds_path_bul():
-    for p in DS_LOCAL_PATHS:
+    for p in ds_path_adaylari():
         if (p / "studio.version").exists():
             return p
     return None
@@ -380,6 +395,8 @@ def cmd_uygula(otomatik_commit=False, force=False, restart=False):
 
     if not ds_ver or not ds_eff:
         print(f"{RED}✗  DS local path bulunamadı.{NC}")
+        print(f"   Çerçeve klasörünü (studio.version içeren) şöyle belirtin:  STUDIO_DS_PATH=/yol/digital-software-studio python3 scripts/studio_updater.py --uygula")
+        print(f"   Denenen konumlar: " + ", ".join(str(p) for p in ds_path_adaylari()))
         sys.exit(1)
 
     tracked = ds_ver.get("tracked_files", [])
