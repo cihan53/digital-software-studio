@@ -340,6 +340,34 @@ def _onizleme_ekle(board: dict, cfg: dict, durum: dict, kok: Path = ROOT) -> boo
     return True
 
 
+ONAY = "workspace/docs/onaylar/tasarim_onayi.md"
+
+
+def onay_acik(cfg: dict | None) -> bool:
+    return html_acik(cfg) and bool(((cfg or {}).get("envanter") or {}).get("tasarim_onayi", True))
+
+
+def _onay_ekle(board: dict, durum: dict, kok: Path = ROOT) -> bool:
+    """Önizlemeler doğrulanınca insan 'Tasarım onayı' kapısı eklenir (bir kez). Ret notunda geçen önizleme yeniden yapılır (insan_onayi)."""
+    if durum.get("onay_gorevi"):
+        return False
+    onz = [t for s in board["sprints"] if s["id"] in durum.get("sprintler_onizleme", []) for t in s["tasks"]]
+    if not onz:
+        return False
+    kapi = {"title": "Tasarım onayı", "role": "human", "phase": "test",
+            "description": ("İNSAN KAPISI: tasarım önizlemelerini incele (panel → Onaylar). Onay → faz planlama ve kodlama başlar. Ret (gerekçeli) → notta düzeltilmesi gereken "
+                            "dosya adını/görev kimliğini yaz (örn. '07-teams-health.html: filtre barı bozuk'); yalnız o önizleme yeniden yapılır, notta eşleşme yoksa hepsi. "
+                            f"İncele: {ONIZLEME_DIZIN}/"),
+            "outputs": [ONAY], "depends_on": [t["id"] for t in onz]}
+    ids = _gorev_ekle(board, "Tasarım onayı", "Önizlemeler insan tarafından onaylanır; onaylanmadan plan/kodlama başlamaz", [kapi])
+    gid = next(t["id"] for s in board["sprints"] if s["id"] == ids[0] for t in s["tasks"])
+    durum["onay_gorevi"], durum["sprint_onay"] = gid, ids[0]
+    durum_yaz(durum, kok)
+    B.audit("engine", "tasarim_onayi_eklendi", detay={"gorev": gid})
+    B.refresh(board)
+    return True
+
+
 def _onizleme_bekliyor(board: dict, durum: dict) -> bool:
     gorevler = [t for s in board["sprints"] if s["id"] in durum.get("sprintler_onizleme", []) for t in s["tasks"]]
     return bool(gorevler) and any(t["status"] not in B.TERMINAL for t in gorevler)
@@ -385,6 +413,10 @@ def kontrol(board: dict, org: dict | None = None, cfg: dict | None = None, kok: 
     degisti = False
     if asama in ("plan", "tamam") and "sprintler_onizleme" not in durum and "sprintler_tasarim" in durum:      # tasarımı önizlemesiz bitmiş projeye telafi
         degisti = _onizleme_ekle(board, cfg or {}, durum, kok) or degisti
+    if durum.get("onizleme_dogrulandi") and _onizleme_bekliyor(board, durum):          # revizyon: yeniden yapılan önizleme tekrar doğrulanır
+        durum["onizleme_dogrulandi"] = False
+        durum_yaz(durum, kok)
+        degisti = True
     if durum.get("sprintler_onizleme") and not durum.get("onizleme_dogrulandi"):
         degisti = _onizleme_dogrula(board, durum, kok) or degisti
     if asama == "tamam":
@@ -454,6 +486,13 @@ def kontrol(board: dict, org: dict | None = None, cfg: dict | None = None, kok: 
             return degisti
         if durum.get("sprintler_onizleme") and not durum.get("onizleme_dogrulandi"):         # plan, önizlemeler doğrulanınca başlar
             return degisti
+        if durum.get("onizleme_dogrulandi") and onay_acik(cfg):                                # plan, insan tasarım onayından sonra başlar
+            if _onay_ekle(board, durum, kok):
+                degisti = True
+            gid = durum.get("onay_gorevi")
+            _, kapi = _task_sprint(board, gid) if gid else (None, None)
+            if kapi is not None and kapi["status"] != B.DONE:
+                return degisti
         try:
             import faz_planla as FP
             faz, _ = FP.aktif_faz(kok)
