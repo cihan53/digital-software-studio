@@ -170,7 +170,52 @@ class Envanter(unittest.TestCase):
         EA.kontrol(self.board, {}, self.cfg, self.tmp)
         self.assertTrue(EA.durum_oku(self.tmp)["onizleme_dogrulandi"])
         EA.kontrol(self.board, {}, self.cfg, self.tmp)
+        d = EA.durum_oku(self.tmp)
+        self.assertEqual(d["asama"], "tasarim")                          # insan tasarım onayı bekleniyor
+        kapi = next(t for _, t in B.all_tasks(self.board) if t["id"] == d["onay_gorevi"])
+        self.assertEqual(kapi["role"], "human")
+        self.assertIn(EA.ONIZLEME_DIZIN, kapi["description"])
+        B.mark(self.board, kapi["id"], B.DONE, "insan onayı: test")
+        EA.kontrol(self.board, {}, self.cfg, self.tmp)
         self.assertEqual(EA.durum_oku(self.tmp)["asama"], "plan")
+
+    def _gate_hazir(self):
+        self._tasarima_gec()
+        (self.tmp / EA.ONIZLEME_DIZIN).mkdir(parents=True)
+        for _, t in B.all_tasks(self.board):
+            if t["title"].startswith("Önizleme:"):
+                (self.tmp / t["outputs"][0]).write_text("<html><body>" + "x" * 500 + "</body></html>", encoding="utf-8")
+        for _, t in B.all_tasks(self.board):
+            if t["role"] != "human":
+                B.mark(self.board, t["id"], B.DONE, "ok")
+        EA.kontrol(self.board, {}, self.cfg, self.tmp)
+        EA.kontrol(self.board, {}, self.cfg, self.tmp)
+        return next(t for _, t in B.all_tasks(self.board) if t["id"] == EA.durum_oku(self.tmp)["onay_gorevi"])
+
+    def test_hedefli_ret_yalniz_belirtilen_onizlemeyi_yeniden_yaptirir(self):
+        import insan_onayi as IO
+        kapi = self._gate_hazir()
+        self.assertEqual(kapi["status"], B.READY)
+        hedef = next(t for _, t in B.all_tasks(self.board) if t["title"].startswith("Önizleme:") and "ayar" in t["outputs"][0])
+        ad = hedef["outputs"][0].rsplit("/", 1)[1]
+        ok, msg = IO.karar_ver(self.board, kapi["id"], "reject", f"{ad}: filtre barı bozuk", kim="test")
+        self.assertTrue(ok, msg)
+        acilan = [t for _, t in B.all_tasks(self.board) if t["title"].startswith("Önizleme:") and t["status"] in (B.TODO, B.READY)]
+        self.assertEqual([t["id"] for t in acilan], [hedef["id"]])
+        self.assertIn("REVİZYON İSTEĞİ", hedef["description"])
+        self.assertIn("filtre barı bozuk", hedef["description"])
+        # yeniden yapılınca tekrar doğrulanır ve kapı yeniden açılır
+        B.mark(self.board, hedef["id"], B.DONE, "ok")
+        EA.kontrol(self.board, {}, self.cfg, self.tmp)
+        self.assertTrue(EA.durum_oku(self.tmp)["onizleme_dogrulandi"])
+
+    def test_eslesmeyen_retde_hepsi_yeniden_yapilir(self):
+        import insan_onayi as IO
+        kapi = self._gate_hazir()
+        ok, _ = IO.karar_ver(self.board, kapi["id"], "reject", "genel olarak renkler uyumsuz", kim="test")
+        self.assertTrue(ok)
+        acilan = [t for _, t in B.all_tasks(self.board) if t["title"].startswith("Önizleme:") and t["status"] in (B.TODO, B.READY)]
+        self.assertEqual(len(acilan), 3)
 
     def test_kapali_ayarda_onizleme_yok(self):
         cfg = {**self.cfg, "envanter": {"html_onizleme": False}}
