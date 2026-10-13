@@ -63,8 +63,29 @@ def durum(cfg: dict | None, onbellek: bool = True) -> dict:
     return sonuc
 
 
+_BEKLEME_BAS: dict = {}
+
+
+def bekleme_dk(cfg: dict | None) -> int:
+    """Referans erişilemezken görev en fazla bu kadar bekletilir (0 = sınırsız); sonra kaynak koda dayanarak sürer."""
+    return int(((cfg or {}).get("referans") or {}).get("bekleme_dk", 30))
+
+
+def bekleme_baslangici(cfg: dict | None) -> float:
+    return _BEKLEME_BAS.setdefault("t", time.time())
+
+
+def bekleme_asildi(cfg: dict | None) -> bool:
+    """Erişilemez durum başladığından beri bekleme süresi doldu mu? Erişilince sayaç sıfırlanır (hazir_mi içinde)."""
+    dk = bekleme_dk(cfg)
+    bas = _BEKLEME_BAS.setdefault("t", time.time())
+    return dk > 0 and time.time() - bas >= dk * 60
+
+
 def hazir_mi(cfg: dict | None) -> tuple[bool, str]:
     if not tanimli(cfg):
         return True, ""
     d = durum(cfg)
+    if d["hazir"]:
+        _BEKLEME_BAS.clear()
     return d["hazir"], "; ".join(d["sorunlar"])

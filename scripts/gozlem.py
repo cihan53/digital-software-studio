@@ -45,6 +45,14 @@ def bekleme_nedeni(board: dict | None, ctrl: dict, kosucu: bool, onay_bekliyor: 
         return {"kod": "durduruluyor", "mesaj": "Koşucu durduruluyor: çalışan görev bitince duracak.", "eylem": ""}
     if ctrl.get("paused"):
         return {"kod": "duraklatildi", "mesaj": "Duraklatıldı: görevler başlamıyor.", "eylem": "Sürdür düğmesi / ./basla.sh --surdur"}
+    rb = ctrl.get("referans_bekliyor") if kosucu else None
+    if rb:
+        try:
+            rb = json.loads(rb) if isinstance(rb, str) else rb
+        except ValueError:
+            rb = {"neden": str(rb)}
+        return {"kod": "referans_bekliyor", "mesaj": f"Referans (eski) sistem bekleniyor: {rb.get('neden', '')} — {rb.get('gorev', '')} bunu gerektiriyor; süre dolunca kaynak koda dayanarak sürer.",
+                "eylem": "VPN/ağ erişimini kontrol et ya da workspace/studio.config.json → referans.bekleme_dk"}
     if onay_bekliyor:
         ob = onay_bekliyor
         return {"kod": "kota_onayi",
