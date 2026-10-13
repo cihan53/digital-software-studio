@@ -83,3 +83,39 @@ class Referans(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Bekleme289(unittest.TestCase):
+    """#289: referans beklemesi sınırlı; kota onayı beklemesi sınırsız; panelde neden görünür."""
+
+    def setUp(self):
+        RS._BEKLEME_BAS.clear()
+
+    def test_bekleme_suresi_dolunca_asilir(self):
+        cfg = {"source": {"path": "/x"}, "referans": {"bekleme_dk": 1}}
+        self.assertFalse(RS.bekleme_asildi(cfg))
+        RS._BEKLEME_BAS["t"] -= 61
+        self.assertTrue(RS.bekleme_asildi(cfg))
+        self.assertFalse(RS.bekleme_asildi({"source": {"path": "/x"}, "referans": {"bekleme_dk": 0}}))       # 0 = sınırsız
+
+    def test_erisilince_sayac_sifirlanir(self):
+        cfg = {"source": {"path": tempfile.gettempdir()}}
+        RS._BEKLEME_BAS["t"] = 1.0
+        self.assertTrue(RS.hazir_mi(cfg)[0])
+        self.assertEqual(RS._BEKLEME_BAS, {})
+
+    def test_panel_nedeni(self):
+        import gozlem as GO
+        ctrl = {"referans_bekliyor": json.dumps({"gorev": "S30-T2", "neden": "erişilemiyor"})}
+        n = GO.bekleme_nedeni(None, ctrl, True, None, {}, False)
+        self.assertEqual(n["kod"], "referans_bekliyor")
+        self.assertIn("S30-T2", n["mesaj"])
+        self.assertNotEqual((GO.bekleme_nedeni(None, ctrl, False, None, {}, False) or {}).get("kod"), "referans_bekliyor")   # koşucu yokken bayat bayrak gösterilmez
+
+    def test_kota_beklemesi_varsayilan_sinirsiz(self):
+        import studio_engine as E
+        self.assertEqual(E.KOTA_BEKLEME_SN, 0)
+        from unittest import mock
+        sonuclar = iter([(False, "d"), (False, "d"), (True, "")])
+        with mock.patch.object(E.B, "ledger_check", side_effect=lambda t: next(sonuclar)), mock.patch.object(E.B, "is_set", return_value=False):
+            self.assertTrue(E.kota_onayi_bekle(1.0, aralik=0.01))
