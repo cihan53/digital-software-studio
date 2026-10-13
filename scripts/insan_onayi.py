@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime
@@ -48,6 +49,25 @@ def kayit_yaz(task: dict, karar: str, kim: str, not_: str) -> Path:
     return p
 
 
+def hedefli_bagimliliklar(board: dict, kapi: dict, not_: str) -> list[str]:
+    """Ret notunda adı/kimliği geçen bağımlı görevler (boşsa: hepsi yeniden yapılır). Eşleşme: görev kimliği ya da çıktı dosya adı (uzantısız, ≥4 karakter)."""
+    metin = (not_ or "").lower()
+    bulunan = []
+    for d in kapi.get("depends_on", []):
+        _, dt = B.find_task(board, d)
+        if dt is None or B.is_human(dt):
+            continue
+        adaylar = {dt["id"].lower()}
+        for o in dt.get("outputs", []):
+            ad = o.rstrip("/").rsplit("/", 1)[-1].lower()
+            adaylar.add(ad)
+            if "." in ad:
+                adaylar.add(ad.rsplit(".", 1)[0])
+        if any(len(a) >= 4 and re.search(r"(?<![a-z0-9-])" + re.escape(a) + r"(?![a-z0-9-])", metin) for a in adaylar) or dt["id"].lower() in metin.split():
+            bulunan.append(d)
+    return bulunan
+
+
 def karar_ver(board: dict, gorev_id: str, karar: str, not_: str = "", kim: str | None = None, force: bool = False) -> tuple[bool, str]:
     """İnsan kapısını onayla/reddet (CLI ve web paneli ortak kullanır). (başarılı, mesaj) döndürür."""
     s, t = B.find_task(board, gorev_id)
@@ -66,7 +86,9 @@ def karar_ver(board: dict, gorev_id: str, karar: str, not_: str = "", kim: str |
         B.mark(board, gorev_id, B.DONE, f"insan onayı: {kim}")
     else:
         # Ret = revizyon: bağımlı (insan olmayan) görevler geri bildirimle yeniden çalışır; kapı bunların bitmesini bekler.
-        for d in t.get("depends_on", []):
+        # Notta bir bağımlı görevin kimliği ya da çıktı dosya adı (örn. 07-teams-health.html) geçiyorsa yalnız o görevler yeniden yapılır (#291).
+        hedefler = hedefli_bagimliliklar(board, t, not_)
+        for d in (hedefler or t.get("depends_on", [])):
             _, dt = B.find_task(board, d)
             if dt is not None and not B.is_human(dt):
                 dt["description"] = (dt.get("description", "") + f"\n\nREVİZYON İSTEĞİ ({kim}): {not_.strip()}").strip()
