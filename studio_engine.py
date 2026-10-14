@@ -1801,7 +1801,7 @@ def collect_inputs(agent: dict, strict: bool = True) -> str:
 # -------------------------------------------------------------
 # 4. ÇIKTI YAZMA (tek dosya + çok dosyalı dizin hedefi)
 # -------------------------------------------------------------
-FILE_MARKER = re.compile(r"^={3,}\s*FILE:\s*(.+?)\s*={3,}\s*$", re.MULTILINE)   # 3+ eşit işareti: modeller '===== FILE: ... =====' da yazabiliyor (#207)
+FILE_MARKER = re.compile(r"={3,}[ \t]*FILE:[ \t]*([^\n=]+?)[ \t]*={3,}[ \t\r]*$", re.MULTILINE)   # 3+ eşit işareti: modeller '===== FILE: ... =====' da yazabiliyor (#207); işaret satır ortasında (anlatımın hemen ardından) da eşleşir (#301)
 FENCE = re.compile(r"^\s*```[a-zA-Z0-9_+-]*\s*\n(.*?)\n\s*```\s*$", re.DOTALL)
 
 
