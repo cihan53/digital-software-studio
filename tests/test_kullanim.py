@@ -57,5 +57,63 @@ class Kullanim(unittest.TestCase):
         self.assertIn("Oturum: açık", m)
 
 
+class KotaBekleme297(unittest.TestCase):
+    def test_claude_zaman_ayristirma(self):
+        from datetime import datetime
+        z = KU.claude_zaman("Oct 14 at 2:09pm (Europe/Istanbul)", simdi=datetime(2026, 10, 14, 9, 0).astimezone())
+        self.assertEqual((z.month, z.day, z.hour, z.minute), (10, 14, 14, 9))
+        self.assertEqual(KU.claude_zaman("Oct 20 at 10pm (Europe/Istanbul)").hour, 22)
+        self.assertIsNone(KU.claude_zaman("yarın"))
+        self.assertIn("sifirlanma_iso", KU.claude_ayristir(CLAUDE)[0])
+
+    def test_bekleme_hedefi_en_gec_sifirlanma_ve_grup_suzgeci(self):
+        sat = [{"grup": "Gemini Models", "pencere": "Haftalık", "kalan": 0, "sifirlanma_iso": "2026-10-14T06:20:41Z"},
+               {"grup": "Gemini Models", "pencere": "5 saatlik", "kalan": 0, "sifirlanma_iso": "2026-10-14T11:00:00Z"},
+               {"grup": "Gemini Models", "pencere": "x", "kalan": None, "durum": "disabled", "sifirlanma_iso": ""},
+               {"grup": "Claude and GPT models", "pencere": "Haftalık", "kalan": 100, "sifirlanma_iso": "2026-10-21T06:10:52Z"}]
+        hedef, tuk = KU.bekleme_hedefi(sat, "Gemini")
+        self.assertEqual(len(tuk), 2)
+        self.assertEqual((hedef.hour, hedef.minute), (11, 0))                       # hepsi sıfırlanmadan sürmez → en geç olan
+        self.assertEqual(KU.bekleme_hedefi(sat, "Claude and GPT")[0], None)         # o grup tükenmemiş
+        self.assertEqual(KU.bekleme_hedefi([], "Gemini"), (None, []))
+
+    def test_motor_sifirlanmaya_kadar_bekler_panele_yazar_ve_temizler(self):
+        import studio_engine as E
+        from datetime import datetime, timedelta, timezone
+        hedef = datetime.now(timezone.utc) + timedelta(minutes=30)
+        sat = [{"grup": "Gemini Models", "pencere": "Haftalık"}]
+        saat = {"t": 1000.0}
+
+        def zaman():
+            saat["t"] += 400.0
+            return saat["t"]
+
+        E._SIFIRLANMA_BEKLENEN.clear()
+        istekler = []
+        with mock.patch.object(KU, "limit_bilgisi", return_value=(hedef, sat)), mock.patch.object(E.time, "time", side_effect=zaman), \
+                mock.patch.object(E.time, "sleep"), mock.patch.object(E.B, "is_set", return_value=False), mock.patch.object(E.B, "value_of", return_value=None), \
+                mock.patch.object(E.B, "request", side_effect=lambda *a, **k: istekler.append(("request", a[0]))), \
+                mock.patch.object(E.B, "clear", side_effect=lambda n: istekler.append(("clear", n))), mock.patch.object(E.B, "audit"):
+            self.assertTrue(E._sifirlanmaya_kadar_bekle("429", "agy", ""))
+            self.assertEqual(istekler[0], ("request", "limit_bekliyor"))
+            self.assertEqual(istekler[-1], ("clear", "limit_bekliyor"))
+            self.assertFalse(E._sifirlanmaya_kadar_bekle("429", "agy", ""))       # aynı hedef ikinci kez beklenmez (sonsuz döngü yok)
+            self.assertFalse(E._sifirlanmaya_kadar_bekle("429", "devin", ""))     # devin'de bilgi yok → eski davranış
+
+    def test_azami_sinirdan_uzak_sifirlanma_beklenmez(self):
+        import studio_engine as E
+        from datetime import datetime, timedelta, timezone
+        E._SIFIRLANMA_BEKLENEN.clear()
+        hedef = datetime.now(timezone.utc) + timedelta(hours=400)
+        with mock.patch.object(KU, "limit_bilgisi", return_value=(hedef, [{"grup": "g", "pencere": "p"}])):
+            self.assertFalse(E._sifirlanmaya_kadar_bekle("429", "agy", ""))
+
+    def test_panel_nedeni(self):
+        import gozlem as GO
+        n = GO.bekleme_nedeni(None, {"limit_bekliyor": '{"backend": "agy", "pencereler": "Gemini Models Haftalık", "sifirlanma": "14.10 09:20", "gorev": "S36-T5"}'}, True, None, {}, False)
+        self.assertEqual(n["kod"], "kota_sifirlanma")
+        self.assertIn("14.10 09:20", n["mesaj"])
+
+
 if __name__ == "__main__":
     unittest.main()
