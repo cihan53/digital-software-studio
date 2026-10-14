@@ -304,7 +304,9 @@ def onizleme_eksikleri(yol: Path) -> list[str]:
         eksik.append("içerik çok kısa")
     if "<script" in ml:
         eksik.append("<script> kullanılmış")
-    if re.search(r"(src|href)\s*=\s*[\"']https?://", ml) or re.search(r"url\(\s*[\"']?https?://", ml) or "@import" in ml:
+    # Harici KAYNAK: src=, <link href=>, url(), @import. Düz bağlantılar (<a href>) kaynak değildir, serbesttir (#299).
+    if (re.search(r"src\s*=\s*[\"']https?://", ml) or re.search(r"<link[^>]+href\s*=\s*[\"']https?://", ml)
+            or re.search(r"url\(\s*[\"']?https?://", ml) or "@import" in ml):
         eksik.append("harici kaynak kullanılmış")
     return eksik
 

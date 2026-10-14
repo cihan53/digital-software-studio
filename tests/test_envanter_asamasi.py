@@ -4,6 +4,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -157,6 +158,10 @@ class Envanter(unittest.TestCase):
         self.assertIn("<script> kullanılmış", EA.onizleme_eksikleri(d))
         d.write_text('<html><head><link href="https://cdn.x/a.css"></head>' + "x" * 500, encoding="utf-8")
         self.assertIn("harici kaynak kullanılmış", EA.onizleme_eksikleri(d))
+        d.write_text('<html><body><a href="https://oobeya.io/contact-sales/">İletişim</a>' + "x" * 500 + "</body></html>", encoding="utf-8")
+        self.assertEqual(EA.onizleme_eksikleri(d), [])                  # bağlantı kaynak değildir
+        d.write_text('<html><body><img src="https://x.io/a.png">' + "x" * 500 + "</body></html>", encoding="utf-8")
+        self.assertIn("harici kaynak kullanılmış", EA.onizleme_eksikleri(d))
         self.assertEqual(EA.onizleme_eksikleri(self.tmp / "yok.html"), ["dosya yok"])
 
     def test_gecerli_onizlemeler_plana_gecirir(self):
@@ -179,6 +184,12 @@ class Envanter(unittest.TestCase):
         EA.kontrol(self.board, {}, self.cfg, self.tmp)
         self.assertEqual(EA.durum_oku(self.tmp)["asama"], "plan")
 
+    def _kayitlari_izole(self, IO):
+        """Onay kaydı proje klasörüne (workspace/docs/onaylar) yazılmasın (#299)."""
+        p = mock.patch.object(IO, "ROOT", self.tmp)
+        p.start()
+        self.addCleanup(p.stop)
+
     def _gate_hazir(self):
         self._tasarima_gec()
         (self.tmp / EA.ONIZLEME_DIZIN).mkdir(parents=True)
@@ -194,6 +205,7 @@ class Envanter(unittest.TestCase):
 
     def test_hedefli_ret_yalniz_belirtilen_onizlemeyi_yeniden_yaptirir(self):
         import insan_onayi as IO
+        self._kayitlari_izole(IO)
         kapi = self._gate_hazir()
         self.assertEqual(kapi["status"], B.READY)
         hedef = next(t for _, t in B.all_tasks(self.board) if t["title"].startswith("Önizleme:") and "ayar" in t["outputs"][0])
@@ -211,6 +223,7 @@ class Envanter(unittest.TestCase):
 
     def test_eslesmeyen_retde_hepsi_yeniden_yapilir(self):
         import insan_onayi as IO
+        self._kayitlari_izole(IO)
         kapi = self._gate_hazir()
         ok, _ = IO.karar_ver(self.board, kapi["id"], "reject", "genel olarak renkler uyumsuz", kim="test")
         self.assertTrue(ok)
