@@ -89,6 +89,18 @@ Rol adları yalnızca şu listeden, birebir:
 """
 
 
+def kapsam_yolu(faz_id: str, kok: Path = ROOT) -> Path:
+    return kok / PLAN_DIZIN / f"{faz_id}_kapsam.json"
+
+
+def kapsam_oku(faz_id: str, kok: Path = ROOT) -> dict | None:
+    """Modül tabanlı fazın kapsamı: {"modul", "birimler": [id], "girdiler": [yol]} (#303). Yoksa None."""
+    try:
+        return json.loads(kapsam_yolu(faz_id, kok).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
 def planlama_sprinti_ekle(board: dict, faz: dict, org: dict, cfg: dict | None = None, kok: Path = ROOT) -> str:
     """Panoya 'Faz planlama' sprinti ekler (T1 plan, T2 insan onayı). Eklenen sprint id'sini döndürür."""
     fid = faz["id"]
@@ -103,6 +115,18 @@ def planlama_sprinti_ekle(board: dict, faz: dict, org: dict, cfg: dict | None = 
         "workspace/docs/bug_raporlari.md", "workspace/docs/envanter/_indeks.md", "workspace/docs/tasarim/_ana_sablon.md")
     tam_envanter = (kok / "workspace/docs/envanter/_indeks.md").exists()
     girdiler = ", ".join(g for g in adaylar if not (tam_envanter and g == kaba) and ("*" in g or (kok / g).exists()))
+    kapsam = kapsam_oku(fid, kok)
+    kapsam_notu = ""
+    if kapsam:
+        ek = [g for g in kapsam.get("girdiler", []) if g not in girdiler.split(", ")][:40]
+        girdiler = ", ".join([g for g in [girdiler] + ek if g])
+        ids = kapsam.get("birimler") or []
+        if ids:
+            kapsam_notu = (f" FAZ KAPSAMI (modül: {kapsam.get('modul', '')}): bu fazda {len(ids)} birim yapılacak: {', '.join(ids)}. Planı YALNIZ bu birimler için yap ve HEPSİNİ kapsa: "
+                           f"plan JSON'una ek olarak \"kapsam\" alanı yaz ({{\"<birim-id>\": \"<görev id>\"}}); listedeki her birim bir göreve atanmalı, hiçbiri atlanamaz. "
+                           "Birim envanter dosyaları: workspace/docs/envanter/ekranlar/<birim-id>.md")
+        else:
+            kapsam_notu = f" FAZ KAPSAMI: {kapsam.get('modul', 'ortak altyapı')} (ekran birimi yok; ortak altyapı ve kabuk işleri)."
     sid = f"S{len(board.get('sprints', [])) + 1}"
     ad = faz.get("ad", fid)
     plan_o = f"{PLAN_DIZIN}/{fid}.json"
@@ -114,7 +138,7 @@ def planlama_sprinti_ekle(board: dict, faz: dict, org: dict, cfg: dict | None = 
             {"id": f"{sid}-T1", "title": f"{fid} sprint planı", "role": "sprint_planner", "phase": "develop",
              "description": (f"{fid} fazını planla: «{ad}» — {faz.get('aciklama', '')}. Brief, backlog, ekran envanteri ve önceki faz sonuçlarını "
                              f"(UAT/render/hata raporları, açık bulgular) oku; fazın KALAN kapsamını sprintlere böl. Şema ve kurallar _sema.md'de. "
-                             f"Çıktı yalnız JSON. Eski (referans) sistem tanımlıysa fazı planlarken kaynak koda ek olarak onu da esas al. Girdi: {girdiler}"),
+                             f"Çıktı yalnız JSON. Eski (referans) sistem tanımlıysa fazı planlarken kaynak koda ek olarak onu da esas al.{kapsam_notu} Girdi: {girdiler}"),
              "outputs": [plan_o], "depends_on": []},
             {"id": f"{sid}-T2", "title": f"{fid} planı insan onayı", "role": "human", "phase": "test",
              "description": f"İnsan onayı: {PLAN_DIZIN}/{fid}.md planını oku. Onay → sprintler panoya eklenir; ret (gerekçeli) → plan notla yeniden üretilir.",
@@ -126,7 +150,7 @@ def planlama_sprinti_ekle(board: dict, faz: dict, org: dict, cfg: dict | None = 
     return sid
 
 
-def plan_dogrula(plan: object, org: dict | None = None) -> list[str]:
+def plan_dogrula(plan: object, org: dict | None = None, kapsam_birimleri: list[str] | None = None) -> list[str]:
     """Geçerlilik hataları (boş liste = geçerli). Panoya dokunmaz."""
     if not isinstance(plan, dict) or not isinstance(plan.get("sprints"), list) or not plan["sprints"]:
         return ["plan boş: 'sprints' listesi yok"]
@@ -134,6 +158,15 @@ def plan_dogrula(plan: object, org: dict | None = None) -> list[str]:
     if len(plan["sprints"]) > EN_FAZLA_SPRINT:
         errs.append(f"en fazla {EN_FAZLA_SPRINT} sprint")
     ids = [t.get("id") for s in plan["sprints"] for t in s.get("tasks", [])]
+    if kapsam_birimleri:                                           # modül fazı: planın TÜM birimleri kapsadığı eşlemeyle kanıtlanır (#303)
+        em = plan.get("kapsam")
+        if not isinstance(em, dict):
+            errs0 = ["'kapsam' alanı yok: {birim-id: görev-id} eşlemesi zorunlu"]
+        else:
+            errs0 = [f"kapsamda olmayan birim: {b}" for b in kapsam_birimleri if b not in em]
+            errs0 += [f"kapsam eşlemesi tanımsız görev: {b}→{g}" for b, g in em.items() if b in kapsam_birimleri and g not in ids]
+        if errs0:
+            return errs0[:12]
     if len(ids) != len(set(ids)):
         errs.append("yinelenen görev id")
     for s in plan["sprints"]:
@@ -171,7 +204,8 @@ def plan_oku(faz_id: str, kok: Path = ROOT) -> tuple[dict | None, list[str]]:
         plan = json.loads(ham[i:j + 1])
     except json.JSONDecodeError as e:
         return None, [f"geçerli JSON değil: {e}"]
-    return plan, plan_dogrula(plan)
+    kap = kapsam_oku(faz_id, kok) or {}
+    return plan, plan_dogrula(plan, None, kap.get("birimler") or None)
 
 
 def plan_md(faz_id: str, plan: dict) -> str:
@@ -300,3 +334,24 @@ def otomatik_ilerlet(board: dict, kok: Path = ROOT) -> str | None:
     yeni = KVT.load_fazlar()["fazlar"][idx + 1]["id"]
     B.audit("engine", "faz_otomatik_ilerledi", detay={"eski": faz["id"], "yeni": yeni, "atlanan_gorev": sum(1 for t in tum if t["status"] == B.SKIPPED)})
     return yeni
+
+
+def plani_geri_al(board: dict, faz_id: str, kok: Path = ROOT, zorla: bool = False) -> tuple[bool, str]:
+    """Fazın planlama sprintini ve plandan eklenen sprintleri panodan çıkarır, plan dosyalarını siler (#303).
+    Plan sprintlerinde çalışan (RUNNING) görev varsa reddeder; bitmiş (DONE) görev varsa yalnız zorla=True ile (üretilen dosyalar diskte kalır). (başarılı, mesaj)"""
+    plan_t, _ = _planlama_gorevleri(board, faz_id)
+    plan, _ = plan_oku(faz_id, kok) if plan_yolu(faz_id, kok).exists() else (None, [])
+    adlar = {s_["name"] for s_ in (plan or {}).get("sprints", [])}
+    silinecek = [s_ for s_ in board.get("sprints", []) if s_["name"] in adlar or (plan_t is not None and any(t["id"] == plan_t["id"] for t in s_["tasks"]))]
+    for s_ in silinecek:
+        for t in s_["tasks"]:
+            if s_["name"] in adlar and not B.is_human(t) and (t["status"] == B.RUNNING or (t["status"] == B.DONE and not zorla)):
+                return False, f"{t['id']} başlamış/bitmiş ({t['status']}); plan geri alınamaz"
+    ids = {s_["id"] for s_ in silinecek}
+    board["sprints"] = [s_ for s_ in board["sprints"] if s_["id"] not in ids]
+    for i, s_ in enumerate(board["sprints"]):
+        s_["order"] = i
+    for yol in (plan_yolu(faz_id, kok), uygulandi_yolu(faz_id, kok), kok / PLAN_DIZIN / f"{faz_id}.md", kok / PLAN_DIZIN / f"{faz_id}_onay.md"):
+        yol.unlink(missing_ok=True)
+    B.audit("engine", "faz_plani_geri_alindi", detay={"faz": faz_id, "sprint": sorted(ids)})
+    return True, f"{faz_id}: {len(ids)} sprint geri alındı"
