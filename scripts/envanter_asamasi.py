@@ -365,6 +365,98 @@ def _onizleme_ekle(board: dict, cfg: dict, durum: dict, kok: Path = ROOT) -> boo
     return True
 
 
+def modul_fazlari_acik(cfg: dict | None) -> bool:
+    return bool(((cfg or {}).get("envanter") or {}).get("modul_fazlari", True))
+
+
+def faz_min_birim(cfg: dict | None) -> int:
+    return max(1, int(((cfg or {}).get("envanter") or {}).get("faz_min_birim", 3)))
+
+
+def _baslik(m: str) -> str:
+    return " ".join(w.capitalize() for w in re.split(r"[-_\s]+", m) if w) or m
+
+
+def faz_grupla(birimler: list[dict], cfg: dict | None = None, brief: str = "") -> list[dict]:
+    """Envanterden modül tabanlı faz listesi (#303): ilk faz ortak altyapı/kabuk; sonra modül başına faz (brief'te geçen modüller önce);
+    faz_min_birim altındaki küçük modüller 'Küçük modüller' fazlarında toplanır (≤6 birim)."""
+    moduller: dict[str, list[dict]] = {}
+    for b in birimler:
+        moduller.setdefault(b["modul"], []).append(b)
+    metin = (brief or "").lower()
+
+    def sira(m):
+        i = min([x for x in (metin.find(m.lower()), metin.find(m.lower().replace("-", " "))) if x >= 0] or [10 ** 9])
+        return (i, list(moduller).index(m))
+    sirali = sorted(moduller, key=sira)
+    esik = faz_min_birim(cfg)
+    buyuk = [m for m in sirali if len(moduller[m]) >= esik]
+    kucuk = [m for m in sirali if len(moduller[m]) < esik]
+    fazlar = [{"ad": "Ortak altyapı ve kabuk", "moduller": [], "birimler": [],
+               "aciklama": ("Nuxt iskeleti, tasarım token'ları, ana şablon (layout/kabuk), ortak bileşen/widget kataloğu, yerel ortam (yerel_ortam.sh), mock katmanı ve CI. "
+                            "Ekran birimi içermez: modül fazları kendi ekranlarını bu temelin üstüne yapar.")}]
+    for m in buyuk:
+        ids = [b["id"] for b in moduller[m]]
+        fazlar.append({"ad": f"Modül: {_baslik(m)}", "moduller": [m], "birimler": ids,
+                       "aciklama": f"{m} modülünün tüm ekran, modal ve çekmeceleri ({len(ids)} birim): {', '.join(ids)}."})
+    parca, mevcut, say = [], [], 0
+    for m in kucuk:
+        n = len(moduller[m])
+        if mevcut and say + n > 6:
+            parca.append(mevcut)
+            mevcut, say = [], 0
+        mevcut.append(m)
+        say += n
+    if mevcut:
+        parca.append(mevcut)
+    for i, grup in enumerate(parca, 1):
+        ids = [b["id"] for m in grup for b in moduller[m]]
+        fazlar.append({"ad": f"Küçük modüller{f' ({i})' if len(parca) > 1 else ''}: {', '.join(grup)}", "moduller": grup, "birimler": ids,
+                       "aciklama": f"Küçük modüller ({', '.join(grup)}), {len(ids)} birim: {', '.join(ids)}."})
+    return fazlar
+
+
+def modul_fazlarini_kur(cfg: dict, kok: Path = ROOT, brief: str = "") -> list[str]:
+    """Varsayılan genel fazların yerine modül fazlarını kurar (ilki AKTIF); her faza kapsam dosyası yazar. Faz id'lerini döndürür."""
+    import karar_verici_triage as KVT
+    birimler, errs = rota_oku(cfg, kok)
+    if errs or not birimler:
+        return []
+    if not brief:
+        try:
+            brief = (kok / "proje_kapsami.md").read_text(encoding="utf-8") if (kok / "proje_kapsami.md").exists() else (kok / "workspace/docs/proje_kapsami.md").read_text(encoding="utf-8")
+        except OSError:
+            brief = ""
+    gruplar = faz_grupla(birimler, cfg, brief)
+    onceki, liste, ids = None, [], []
+    kapsam_dizin = kok / "workspace/docs/faz_planlari"
+    kapsam_dizin.mkdir(parents=True, exist_ok=True)
+    tasarim_ortak = [SABLON, "workspace/docs/tasarim_sistemi.md", f"{INDEKS}"]
+    for n, g in enumerate(gruplar, 1):
+        fid = f"FAZ-{n}"
+        liste.append({"id": fid, "ad": g["ad"], "aciklama": g["aciklama"], "durum": "AKTIF" if n == 1 else "PLANLANDI", "hedef_tarih": "",
+                      "kilitli": n != 1, "onkosul_faz": onceki})
+        girdiler = [x for x in tasarim_ortak if (kok / x).exists()]
+        for m in g["moduller"]:
+            sl = slug(m)
+            girdiler += [f"{TASARIM_DIZIN}/ekranlar/*{sl}*.md", f"{ONIZLEME_DIZIN}/*{sl}*.html"]
+        girdiler += [f"{EKRAN_DIZIN}/{b}.md" for b in g["birimler"]][:30]
+        (kapsam_dizin / f"{fid}_kapsam.json").write_text(json.dumps({"faz": fid, "modul": ", ".join(g["moduller"]) or "ortak altyapı", "birimler": g["birimler"],
+                                                                      "girdiler": girdiler}, ensure_ascii=False, indent=1), encoding="utf-8")
+        onceki = fid
+        ids.append(fid)
+    KVT.save_fazlar({"fazlar": liste})
+    try:                                                         # save_fazlar INSERT OR REPLACE yapar: eski (genel) faz satırlarını sil
+        conn = KVT.db_conn()
+        if conn:
+            conn.execute("DELETE FROM fazlar WHERE id NOT IN (%s)" % ",".join("?" * len(ids)), ids)
+            conn.commit()
+    except Exception:                                            # noqa: BLE001
+        pass
+    B.audit("engine", "modul_fazlari_kuruldu", detay={"faz": len(ids)})
+    return ids
+
+
 ONAY = "workspace/docs/onaylar/tasarim_onayi.md"
 
 
@@ -525,6 +617,9 @@ def kontrol(board: dict, org: dict | None = None, cfg: dict | None = None, kok: 
                 return degisti
         try:
             import faz_planla as FP
+            if modul_fazlari_acik(cfg) and not durum.get("fazlar_kuruldu"):
+                durum["fazlar_kuruldu"] = modul_fazlarini_kur(cfg, kok)
+                durum_yaz(durum, kok)
             faz, _ = FP.aktif_faz(kok)
             sid = FP.tetikle(board, org or {}, cfg, zorla=faz["id"], kok=kok) if faz else None
         except Exception:
@@ -546,3 +641,67 @@ def kontrol(board: dict, org: dict | None = None, cfg: dict | None = None, kok: 
         except Exception:
             pass
     return degisti
+
+
+def faz_yeniden_kur(board: dict, org: dict | None, cfg: dict, kok: Path = ROOT) -> tuple[bool, str]:
+    """Mevcut projede genel fazı/planı geri alıp modül fazlarını kurar; ilk fazın planlamasını başlatır (#303). Koşucu DURMUŞ olmalı. Envanter/tasarım/önizleme korunur."""
+    import faz_planla as FP
+    import karar_verici_triage as KVT
+    for f in KVT.load_fazlar().get("fazlar", []):
+        if FP.plan_yolu(f["id"], kok).exists() or FP.uygulandi_yolu(f["id"], kok).exists() or FP._planlama_gorevleri(board, f["id"])[0] is not None:
+            ok, msg = FP.plani_geri_al(board, f["id"], kok)
+            if not ok:
+                return False, msg
+    ids = modul_fazlarini_kur(cfg, kok)
+    if not ids:
+        return False, "modül fazları kurulamadı (rota listesi yok/geçersiz)"
+    durum = durum_oku(kok)
+    durum.update(fazlar_kuruldu=ids, asama="plan")
+    sid = FP.tetikle(board, org or {}, cfg, zorla=ids[0], kok=kok)
+    durum["plan_sprinti"] = sid
+    durum_yaz(durum, kok)
+    B.refresh(board)
+    B.save(board)
+    return True, f"{len(ids)} faz kuruldu; {ids[0]} planlaması {sid} olarak eklendi"
+
+
+def main(argv=None) -> int:
+    import argparse
+    ap = argparse.ArgumentParser(description="Envanter aşaması yardımcıları")
+    ap.add_argument("--faz-yeniden-kur", action="store_true", help="genel fazı/planı geri al, envanterden modül fazlarını kur (koşucu durmuş olmalı)")
+    ap.add_argument("--faz-onizle", action="store_true", help="modül fazlarını yazmadan listele")
+    a = ap.parse_args(argv)
+    import studio_config as C
+    cfg = C.load_config(ROOT / "workspace/studio.config.json") or {}
+    if a.faz_onizle:
+        birimler, errs = rota_oku(cfg, ROOT)
+        if errs:
+            print("rota listesi okunamadı:", errs[:3])
+            return 1
+        brief = ""
+        for yol in (ROOT / "workspace/docs/proje_kapsami.md", ROOT / "proje_kapsami.md"):
+            if yol.exists():
+                brief = yol.read_text(encoding="utf-8")
+                break
+        for i, g in enumerate(faz_grupla(birimler, cfg, brief), 1):
+            print(f"FAZ-{i}: {g['ad']} — {len(g['birimler'])} birim")
+        return 0
+    if a.faz_yeniden_kur:
+        try:
+            import servis_kapat as SK
+            if SK.kosucu_pid():
+                print("[HATA] koşucu çalışıyor; önce ./basla.sh --durdur (pano bellekte ezilmesin)")
+                return 1
+        except ImportError:
+            pass
+        org_yol = ROOT / "workspace/docs/org_chart.json"
+        org = json.loads((org_yol if org_yol.exists() else ROOT / "org_chart.json").read_text(encoding="utf-8"))
+        ok, msg = faz_yeniden_kur(B.load(), org, cfg, ROOT)
+        print(("✓ " if ok else "[HATA] ") + msg)
+        return 0 if ok else 1
+    ap.print_help()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
