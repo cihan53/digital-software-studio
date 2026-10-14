@@ -230,6 +230,36 @@ class Envanter(unittest.TestCase):
         acilan = [t for _, t in B.all_tasks(self.board) if t["title"].startswith("Önizleme:") and t["status"] in (B.TODO, B.READY)]
         self.assertEqual(len(acilan), 3)
 
+    def test_cikti_kurtarma_satir_ortasi_isaret(self):
+        d = self.tmp / EA.EKRAN_DIZIN
+        d.mkdir(parents=True)
+        (d / "var.md").write_text("zaten var", encoding="utf-8")
+        govde = "\n".join(f"## {b}\nicerik burada yeterince uzun bir satir" for b in EA.BASLIKLAR) * 2
+        (d / "_CIKTI.md").write_text(f"Kaynağı inceliyorum.Son doğrulama.=== FILE: eksik-birim.md ===\n{govde}\n=== FILE: var.md ===\n{govde}\n=== FILE: ../kacis.md ===\n{govde}", encoding="utf-8")
+        self.assertEqual(EA.cikti_kurtar(self.tmp), ["eksik-birim"])
+        self.assertEqual((d / "var.md").read_text(encoding="utf-8"), "zaten var")                  # mevcut dosya ezilmez
+        self.assertFalse((self.tmp / "kacis.md").exists())                                          # dizin dışına yazılmaz
+        self.assertIn("## Veri yapısı", (d / "eksik-birim.md").read_text(encoding="utf-8"))
+
+    def test_eksik_envanterli_birim_icin_tasarim_gorevi_acilmaz(self):
+        self.rapor([self.B("a"), self.B("b", modul="ayar", kaynak="src/settings.ts")])
+        EA.kontrol(self.board, {}, self.cfg, self.tmp)
+        d = self.tmp / EA.EKRAN_DIZIN
+        d.mkdir(parents=True)
+        (d / "a.md").write_text(TAM, encoding="utf-8")                                              # b için dosya hiç yok
+        for _ in range(EA.TEKRAR_SINIRI + 1):
+            for s_ in self.board["sprints"][1:]:
+                for t in s_["tasks"]:
+                    if t["status"] in (B.TODO, B.READY) or t["status"] == B.DONE:
+                        B.mark(self.board, t["id"], B.DONE, "ok")
+            EA.kontrol(self.board, {}, self.cfg, self.tmp)
+        self.assertEqual(EA.durum_oku(self.tmp)["asama"], "tasarim")
+        self.assertEqual(EA.durum_oku(self.tmp)["eksik_birimler"], ["b"])
+        self.assertIn("`b`", (self.tmp / EA.DIZIN / "_eksikler.md").read_text(encoding="utf-8"))
+        metin = " ".join(t["description"] for _, t in B.all_tasks(self.board) if t["title"].startswith("Ekran tasarımı"))
+        self.assertIn("a.md", metin)
+        self.assertNotIn("/b.md", metin)
+
     def test_kapali_ayarda_onizleme_yok(self):
         cfg = {**self.cfg, "envanter": {"html_onizleme": False}}
         self.rapor([self.B("a")])
