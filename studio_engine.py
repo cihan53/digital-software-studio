@@ -1358,12 +1358,66 @@ def is_limit_error(msg: str) -> bool:
     return any(pat in low for pat in LIMIT_PATTERNS)
 
 
+KOTA_SIFIRLANMA_AZAMI_SAAT = float(os.getenv("STUDIO_KOTA_SIFIRLANMA_AZAMI_SAAT", "192"))      # sağlayıcı sıfırlanma saati verirse en fazla bu kadar beklenir (haftalık pencere)
+_SIFIRLANMA_BEKLENEN: set = set()
+
+
+def _sifirlanmaya_kadar_bekle(reason: str, backend: str, task_id: str) -> bool:
+    """Sağlayıcı kalan kullanımı %0 bildiriyorsa sıfırlanma saatine (+60 sn) kadar bekler; panelde nedeni gösterir (#297).
+    Beklediyse True. Bilgi yok/zaman geçmiş/aynı hedefi zaten beklediysek False → eski (aralıklı yeniden deneme) davranış."""
+    if backend not in ("agy", "claude"):
+        return False
+    try:
+        import kullanim as KU
+        hedef, tukenmis = KU.limit_bilgisi(backend, AGY_MODEL if backend == "agy" else CLAUDE_MODEL)
+    except Exception as e:                                             # noqa: BLE001
+        print(f"      [kota] kullanım bilgisi alınamadı: {e}", file=sys.stderr)
+        return False
+    if hedef is None:
+        return False
+    from datetime import datetime as _dt
+    simdi = _dt.now(hedef.tzinfo)
+    bekle_sn = (hedef - simdi).total_seconds() + 60
+    anahtar = (backend, hedef.isoformat())
+    if bekle_sn <= 0 or anahtar in _SIFIRLANMA_BEKLENEN or bekle_sn > KOTA_SIFIRLANMA_AZAMI_SAAT * 3600:
+        return False
+    _SIFIRLANMA_BEKLENEN.add(anahtar)
+    yerel = hedef.astimezone().strftime("%d.%m %H:%M")
+    ayrinti = ", ".join(f"{r.get('grup')} {r.get('pencere')}" for r in tukenmis)
+    print(f"  [⏸ KOTA SIFIRLANMASI BEKLENİYOR] {backend}: {ayrinti} %0; {yerel}'de sıfırlanınca sürecek ({int(bekle_sn // 60)} dk).", file=sys.stderr)
+    B.request("limit_bekliyor", json.dumps({"backend": backend, "pencereler": ayrinti, "sifirlanma": yerel, "gorev": task_id}, ensure_ascii=False), kaynak="engine")
+    B.audit("engine", "kota_sifirlanma_bekleniyor", gorev_id=task_id or None, detay={"backend": backend, "pencereler": ayrinti, "sifirlanma": yerel})
+    bitis = time.time() + bekle_sn
+    try:
+        while time.time() < bitis:
+            if B.is_set("stop"):
+                raise RuntimeError("Kota sıfırlanması beklenirken durdurma isteği alındı.")
+            if B.is_set("force") or B.is_set("goto") or B.value_of("skip"):
+                raise CallAborted("Kota beklemesi sırasında kontrol isteği alındı.")
+            if task_id:
+                try:
+                    ov = B.motor_override(task_id)
+                    if ov.get("backend") and ov["backend"] != backend:
+                        B.motor_oneri_temizle()
+                        raise CallAborted(f"Motor değişimi: {backend} → {ov['backend']} ({ov['hedef']} override)")
+                except RuntimeError:
+                    pass
+            time.sleep(min(15, max(1.0, bitis - time.time())))
+    finally:
+        B.clear("limit_bekliyor")
+    print("  [✓] Kota sıfırlanma zamanı geldi; görev yeniden deneniyor.", file=sys.stderr)
+    return True
+
+
 def wait_for_quota(reason: str, waited: int, backend: str = "",
                    task_id: str = "") -> int:
     """Limit hatasında bekler. Bekleme sırasında durdurma ve motor
     değişikliği isteklerine saygı duyar — görevin override backend'i
     beklenenden farklıysa çağrı kesilir, görev kuyruğa dönüp yeni
-    motorla yeniden alınır."""
+    motorla yeniden alınır. Sağlayıcı sıfırlanma saatini bildiriyorsa
+    (agy/claude /usage) o saate kadar beklenir (#297)."""
+    if _sifirlanmaya_kadar_bekle(reason, backend, task_id):
+        return waited
     if waited >= MAX_WAIT:
         raise RuntimeError(
             f"Kota limiti {MAX_WAIT // 3600} saattir açılmadı, vazgeçiliyor. Son hata: {reason}"

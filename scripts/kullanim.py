@@ -17,7 +17,7 @@ import subprocess
 import sys
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -52,8 +52,30 @@ def agy_ayristir(metin: str) -> list[dict]:
         m = re.fullmatch(r"(\d+)\s*%", p[2])
         sifir = p[3] if len(p) > 3 else ""
         satirlar.append({"grup": p[0], "pencere": p[1].replace(" Remaining", "").replace("Weekly Limit", "Haftalık").replace("Five Hour Limit", "5 saatlik"),
-                         "kalan": int(m.group(1)) if m else None, "durum": "" if m else p[2], "sifirlanma": _yerel(sifir) if sifir else ""})
+                         "kalan": int(m.group(1)) if m else None, "durum": "" if m else p[2], "sifirlanma": _yerel(sifir) if sifir else "",
+                         "sifirlanma_iso": sifir})
     return satirlar
+
+
+_AYLAR = {a: i for i, a in enumerate(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
+
+
+def claude_zaman(metin: str, simdi: datetime | None = None) -> datetime | None:
+    """'Oct 14 at 2:09pm (Europe/Istanbul)' / 'Oct 20 at 10pm (Europe/Istanbul)' → tz'li datetime."""
+    m = re.search(r"([A-Za-z]{3})[a-z]*\s+(\d{1,2})\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*(?:\(([^)]+)\))?", metin or "", re.I)
+    if not m or m.group(1).lower() not in _AYLAR:
+        return None
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(m.group(6)) if m.group(6) else datetime.now().astimezone().tzinfo
+    except Exception:                                            # noqa: BLE001
+        tz = datetime.now().astimezone().tzinfo
+    simdi = simdi or datetime.now(tz)
+    sa = int(m.group(3)) % 12 + (12 if m.group(5).lower() == "pm" else 0)
+    d = datetime(simdi.year, _AYLAR[m.group(1).lower()], int(m.group(2)), sa, int(m.group(4) or 0), tzinfo=tz)
+    if d < simdi - timedelta(days=2):                           # yıl dönümü
+        d = d.replace(year=d.year + 1)
+    return d
 
 
 def claude_ayristir(metin: str) -> list[dict]:
@@ -64,7 +86,8 @@ def claude_ayristir(metin: str) -> list[dict]:
                    ("Haftalık (Sonnet)", r"Current week \(Sonnet[^)]*\):\s*(\d+)%\s*used\s*·\s*resets\s*([^\n]+)")):
         m = re.search(rx, metin)
         if m:
-            satirlar.append({"grup": "Claude", "pencere": ad, "kalan": max(0, 100 - int(m.group(1))), "durum": "", "sifirlanma": m.group(2).strip()})
+            satirlar.append({"grup": "Claude", "pencere": ad, "kalan": max(0, 100 - int(m.group(1))), "durum": "", "sifirlanma": m.group(2).strip(),
+                             "sifirlanma_iso": (claude_zaman(m.group(2)) or datetime.min).astimezone().isoformat() if claude_zaman(m.group(2)) else ""})
     return satirlar
 
 
@@ -118,6 +141,29 @@ def proje_kullanimi(kok: Path = ROOT) -> dict:
     except Exception:
         sonuc["gunluk"] = None
     return sonuc
+
+
+def bekleme_hedefi(satirlar: list[dict], model_grubu: str = "") -> tuple[datetime | None, list[dict]]:
+    """Tükenmiş (kalan 0) pencerelerin EN GEÇ sıfırlanma zamanı: hepsi sıfırlanmadan görev sürmez. model_grubu verilirse yalnız o grup (ör. 'Gemini')."""
+    tukenmis = [r for r in satirlar if r.get("kalan") is not None and r["kalan"] <= 0 and (not model_grubu or r.get("grup", "").lower().startswith(model_grubu.lower()))]
+    zamanlar = []
+    for r in tukenmis:
+        try:
+            z = datetime.fromisoformat((r.get("sifirlanma_iso") or "").replace("Z", "+00:00"))
+            zamanlar.append(z if z.tzinfo else z.astimezone())
+        except ValueError:
+            continue
+    return (max(zamanlar) if zamanlar else None), tukenmis
+
+
+def limit_bilgisi(backend: str, model: str = "") -> tuple[datetime | None, list[dict]]:
+    """Limit hatasında: bu sağlayıcının tükenmiş pencereleri ve sıfırlanma zamanı (devin için bilgi yok → None)."""
+    if backend == "agy":
+        grup = "Gemini" if "gemini" in (model or os.getenv("STUDIO_AGY_MODEL", "gemini")).lower() else "Claude and GPT"
+        return bekleme_hedefi(agy_kullanim()["satirlar"], grup)
+    if backend == "claude":
+        return bekleme_hedefi(claude_kullanim()["satirlar"])
+    return None, []
 
 
 def topla(kok: Path = ROOT) -> dict:
