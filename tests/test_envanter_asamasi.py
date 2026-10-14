@@ -25,11 +25,16 @@ class Envanter(unittest.TestCase):
         (self.kaynak / "src").mkdir(parents=True)
         for f in ("home.ts", "settings.ts", "dialog.ts"):
             (self.kaynak / "src" / f).write_text("x", encoding="utf-8")
+        import karar_verici_triage as KVT0
+        self._kvt_eski = KVT0.FAZLAR_FILE
+        KVT0.FAZLAR_FILE = self.tmp / "fazlar.json"
         self.cfg = {"source": {"path": str(self.kaynak)}}
         self.board = B.normalize(EA.baslangic_panosu(self.cfg, self.tmp))
         B.refresh(self.board)
 
     def tearDown(self):
+        import karar_verici_triage as KVT0
+        KVT0.FAZLAR_FILE = self._kvt_eski
         B.DB_PATH = self.eski
         shutil.rmtree(self.tmp, ignore_errors=True)
 
@@ -183,6 +188,11 @@ class Envanter(unittest.TestCase):
         B.mark(self.board, kapi["id"], B.DONE, "insan onayı: test")
         EA.kontrol(self.board, {}, self.cfg, self.tmp)
         self.assertEqual(EA.durum_oku(self.tmp)["asama"], "plan")
+        d = EA.durum_oku(self.tmp)
+        self.assertEqual(d["fazlar_kuruldu"][0], "FAZ-1")                  # onaydan sonra modül fazları kuruldu
+        self.assertGreaterEqual(len(d["fazlar_kuruldu"]), 2)               # altyapı + modül(ler)
+        import karar_verici_triage as KVT0
+        self.assertEqual(KVT0.load_fazlar()["fazlar"][0]["ad"], "Ortak altyapı ve kabuk")
 
     def _kayitlari_izole(self, IO):
         """Onay kaydı proje klasörüne (workspace/docs/onaylar) yazılmasın (#299)."""
@@ -291,6 +301,119 @@ class Envanter(unittest.TestCase):
         r = next(a for a in org["hierarchy"] if a["id"] == EA.ANALIST)
         self.assertEqual(set(r["tools"]), {"Read", "Glob", "Grep", "WebFetch"})      # yazma yok; referans sistemi okumak için WebFetch
         self.assertTrue(any(a["id"] == EA.TASARIMCI for a in org["hierarchy"]))
+
+
+class ModulFazlari303(unittest.TestCase):
+    """#303: envanterden modül tabanlı fazlar, kapsam dosyası, tam kapsam doğrulaması, plan geri alma."""
+
+    def setUp(self):
+        import karar_verici_triage as KVT
+        self.KVT = KVT
+        self.tmp = Path(tempfile.mkdtemp())
+        self.eski = (B.DB_PATH, KVT.FAZLAR_FILE)
+        B.DB_PATH = self.tmp / "t.db"
+        KVT.FAZLAR_FILE = self.tmp / "fazlar.json"
+        self.kaynak = self.tmp / "kaynak"
+        (self.kaynak / "src").mkdir(parents=True)
+        (self.kaynak / "src" / "x.ts").write_text("x", encoding="utf-8")
+        self.cfg = {"source": {"path": str(self.kaynak)}}
+        self.birimler = ([self._b(f"home-{i}", "home") for i in range(4)] + [self._b(f"admin-{i}", "admin") for i in range(5)]
+                         + [self._b("sistem", "system"), self._b("proje", "project"), self._b("profil", "profile")] + [self._b(f"rapor-{i}", "reports") for i in range(3)])
+        (self.tmp / EA.DIZIN).mkdir(parents=True)
+        (self.tmp / EA.ROTALAR).write_text(json.dumps({"birimler": self.birimler}), encoding="utf-8")
+
+    def tearDown(self):
+        B.DB_PATH, self.KVT.FAZLAR_FILE = self.eski
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _b(self, i, modul):
+        return {"id": i, "ad": i, "rota": f"/{i}", "tur": "ekran", "ust": "", "modul": modul, "kaynak": "src/x.ts"}
+
+    def test_gruplama_altyapi_fazi_brief_onceligi_ve_kucuk_modul_birlesimi(self):
+        g = EA.faz_grupla(self.birimler, self.cfg, "Pilot: önce reports ve home ekranları")
+        adlar = [x["ad"] for x in g]
+        self.assertEqual(adlar[0], "Ortak altyapı ve kabuk")
+        self.assertEqual(g[0]["birimler"], [])
+        self.assertEqual(adlar[1], "Modül: Reports")                         # brief'te ilk geçen
+        self.assertEqual(adlar[2], "Modül: Home")
+        self.assertEqual(adlar[3], "Modül: Admin")
+        kucuk = g[-1]
+        self.assertTrue(kucuk["ad"].startswith("Küçük modüller"))
+        self.assertEqual(sorted(kucuk["moduller"]), ["profile", "project", "system"])
+        self.assertEqual(sum(len(x["birimler"]) for x in g), len(self.birimler))   # hiçbir birim düşmez
+
+    def test_briefte_gecen_kucuk_modul_kendi_fazini_alir(self):
+        g = EA.faz_grupla(self.birimler, self.cfg, "pilot: system ekranı önce")
+        self.assertEqual([x["ad"] for x in g][1], "Modül: System")
+        self.assertNotIn("system", g[-1]["moduller"])
+
+    def test_esik_ayarlanabilir(self):
+        g = EA.faz_grupla(self.birimler, {"envanter": {"faz_min_birim": 1}}, "")
+        self.assertEqual(len(g), 1 + 6)                                      # altyapı + 6 modülün hepsi ayrı
+
+    def test_fazlari_kur_kapsam_dosyalari_ve_eski_fazlar_silinir(self):
+        self.KVT.save_fazlar({"fazlar": [{"id": "FAZ-9", "ad": "eski", "durum": "AKTIF"}]})
+        ids = EA.modul_fazlarini_kur(self.cfg, self.tmp, "reports home")
+        self.assertEqual(ids[0], "FAZ-1")
+        fz = {f["id"]: f for f in self.KVT.load_fazlar()["fazlar"]}
+        self.assertNotIn("FAZ-9", fz)
+        self.assertEqual(fz["FAZ-1"]["durum"], "AKTIF")
+        self.assertEqual(fz["FAZ-2"]["onkosul_faz"], "FAZ-1")
+        kap = json.loads((self.tmp / "workspace/docs/faz_planlari/FAZ-2_kapsam.json").read_text(encoding="utf-8"))
+        self.assertEqual(kap["birimler"], ["rapor-0", "rapor-1", "rapor-2"])
+        self.assertTrue(any("*reports*" in g for g in kap["girdiler"]))
+
+    def test_plan_kapsami_tum_birimleri_kapsamali(self):
+        import faz_planla as FP
+        plan = {"sprints": [{"id": "P1", "name": "s", "goal": "g", "tasks": [
+            {"id": "P1-T1", "title": "a", "description": "d", "role": "web_engineer", "phase": "develop", "outputs": ["workspace/src/web/"], "depends_on": []},
+            {"id": "P1-T2", "title": "b", "description": "d", "role": "qa_lead", "phase": "test", "outputs": ["workspace/docs/qa.md"], "depends_on": ["P1-T1"]}]}]}
+        ids = ["a", "b"]
+        self.assertIn("'kapsam' alanı yok", FP.plan_dogrula(plan, None, ids)[0])
+        plan["kapsam"] = {"a": "P1-T1"}
+        self.assertTrue(any("kapsamda olmayan birim: b" in e for e in FP.plan_dogrula(plan, None, ids)))
+        plan["kapsam"] = {"a": "P1-T1", "b": "P9-T9"}
+        self.assertTrue(any("tanımsız görev" in e for e in FP.plan_dogrula(plan, None, ids)))
+        plan["kapsam"] = {"a": "P1-T1", "b": "P1-T1"}
+        self.assertEqual(FP.plan_dogrula(plan, None, ids), [])
+        self.assertEqual(FP.plan_dogrula({k: v for k, v in plan.items() if k != "kapsam"}, None, None), [])       # kapsamsız (altyapı/eski) faz etkilenmez
+
+    def test_planlama_gorevi_kapsam_ve_girdileri_icerir(self):
+        import faz_planla as FP
+        EA.modul_fazlarini_kur(self.cfg, self.tmp, "reports")
+        board = B.normalize({"sprints": [{"id": "S1", "name": "s", "order": 0, "tasks": [{"id": "S1-T1", "title": "x", "description": "", "role": "web_engineer", "phase": "develop",
+                                                                                           "outputs": ["workspace/x"], "depends_on": [], "status": B.DONE, "note": "", "talep_id": None, "order": 0, "priority": 0}]}]})
+        org = {"hierarchy": [{"id": "sprint_planner", "stage": "design", "outputs": []}, {"id": "web_engineer", "stage": "build", "outputs": ["workspace/src/web/"]}]}
+        FP.planlama_sprinti_ekle(board, {"id": "FAZ-2", "ad": "Modül: Reports", "aciklama": "a"}, org, None, kok=self.tmp)
+        t = next(t for _, t in B.all_tasks(board) if t["role"] == "sprint_planner")
+        self.assertIn("FAZ KAPSAMI", t["description"])
+        self.assertIn("rapor-0, rapor-1, rapor-2", t["description"])
+        self.assertIn("\"kapsam\"", t["description"])
+        self.assertIn("*reports*", t["description"])
+
+    def test_plani_geri_al_ve_baslamis_plan_reddedilir(self):
+        import faz_planla as FP
+        board = B.normalize({"sprints": [{"id": "S1", "name": "s", "order": 0, "tasks": [{"id": "S1-T1", "title": "x", "description": "", "role": "web_engineer", "phase": "develop",
+                                                                                           "outputs": ["workspace/x"], "depends_on": [], "status": B.DONE, "note": "", "talep_id": None, "order": 0, "priority": 0}]}]})
+        org = {"hierarchy": [{"id": "sprint_planner", "stage": "design", "outputs": []}, {"id": "web_engineer", "stage": "build", "outputs": ["workspace/src/web/"]}]}
+        FP.planlama_sprinti_ekle(board, {"id": "FAZ-1", "ad": "a", "aciklama": "a"}, org, None, kok=self.tmp)
+        plan = {"sprints": [{"id": "P1", "name": "Plan sprinti", "goal": "g", "tasks": [
+            {"id": "P1-T1", "title": "a", "description": "d", "role": "web_engineer", "phase": "develop", "outputs": ["workspace/src/web/"], "depends_on": []},
+            {"id": "P1-T2", "title": "b", "description": "d", "role": "web_engineer", "phase": "test", "outputs": ["workspace/docs/qa.md"], "depends_on": ["P1-T1"]}]}]}
+        FP.plan_yolu("FAZ-1", self.tmp).write_text(json.dumps(plan), encoding="utf-8")
+        FP.plani_uygula(board, "FAZ-1", plan, None, None, kok=self.tmp)
+        self.assertTrue(any(s["name"] == "Plan sprinti" for s in board["sprints"]))
+        uyg = next(t for s in board["sprints"] if s["name"] == "Plan sprinti" for t in s["tasks"])
+        B.mark(board, uyg["id"], B.RUNNING, "")
+        ok, msg = FP.plani_geri_al(board, "FAZ-1", self.tmp)
+        self.assertFalse(ok)
+        B.mark(board, uyg["id"], B.DONE, "")
+        self.assertFalse(FP.plani_geri_al(board, "FAZ-1", self.tmp)[0])                 # bitmiş görev: zorla gerekir
+        B.mark(board, uyg["id"], B.TODO, "")
+        ok, msg = FP.plani_geri_al(board, "FAZ-1", self.tmp)
+        self.assertTrue(ok, msg)
+        self.assertEqual([s["name"] for s in board["sprints"]], ["s"])
+        self.assertFalse(FP.uygulandi_yolu("FAZ-1", self.tmp).exists())
 
 
 SABLON_BASLIK = "Ana şablon"
