@@ -82,30 +82,8 @@ kosucu_pid() { cat workspace/.lock 2>/dev/null; }
 # ---------------------------------------------------------------- alt komutlar
 case "${1:-}" in
   --usage|--kullanim)
-      if [ "${STUDIO_BACKEND:-agy}" = "devin" ]; then
-        echo "── Devin AI Backend ──────────────────────────────"
-        (devin auth status 2>/dev/null || ~/.local/bin/devin auth status 2>/dev/null || echo "devin CLI oturum durumu alınamadı")
-      else
-        echo "── Antigravity Model Kotası ─────────────────────────"
-        (agy -p="/usage" 2>/dev/null || ~/.local/bin/agy -p="/usage")
-      fi
-      echo
-      $PY - <<'PYEOF'
-import json, pathlib
-root = pathlib.Path(".")
-idx = root / "workspace/.trace/index.jsonl"
-if idx.exists() and idx.read_text().strip():
-    rows = [json.loads(l) for l in idx.read_text().splitlines() if l.strip()]
-    tin = sum(r.get("tokens_in", 0) for r in rows)
-    tout = sum(r.get("tokens_out", 0) for r in rows)
-    tth = sum(r.get("tokens_thinking", 0) for r in rows)
-    print("── Proje İçi Token Özeti ────────────────────────────")
-    print(f"Toplam Çağrı  : {len(rows)}")
-    print(f"Girdi Token   : {tin:,}")
-    print(f"Çıktı Token   : {tout:,}")
-    print(f"Düşünce Token : {tth:,}")
-    print(f"Toplam Token  : {(tin + tout):,}")
-PYEOF
+      # Üç sağlayıcının (Gemini/agy, Claude, Devin) kalan kullanımı + bu projenin sayaçları (scripts/kullanim.py)
+      $PY scripts/kullanim.py
       exit 0 ;;
   --kurtar|--deploy|--recovery)
       $PY scripts/recovery_sentinel.py
