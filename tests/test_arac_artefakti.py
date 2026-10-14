@@ -151,3 +151,10 @@ class BetikSozdizimi(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SatirOrtasiIsaret301(unittest.TestCase):
+    def test_anlatimin_hemen_ardindan_gelen_dosya_isareti_eslesir(self):
+        import studio_engine as E
+        t = "Kaynağı inceliyorum.Son doğrulama.=== FILE: a-b.md ===\n# A\ngövde\n=== FILE: c.md ===\n## C\n===== FILE: d.md =====\nx"
+        self.assertEqual([m.group(1) for m in E.FILE_MARKER.finditer(t)], ["a-b.md", "c.md", "d.md"])
