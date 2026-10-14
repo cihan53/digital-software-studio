@@ -336,16 +336,16 @@ def otomatik_ilerlet(board: dict, kok: Path = ROOT) -> str | None:
     return yeni
 
 
-def plani_geri_al(board: dict, faz_id: str, kok: Path = ROOT) -> tuple[bool, str]:
+def plani_geri_al(board: dict, faz_id: str, kok: Path = ROOT, zorla: bool = False) -> tuple[bool, str]:
     """Fazın planlama sprintini ve plandan eklenen sprintleri panodan çıkarır, plan dosyalarını siler (#303).
-    Plan sprintlerinde başlamış (RUNNING/DONE) görev varsa reddeder. (başarılı, mesaj)"""
+    Plan sprintlerinde çalışan (RUNNING) görev varsa reddeder; bitmiş (DONE) görev varsa yalnız zorla=True ile (üretilen dosyalar diskte kalır). (başarılı, mesaj)"""
     plan_t, _ = _planlama_gorevleri(board, faz_id)
     plan, _ = plan_oku(faz_id, kok) if plan_yolu(faz_id, kok).exists() else (None, [])
     adlar = {s_["name"] for s_ in (plan or {}).get("sprints", [])}
     silinecek = [s_ for s_ in board.get("sprints", []) if s_["name"] in adlar or (plan_t is not None and any(t["id"] == plan_t["id"] for t in s_["tasks"]))]
     for s_ in silinecek:
         for t in s_["tasks"]:
-            if t["status"] in (B.RUNNING, B.DONE) and not B.is_human(t) and s_["name"] in adlar:
+            if s_["name"] in adlar and not B.is_human(t) and (t["status"] == B.RUNNING or (t["status"] == B.DONE and not zorla)):
                 return False, f"{t['id']} başlamış/bitmiş ({t['status']}); plan geri alınamaz"
     ids = {s_["id"] for s_ in silinecek}
     board["sprints"] = [s_ for s_ in board["sprints"] if s_["id"] not in ids]

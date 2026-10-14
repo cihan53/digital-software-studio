@@ -383,11 +383,15 @@ def faz_grupla(birimler: list[dict], cfg: dict | None = None, brief: str = "") -
     moduller: dict[str, list[dict]] = {}
     for b in birimler:
         moduller.setdefault(b["modul"], []).append(b)
-    metin = (brief or "").lower()
+    metin = re.sub(r"\S*/\S*", " ", (brief or "").lower())          # yol/URL içindeki kelimeler (…/PROJECT/…) modül adı sayılmaz
 
     def sira(m):
-        i = min([x for x in (metin.find(m.lower()), metin.find(m.lower().replace("-", " "))) if x >= 0] or [10 ** 9])
-        return (i, list(moduller).index(m))
+        adaylar = []
+        for ad in {m.lower(), m.lower().replace("-", " ")}:
+            mm = re.search(r"(?<![a-z0-9-])" + re.escape(ad) + r"(?![a-z0-9-])", metin)
+            if mm:
+                adaylar.append(mm.start())
+        return (min(adaylar) if adaylar else 10 ** 9, list(moduller).index(m))
     sirali = sorted(moduller, key=sira)
     esik = faz_min_birim(cfg)
     anildi = lambda m: sira(m)[0] < 10 ** 9                  # noqa: E731  brief'te adı geçen modül küçük olsa da kendi fazını alır (pilot modüller)
@@ -425,7 +429,8 @@ def modul_fazlarini_kur(cfg: dict, kok: Path = ROOT, brief: str = "") -> list[st
         return []
     if not brief:
         try:
-            brief = (kok / "proje_kapsami.md").read_text(encoding="utf-8") if (kok / "proje_kapsami.md").exists() else (kok / "workspace/docs/proje_kapsami.md").read_text(encoding="utf-8")
+            yol = next((y for y in (kok / "workspace/docs/proje_kapsami.md", kok / "proje_kapsami.md") if y.exists()), None)
+            brief = yol.read_text(encoding="utf-8") if yol else ""
         except OSError:
             brief = ""
     gruplar = faz_grupla(birimler, cfg, brief)
@@ -650,7 +655,7 @@ def faz_yeniden_kur(board: dict, org: dict | None, cfg: dict, kok: Path = ROOT) 
     import karar_verici_triage as KVT
     for f in KVT.load_fazlar().get("fazlar", []):
         if FP.plan_yolu(f["id"], kok).exists() or FP.uygulandi_yolu(f["id"], kok).exists() or FP._planlama_gorevleri(board, f["id"])[0] is not None:
-            ok, msg = FP.plani_geri_al(board, f["id"], kok)
+            ok, msg = FP.plani_geri_al(board, f["id"], kok, zorla=True)
             if not ok:
                 return False, msg
     ids = modul_fazlarini_kur(cfg, kok)
@@ -663,6 +668,14 @@ def faz_yeniden_kur(board: dict, org: dict | None, cfg: dict, kok: Path = ROOT) 
     durum_yaz(durum, kok)
     B.refresh(board)
     B.save(board)
+    try:                                                         # eski plan sprintiyle aynı kimlikli insan kapısının DB'deki eski ONAY durumu yeni plana geçmesin
+        conn = B.db_conn()
+        for t in next((s_["tasks"] for s_ in board["sprints"] if s_["id"] == sid), []):
+            conn.execute("UPDATE pano_gorevleri SET durum = ?, not_ = '' WHERE id = ?", (B.READY if t["role"] != B.HUMAN_ROLE and not t.get("depends_on") else B.TODO, t["id"]))
+        conn.commit()
+        conn.close()
+    except Exception:                                            # noqa: BLE001
+        pass
     return True, f"{len(ids)} faz kuruldu; {ids[0]} planlaması {sid} olarak eklendi"
 
 
