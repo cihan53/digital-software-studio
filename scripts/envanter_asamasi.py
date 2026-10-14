@@ -390,8 +390,9 @@ def faz_grupla(birimler: list[dict], cfg: dict | None = None, brief: str = "") -
         return (i, list(moduller).index(m))
     sirali = sorted(moduller, key=sira)
     esik = faz_min_birim(cfg)
-    buyuk = [m for m in sirali if len(moduller[m]) >= esik]
-    kucuk = [m for m in sirali if len(moduller[m]) < esik]
+    anildi = lambda m: sira(m)[0] < 10 ** 9                  # noqa: E731  brief'te adı geçen modül küçük olsa da kendi fazını alır (pilot modüller)
+    buyuk = [m for m in sirali if len(moduller[m]) >= esik or anildi(m)]
+    kucuk = [m for m in sirali if m not in buyuk]
     fazlar = [{"ad": "Ortak altyapı ve kabuk", "moduller": [], "birimler": [],
                "aciklama": ("Nuxt iskeleti, tasarım token'ları, ana şablon (layout/kabuk), ortak bileşen/widget kataloğu, yerel ortam (yerel_ortam.sh), mock katmanı ve CI. "
                             "Ekran birimi içermez: modül fazları kendi ekranlarını bu temelin üstüne yapar.")}]

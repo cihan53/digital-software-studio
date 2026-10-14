@@ -342,6 +342,11 @@ class ModulFazlari303(unittest.TestCase):
         self.assertEqual(sorted(kucuk["moduller"]), ["profile", "project", "system"])
         self.assertEqual(sum(len(x["birimler"]) for x in g), len(self.birimler))   # hiçbir birim düşmez
 
+    def test_briefte_gecen_kucuk_modul_kendi_fazini_alir(self):
+        g = EA.faz_grupla(self.birimler, self.cfg, "pilot: system ekranı önce")
+        self.assertEqual([x["ad"] for x in g][1], "Modül: System")
+        self.assertNotIn("system", g[-1]["moduller"])
+
     def test_esik_ayarlanabilir(self):
         g = EA.faz_grupla(self.birimler, {"envanter": {"faz_min_birim": 1}}, "")
         self.assertEqual(len(g), 1 + 6)                                      # altyapı + 6 modülün hepsi ayrı
