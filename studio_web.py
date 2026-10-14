@@ -797,6 +797,12 @@ class Handler(BaseHTTPRequestHandler):
                                    "talepler": MT.load_data().get("talepler", [])})
             except Exception as e:
                 return self._json({"ok": False, "mesaj": str(e)}, 500)
+        if path == "/api/kullanim":
+            try:
+                import kullanim as KU
+                return self._json({"ok": True, **KU.getir(ROOT, zorla=q.get("yenile", [""])[0] == "1")})
+            except Exception as e:
+                return self._json({"ok": False, "mesaj": str(e)}, 500)
         if path == "/api/fazlar":
             try:
                 import karar_verici_triage as KVT

@@ -127,6 +127,7 @@
   <div class="sekme" data-t="ortam" onclick="sekmeAc('ortam')">🖥 Yerel Ortam</div>
   <div class="sekme" data-t="onz" onclick="sekmeAc('onz')">🌐 Önizleme</div>
   <div class="sekme" data-t="dok" onclick="sekmeAc('dok')">📚 Dokümanlar</div>
+  <div class="sekme" data-t="kul" onclick="sekmeAc('kul')">📊 Kullanım</div>
   <div class="sekme" data-t="onay" onclick="sekmeAc('onay')">✅ Onaylar <span id="onay-sayi" class="rozet r-FAILED gizli"></span></div>
 </div>
 <div class="icerik">
@@ -138,6 +139,12 @@
       son sırayı framework bağımlılık ve faz kurallarıyla belirler.</div>
     <div class="filtre" id="pano-filtre"></div>
     <div id="pano">Yükleniyor…</div>
+  </section>
+
+  <section id="s-kul" class="gizli">
+    <div class="filtre"><button onclick="kullanimYukle(true)">Yenile</button> <span id="kul-zaman" class="soluk"></span>
+      <span class="soluk">Kalan kullanım, sağlayıcı CLI'larından okunur (model çağrısı harcamaz); hesap geneldir, tüm projeler için aynıdır.</span></div>
+    <div id="kul-icerik">Yükleniyor…</div>
   </section>
 
   <section id="s-ortam" class="gizli"></section>
@@ -250,12 +257,41 @@ function modalKapat(){ document.getElementById('modal').classList.add('gizli'); 
 
 function sekmeAc(t){
   document.querySelectorAll('.sekme').forEach(x=>x.classList.toggle('aktif', x.dataset.t===t));
-  for (const s of ['pano','canli','akis','audit','cagri','talep','faz','brief','onay','dok','ortam','onz'])
+  for (const s of ['pano','canli','akis','audit','cagri','talep','faz','brief','onay','dok','ortam','onz','kul'])
     document.getElementById('s-'+s).classList.toggle('gizli', s!==t);
   if(t==='akis') akisYukle(); if(t==='audit') auditYukle(); if(t==='cagri') cagriYukle();
-  if(t==='talep') talepYukle(); if(t==='canli') canliYukle(); if(t==='faz') fazYukle(); if(t==='onay') onayYukle(true); if(t==='brief') briefYukle(); if(t==='dok') dokYukle(); if(t==='ortam') ortamYukle('ortam'); if(t==='onz') ortamYukle('onz');
+  if(t==='talep') talepYukle(); if(t==='canli') canliYukle(); if(t==='faz') fazYukle(); if(t==='onay') onayYukle(true); if(t==='brief') briefYukle(); if(t==='dok') dokYukle(); if(t==='ortam') ortamYukle('ortam'); if(t==='onz') ortamYukle('onz'); if(t==='kul') kullanimYukle(false);
 }
 let aktifSekme='pano';
+
+// ---------- kullanım / kota ----------
+let _kulH=null;
+async function kullanimYukle(zorla){
+  clearTimeout(_kulH);
+  try{
+    const d=await(await fetch('/api/kullanim'+(zorla?'?yenile=1':''))).json();
+    const renk=k=>k==null?'#888':(k>=50?'#2e9e5b':(k>=20?'#e0a020':'#d64545'));
+    const kart=(a,s)=>{
+      const satir=(s.satirlar||[]).map(r=>{
+        const k=r.kalan;
+        const bar=k==null?`<span class="soluk">${esc(r.durum||'-')}</span>`:
+          `<div style="background:#2223;border-radius:5px;height:14px;width:100%"><div style="width:${k}%;background:${renk(k)};height:14px;border-radius:5px"></div></div>`;
+        return `<tr><td>${esc(r.grup)}</td><td>${esc(r.pencere)}</td><td style="min-width:160px">${bar}</td><td><b style="color:${renk(k)}">${k==null?'':'%'+k+' kalan'}</b></td><td class="soluk">sıfırlanma: ${esc(r.sifirlanma||'-')}</td></tr>`;}).join('');
+      const oturum=('oturum' in s)?`<div>Oturum: <b style="color:${s.oturum?'#2e9e5b':'#d64545'}">${s.oturum?'açık':'KAPALI'}</b></div>`:'';
+      return `<div class="kart" style="margin-bottom:12px"><h3 style="margin:0 0 8px">${esc(s.ad||a)}</h3>${oturum}
+        ${satir?`<table class="tablo"><tbody>${satir}</tbody></table>`:''}
+        ${s.not?`<div class="soluk">${esc(s.not)}</div>`:''}${s.hata?`<div style="color:#d64545">⚠ ${esc(s.hata)}</div>`:''}</div>`;};
+    let h=Object.entries(d.saglayicilar||{}).map(([a,s])=>kart(a,s)).join('');
+    const p=d.proje||{}, g=p.gunluk;
+    h+=`<div class="kart"><h3 style="margin:0 0 8px">Bu proje</h3>
+      <div>Çağrı: <b>${p.cagri||0}</b> (bugün ${p.bugun_cagri||0}) · token girdi <b>${(p.token_in||0).toLocaleString()}</b> / çıktı <b>${(p.token_out||0).toLocaleString()}</b></div>
+      ${g?`<div>Günlük kota: <b>${g.gorev}/${g.sinir_gorev}</b> görev · <b>$${(g.maliyet||0).toFixed(2)}/$${(g.sinir_butce||0).toFixed(2)}</b></div>`:''}
+      <div class="soluk">Sağlayıcıya göre çağrılar: ${esc(JSON.stringify(p.backend||{}))}</div></div>`;
+    document.getElementById('kul-icerik').innerHTML=h||'<div class="soluk">Veri yok.</div>';
+    document.getElementById('kul-zaman').textContent=(d.zaman?('Son: '+d.zaman):'')+(d.yenileniyor?' · yenileniyor…':'');
+    if(d.yenileniyor || !d.zaman) _kulH=setTimeout(()=>{ if(document.getElementById('s-kul') && !document.getElementById('s-kul').classList.contains('gizli')) kullanimYukle(false); }, 4000);
+  }catch(e){ document.getElementById('kul-icerik').textContent='Kullanım okunamadı: '+e; }
+}
 
 // ---------- özet ----------
 async function ozetYukle(){
