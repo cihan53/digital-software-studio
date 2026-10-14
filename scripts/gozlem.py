@@ -45,6 +45,14 @@ def bekleme_nedeni(board: dict | None, ctrl: dict, kosucu: bool, onay_bekliyor: 
         return {"kod": "durduruluyor", "mesaj": "Koşucu durduruluyor: çalışan görev bitince duracak.", "eylem": ""}
     if ctrl.get("paused"):
         return {"kod": "duraklatildi", "mesaj": "Duraklatıldı: görevler başlamıyor.", "eylem": "Sürdür düğmesi / ./basla.sh --surdur"}
+    lb = ctrl.get("limit_bekliyor") if kosucu else None
+    if lb:
+        try:
+            lb = json.loads(lb) if isinstance(lb, str) else lb
+        except ValueError:
+            lb = {"pencereler": str(lb)}
+        return {"kod": "kota_sifirlanma", "mesaj": f"{lb.get('backend', 'AI')} kotası doldu ({lb.get('pencereler', '')}); {lb.get('sifirlanma', '?')}'de sıfırlanınca {lb.get('gorev', 'görev')} kaldığı yerden sürecek.",
+                "eylem": "Beklemek ya da motoru değiştirmek (panel → Motor); durdurmak için Durdur"}
     rb = ctrl.get("referans_bekliyor") if kosucu else None
     if rb:
         try:
