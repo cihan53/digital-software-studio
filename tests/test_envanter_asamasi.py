@@ -407,6 +407,8 @@ class ModulFazlari303(unittest.TestCase):
         B.mark(board, uyg["id"], B.RUNNING, "")
         ok, msg = FP.plani_geri_al(board, "FAZ-1", self.tmp)
         self.assertFalse(ok)
+        B.mark(board, uyg["id"], B.DONE, "")
+        self.assertFalse(FP.plani_geri_al(board, "FAZ-1", self.tmp)[0])                 # bitmiş görev: zorla gerekir
         B.mark(board, uyg["id"], B.TODO, "")
         ok, msg = FP.plani_geri_al(board, "FAZ-1", self.tmp)
         self.assertTrue(ok, msg)
