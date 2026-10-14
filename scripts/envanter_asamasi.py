@@ -247,6 +247,29 @@ def dosya_eksikleri(birim_id: str, kok: Path = ROOT) -> list[str]:
     return eksik
 
 
+_ISARET = re.compile(r"={3,}[ \t]*FILE:[ \t]*([^\n=]+?)[ \t]*={3,}[ \t\r]*$", re.MULTILINE)
+
+
+def cikti_kurtar(kok: Path = ROOT) -> list[str]:
+    """Çıktıda '=== FILE: x ===' işareti okunamadığı için ekranlar/_CIKTI.md'ye dökülmüş birim dosyalarını geri yazar (#301). Yalnız eksik olanları yazar."""
+    p = kok / EKRAN_DIZIN / "_CIKTI.md"
+    if not p.exists():
+        return []
+    m = p.read_text(encoding="utf-8", errors="ignore")
+    isaretler = list(_ISARET.finditer(m))
+    yazilan = []
+    for i, x in enumerate(isaretler):
+        ad = x.group(1).strip().lstrip("/")
+        hedef = (kok / EKRAN_DIZIN / ad).resolve()
+        if "/" in ad or not ad.endswith(".md") or (kok / EKRAN_DIZIN).resolve() not in hedef.parents or hedef.exists():
+            continue
+        govde = m[x.end(): isaretler[i + 1].start() if i + 1 < len(isaretler) else len(m)].strip("\r\n")
+        if len(govde.strip()) > 200:
+            hedef.write_text(govde + "\n", encoding="utf-8")
+            yazilan.append(ad[:-3])
+    return yazilan
+
+
 def indeks_yaz(birimler: list[dict], kok: Path = ROOT) -> None:
     L = ["# Envanter indeksi (motor üretti)", "", f"{len(birimler)} birim. Ayrıntı: `{EKRAN_DIZIN}/<id>.md`.", "",
          "| id | Ad | Tür | Rota | Modül | Üst | Dosya |", "|---|---|---|---|---|---|---|"]
@@ -440,6 +463,9 @@ def kontrol(board: dict, org: dict | None = None, cfg: dict | None = None, kok: 
         return True
     if asama == "envanter":
         birimler, _ = rota_oku(cfg, kok)
+        kurtarilan = cikti_kurtar(kok)
+        if kurtarilan:
+            B.audit("engine", "envanter_cikti_kurtarildi", detay={"birimler": kurtarilan})
         gorevler = [t for s in board["sprints"] if s["id"] in durum.get("sprintler", []) for t in s["tasks"]]
         if not gorevler or any(t["status"] not in B.TERMINAL for t in gorevler):
             return False
@@ -464,7 +490,9 @@ def kontrol(board: dict, org: dict | None = None, cfg: dict | None = None, kok: 
             return True
         indeks_yaz(birimler, kok)
         durum.update(asama="tasarim", eksik_birimler=sorted(eksik_toplam))
-        sablon, tasarim = _tasarim_gorevleri(birimler, cfg)
+        if eksik_toplam:                                                    # envanteri çıkmayan birim için tasarım/önizleme açılmaz; kapsam denetimi bulur (#301)
+            (kok / DIZIN / "_eksikler.md").write_text("# Envanteri çıkarılamayan birimler\n\n" + "\n".join(f"- `{i}`: {', '.join(e[:2])}" for i, e in sorted(eksik_toplam.items())) + "\n", encoding="utf-8")
+        sablon, tasarim = _tasarim_gorevleri([b for b in birimler if b["id"] not in eksik_toplam], cfg)
         ids = _gorev_ekle(board, "Ana şablon tasarımı", "Layout/kabuk ve ortak bileşenlerin ana şablonu", [sablon])
         sablon_id = [t["id"] for s in board["sprints"] if s["id"] == ids[0] for t in s["tasks"]][0]
         for g in tasarim:
