@@ -1345,6 +1345,7 @@ def control_state() -> dict:
         "force": is_set("force"),
         "reload": is_set("reload"),
         "referans_bekliyor": value_of("referans_bekliyor"),
+        "limit_bekliyor": value_of("limit_bekliyor"),
     }
 
 
