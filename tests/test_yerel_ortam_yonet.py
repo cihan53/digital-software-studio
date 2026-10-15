@@ -77,3 +77,48 @@ class YerelOrtam(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PortSozlesmesi305(unittest.TestCase):
+    def setUp(self):
+        self.k = Path(tempfile.mkdtemp()).resolve()
+        (self.k / "workspace").mkdir()
+        import json
+        (self.k / "workspace" / "studio.config.json").write_text(json.dumps(
+            {"live": {"ports": [3200]}, "deney": {"portlar": {"nuxt": 3200, "backend": 8280, "mock": 4210, "panel": 8092}}}), encoding="utf-8")
+
+    def tearDown(self):
+        YO.durdur(self.k, [3200])
+        shutil.rmtree(self.k, ignore_errors=True)
+
+    def test_ortam_degiskenleri_configten_tum_adlarla(self):
+        e = YO.ortam_degiskenleri(self.k)
+        for ad in ("WEB_PORT", "NUXT_PORT", "PORT", "FRONTEND_PORT", "APP_PORT", "DEV_PORT"):
+            self.assertEqual(e[ad], "3200")
+        self.assertEqual((e["BACKEND_PORT"], e["API_PORT"], e["MOCK_PORT"]), ("8280", "8280", "4210"))
+
+    def test_sabit_varsayilan_port_uyarisi(self):
+        (self.k / "workspace" / "yerel_ortam.sh").write_text('WEB_PORT="${WEB_PORT:-3100}"\nMOCK_PORT="${MOCK_PORT:-4210}"\n', encoding="utf-8")
+        u = YO.port_uyarilari(self.k)
+        self.assertEqual(len(u), 1)
+        self.assertIn("3100", u[0])
+        (self.k / "workspace" / "yerel_ortam.sh").write_text('WEB_PORT="${WEB_PORT:-3200}"\n', encoding="utf-8")
+        self.assertEqual(YO.port_uyarilari(self.k), [])
+
+    def test_baslat_betige_sozlesmeyi_verir(self):
+        cikti = self.k / "env.txt"
+        (self.k / "workspace" / "yerel_ortam.sh").write_text(f'echo "$WEB_PORT $PORT $MOCK_PORT" > {cikti}\nsleep 1\n', encoding="utf-8")
+        self.assertTrue(YO.baslat(self.k, [3200])["ok"])
+        for _ in range(40):
+            if cikti.exists() and cikti.read_text().strip():
+                break
+            time.sleep(0.1)
+        self.assertEqual(cikti.read_text().split(), ["3200", "3200", "4210"])        # betik 3100 varsaysa bile config portu gelir
+
+    def test_devops_rolu_port_sozlesmesini_bilir(self):
+        import json
+        org = json.loads((ROOT / "org_chart.json").read_text(encoding="utf-8"))
+        d = next(a for a in org["hierarchy"] if a["id"] == "devops_engineer")
+        self.assertIn("PORT SÖZLEŞMESİ", d["system_prompt"])
+
+
