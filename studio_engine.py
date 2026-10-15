@@ -2660,6 +2660,31 @@ def _auto_talep_uat(task: dict, uat_cikti: str, kaynak: str = "UAT",
         return None
 
 
+def _proje_import_taramasi(sprint_id: str) -> None:
+    """Sprint bitince TÜM kaynakta çözülemeyen/olmayan adlı import taraması (#309): görev bazlı kapı yalnız değişen dosyalara baktığı için
+    başka görevin yazdığı dosyadaki uyumsuzluk (ör. getDevelopers ≠ getDeveloperList) ortam açılana dek görünmüyordu. Bulgu varsa tek [BUILD] talebi açılır."""
+    try:
+        import kalite_kapilari as K
+        import musteri_talepleri as MT
+        kok = ROOT / "workspace" / "src"
+        if not kok.is_dir():
+            return
+        dosyalar = [str(p.relative_to(ROOT)) for p in kok.rglob("*")
+                    if p.is_file() and p.suffix in K.SRC_FILE_EXTS and not any(x in p.parts for x in ("node_modules", ".nuxt", ".output", "dist", ".git"))]
+        hatalar = K.import_cozumleme_hatalari(dosyalar)
+        if not hatalar:
+            return
+        if any((t.get("baslik") or "").startswith("[BUILD] TARAMA") and t.get("durum") not in ("COZULDU", "IPTAL") for t in MT.load_data().get("talepler", [])):
+            return
+        print(f"\n   ⚠️  [PROJE İMPORT TARAMASI] {len(hatalar)} çözülemeyen/olmayan import:")
+        for h in hatalar[:6]:
+            print(f"         - {h}")
+        _auto_talep_uat({"id": f"TARAMA-{sprint_id}", "title": "proje geneli import taraması", "role": "web_engineer", "description": ""},
+                        "\n".join(hatalar[:40]), kaynak="BUILD", neden="proje geneli import taraması")
+    except Exception as e:                                                  # noqa: BLE001
+        print(f"   [uyarı] proje import taraması: {e}", file=sys.stderr)
+
+
 def render_kapisi_kostur(task: dict) -> str:
     """Canlı sistem gerektiren görevlerde (UAT, ziyaretçi testi) sayfaların tarayıcıda GERÇEKTEN çizildiğini doğrular
     (scripts/render_kapisi.mjs). Başarısızlık mevcut talep/telafi akışına girer. Dönen metin görev notuna eklenir. Issue #217."""
@@ -3909,6 +3934,7 @@ def run_board(org: dict, brief: str, once: bool = False,
             curr_s["_summary_printed"] = True
             print_sprint_action_summary(curr_s)
             B.save(board)
+            _proje_import_taramasi(curr_s["id"])
 
         if not ok:
             print(f"\n[HATA] {task['id']} başarısız — sonraki sprint açılmayacak.")

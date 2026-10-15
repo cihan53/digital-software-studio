@@ -346,6 +346,87 @@ def betik_sozdizimi_hatalari(files: list[str]) -> list[str]:
     return hatalar
 
 
+_ADLI_IMPORT_RE = re.compile(r"""import\s+(?!type\b)(?:([A-Za-z_$][\w$]*)\s*,\s*)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]""", re.S)
+_VARSAYILAN_IMPORT_RE = re.compile(r"""import\s+(?!type\b)([A-Za-z_$][\w$]*)\s*(?:,\s*\{[^}]*\}\s*)?from\s*['"]([^'"]+)['"]""")
+_EXPORT_DECL_RE = re.compile(r"\bexport\s+(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?(?:const|let|var|function\s*\*?|class|enum|interface|type|namespace)\s+([A-Za-z_$][\w$]*)")
+_EXPORT_LISTE_RE = re.compile(r"\bexport\s*(?:type\s*)?\{([^}]*)\}", re.S)
+JS_HEDEF_UZANTILARI = (".ts", ".tsx", ".js", ".jsx", ".mjs")
+
+
+def _hedef_dosya(taban: Path, spec: str) -> Path | None:
+    for ext in RESOLVE_EXTS:
+        p = Path(str(taban) + ext)
+        if p.is_file():
+            return p
+    if taban.is_dir():
+        for idx in INDEX_FILES:
+            if (taban / idx).is_file():
+                return taban / idx
+    return None
+
+
+def _dis_aktarimlar(hedef: Path) -> tuple[set[str], bool, bool] | None:
+    """(adlı dışa aktarımlar, varsayılan var mı, bilinmeyen/dinamik mi). Yalnız JS/TS hedefler; belirsizse None (denetlenmez)."""
+    if hedef.suffix not in JS_HEDEF_UZANTILARI:
+        return None
+    try:
+        m = hedef.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    if re.search(r"\bexport\s*\*\s*(?:as\s+\w+\s*)?from\b", m) or "module.exports" in m or re.search(r"\bexports\.\w+\s*=", m):
+        return None                                                       # wildcard/CommonJS: dışa aktarım listesi kesin bilinemez
+    adlar = set(_EXPORT_DECL_RE.findall(m))
+    for blok in _EXPORT_LISTE_RE.findall(m):
+        for parca in blok.split(","):
+            p = re.sub(r"^\s*type\s+", "", parca.strip())
+            if not p:
+                continue
+            adlar.add(re.split(r"\s+as\s+", p)[-1].strip())            # 'a as b' → dışarıdan b görünür
+    varsayilan = bool(re.search(r"\bexport\s+default\b", m)) or "default" in adlar
+    return adlar, varsayilan, False
+
+
+def adli_import_hatalari(p: Path, metin: str, kok: Path | None) -> list[str]:
+    """Hedef modülde olmayan adlandırılmış/varsayılan import'lar (#309). Yalnız çözülebilen JS/TS hedefler; yanlış pozitiften kaçınmak için belirsizse sessiz."""
+    import difflib
+    hatalar = []
+    rel = _rel_veya_tam(p)
+
+    def hedef_bul(spec: str) -> Path | None:
+        if spec.startswith("."):
+            return _hedef_dosya(p.parent / spec, spec)
+        if kok is not None and re.match(r"(?:#shared|~~|~|@@|@)/", spec):
+            for b in _alias_adaylari(kok, spec):
+                h = _hedef_dosya(b, spec)
+                if h:
+                    return h
+        return None
+
+    for varsayilan_ad, liste, spec in _ADLI_IMPORT_RE.findall(metin):
+        hedef = hedef_bul(spec)
+        bilgi = _dis_aktarimlar(hedef) if hedef else None
+        if not bilgi:
+            continue
+        adlar, var_default, _ = bilgi
+        for parca in liste.split(","):
+            p_ = parca.strip()
+            if not p_ or p_.startswith("type "):
+                continue
+            ad = re.split(r"\s+as\s+", p_)[0].strip()
+            if ad and ad not in adlar:
+                oner = difflib.get_close_matches(ad, sorted(adlar), n=2, cutoff=0.5)
+                hatalar.append(f"{rel}: '{ad}' ('{spec}' → {_rel_veya_tam(hedef)}) içinde dışa aktarılmıyor"
+                               + (f"; en yakın: {', '.join(oner)}" if oner else "") + (f" (dışa aktarılanlar: {', '.join(sorted(adlar)[:8])})" if adlar else ""))
+        if varsayilan_ad and not var_default:
+            hatalar.append(f"{rel}: varsayılan import '{varsayilan_ad}' ('{spec}') için hedefte 'export default' yok")
+    for ad, spec in _VARSAYILAN_IMPORT_RE.findall(metin):
+        hedef = hedef_bul(spec)
+        bilgi = _dis_aktarimlar(hedef) if hedef else None
+        if bilgi and not bilgi[1] and not any(f"varsayılan import '{ad}'" in h for h in hatalar):
+            hatalar.append(f"{rel}: varsayılan import '{ad}' ('{spec}') için hedefte 'export default' yok")
+    return hatalar
+
+
 def import_cozumleme_hatalari(files: list[str]) -> list[str]:
     """Değişen src dosyalarındaki çözülemeyen relative ve (Nuxt uygulamasında) alias import'larını döner."""
     hatalar = []
@@ -369,6 +450,8 @@ def import_cozumleme_hatalari(files: list[str]) -> list[str]:
                 if not _alias_cozulur_mu(kok, spec):
                     aranan = ", ".join(_rel_veya_tam(b) for b in _alias_adaylari(kok, spec))
                     hatalar.append(f"{rel}: '{spec}' çözülemedi (alias; aranan: {aranan}[.ts|.js|.vue|/index...])")
+        if rel.endswith((".ts", ".tsx", ".js", ".jsx", ".mjs")):                      # .vue dosyalarında script bloğu ayrıştırılmaz (yanlış pozitif riski)
+            hatalar += adli_import_hatalari(p, metin, kok)
     return hatalar
 
 
