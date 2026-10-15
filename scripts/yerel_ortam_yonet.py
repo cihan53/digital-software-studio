@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -59,6 +60,37 @@ def onizleme_komutu(kok: Path = ROOT) -> str | None:
     port = onizleme_port(kok)
     arg = f"--port {port}" if pm == "pnpm" else f"-- --port {port}"
     return f"cd {shlex.quote(str(app))} && {pm} run build && {pm} run preview {arg}"
+
+
+def ortam_degiskenleri(kok: Path = ROOT) -> dict[str, str]:
+    """PORT SÖZLEŞMESİ (#305): yerel ortam betiği portlarını bu değişkenlerden okur. Değerler workspace/studio.config.json'dan
+    (live.ports[0] = web, deney.portlar = backend/mock/panel) gelir; çok kollu kurulumda başka kolun portuna dokunulmaz."""
+    c = _cfg(kok)
+    pt = (c.get("deney") or {}).get("portlar") or {}
+    canli = (c.get("live") or {}).get("ports") or []
+    web = int(canli[0]) if canli else int(pt.get("nuxt") or 3000)
+    env = {n: str(web) for n in ("WEB_PORT", "NUXT_PORT", "PORT", "FRONTEND_PORT", "APP_PORT", "DEV_PORT")}
+    if pt.get("backend"):
+        env.update({n: str(pt["backend"]) for n in ("BACKEND_PORT", "API_PORT")})
+    if pt.get("mock"):
+        env["MOCK_PORT"] = str(pt["mock"])
+    return env
+
+
+_VARSAYILAN_PORT_RX = re.compile(r"\$\{(?:WEB_PORT|NUXT_PORT|PORT|FRONTEND_PORT|APP_PORT|DEV_PORT|MOCK_PORT|BACKEND_PORT|API_PORT):-(\d{4,5})\}")
+
+
+def port_uyarilari(kok: Path = ROOT) -> list[str]:
+    """Betikte sabit yazılmış varsayılan portlar sözleşmedeki portlardan farklıysa uyarı (ortam değişkeni verilse bile başka kolun portunu temizleyebilir, kill_port)."""
+    b = betik(kok)
+    if not b:
+        return []
+    izinli = set(ortam_degiskenleri(kok).values())
+    try:
+        metin = b.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return []
+    return sorted({f"betikte sabit varsayılan port {p} (sözleşme: {', '.join(sorted(izinli))})" for p in _VARSAYILAN_PORT_RX.findall(metin) if p not in izinli})
 
 
 def betik(kok: Path = ROOT, profil: str = "yerel_ortam") -> Path | None:
@@ -147,7 +179,13 @@ def baslat(kok: Path = ROOT, portlar_: list[int] | None = None, profil: str = "y
     log = open(_logf(kok, profil), "ab")
     log.write(f"\n=== {time.strftime('%Y-%m-%d %H:%M:%S')} başlatılıyor: {ad} ===\n".encode())
     log.flush()
-    p = subprocess.Popen(["bash", "-c", komut], cwd=kok, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+    ortam = {**os.environ, **ortam_degiskenleri(kok)}
+    if profil == "yerel_ortam":
+        for u in port_uyarilari(kok):
+            log.write(f"[studio] UYARI: {u}\n".encode())
+        log.write(f"[studio] port sözleşmesi: WEB_PORT/NUXT_PORT/PORT={ortam.get('WEB_PORT')} BACKEND_PORT={ortam.get('BACKEND_PORT', '-')} MOCK_PORT={ortam.get('MOCK_PORT', '-')}\n".encode())
+        log.flush()
+    p = subprocess.Popen(["bash", "-c", komut], cwd=kok, env=ortam, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     _pidf(kok, profil).write_text(str(p.pid))
     return {"ok": True, "mesaj": "Başlatıldı.", "pid": p.pid}
 
@@ -200,5 +238,9 @@ def yeniden(kok: Path = ROOT, portlar_: list[int] | None = None, profil: str = "
 
 
 if __name__ == "__main__":
-    import json
-    print(json.dumps(durum(), ensure_ascii=False, indent=2))
+    if "--env" in sys.argv:                                   # basla.sh --canli: port sözleşmesini kabuk ortamına aktarır
+        for _k, _v in ortam_degiskenleri(ROOT).items():
+            print(f"export {_k}={_v}")
+    else:
+        import json
+        print(json.dumps(durum(), ensure_ascii=False, indent=2))
