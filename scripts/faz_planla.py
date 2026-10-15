@@ -328,10 +328,9 @@ def otomatik_ilerlet(board: dict, kok: Path = ROOT) -> str | None:
     if not tum or any(t["status"] not in B.TERMINAL for t in tum):
         return None
     import karar_verici_triage as KVT
-    fazlar = KVT.load_fazlar().get("fazlar", [])
-    if idx + 1 >= len(fazlar) or not KVT.faz_ilerlet():
+    if not KVT.faz_ilerlet():
         return None
-    yeni = KVT.load_fazlar()["fazlar"][idx + 1]["id"]
+    yeni = next((f["id"] for f in KVT.load_fazlar()["fazlar"] if f.get("durum") == "AKTIF"), "?")
     B.audit("engine", "faz_otomatik_ilerledi", detay={"eski": faz["id"], "yeni": yeni, "atlanan_gorev": sum(1 for t in tum if t["status"] == B.SKIPPED)})
     return yeni
 
