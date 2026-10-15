@@ -75,14 +75,20 @@ def db_conn():
         return None
 
 
+def faz_sirasi(fid: str):
+    """FAZ-2 < FAZ-10 (sayısal sıra); sayısal olmayan kimlikler sona, kendi aralarında metin sırasıyla (#307)."""
+    m = re.fullmatch(r"FAZ-(\d+)", fid or "")
+    return (0, int(m.group(1)), "") if m else (1, 0, fid or "")
+
+
 def load_fazlar() -> dict:
     # 1. Önce studio.db'den oku
     try:
         conn = db_conn()
         if conn:
             cur = conn.cursor()
-            cur.execute("SELECT * FROM fazlar ORDER BY id ASC")
-            rows = cur.fetchall()
+            cur.execute("SELECT * FROM fazlar")
+            rows = sorted(cur.fetchall(), key=lambda r: faz_sirasi(r["id"]))
             if rows:
                 fazlar = []
                 for r in rows:
@@ -247,10 +253,11 @@ def faz_ilerlet() -> bool:
     if aktif_idx is None:
         print("[!] AKTIF faz bulunamadı.")
         return False
-    if aktif_idx + 1 >= len(fazlar):
+    siradaki = next((f for f in fazlar if f.get("durum") == "PLANLANDI"), None)       # sıradaki = sayısal sırada ilk bekleyen faz (hiçbiri atlanmaz, #307)
+    if siradaki is None:
         print(f"[i] {fazlar[aktif_idx]['id']} son faz; ilerletilecek faz yok.")
         return False
-    eski, yeni = fazlar[aktif_idx], fazlar[aktif_idx + 1]
+    eski, yeni = fazlar[aktif_idx], siradaki
     eski["durum"], eski["kilitli"] = "TAMAMLANDI", True
     yeni["durum"], yeni["kilitli"] = "AKTIF", False
     save_fazlar(data)
