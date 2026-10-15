@@ -89,6 +89,7 @@ case "${1:-}" in
       $PY scripts/recovery_sentinel.py
       exit 0 ;;
   --canli|--dev|--yerel)
+      eval "$($PY scripts/yerel_ortam_yonet.py --env 2>/dev/null)"      # port sözleşmesi (WEB_PORT/NUXT_PORT/PORT/MOCK_PORT/BACKEND_PORT) config'ten
       if [ -f "./workspace/yerel_ortam.sh" ]; then
         exec ./workspace/yerel_ortam.sh
       elif [ -f "./yerel_ortam.sh" ]; then
