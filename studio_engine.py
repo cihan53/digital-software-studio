@@ -1335,6 +1335,8 @@ LIMIT_PATTERNS = (
     "internal error", "temporarily unavailable", "connection reset",
     "unavailable", "503", "no capacity available", "capacity", "resource exhausted",
     "service unavailable", "model overloaded",
+    # --- süreç dışarıdan öldürüldü/kesildi (yeniden başlatma, SIGKILL): görev ölmesin, yeniden denensin (#311) ---
+    "hata koduyla çıktı (-9)", "hata koduyla çıktı (-15)", "hata koduyla çıktı (-6)", "error: interrupted", "sigkill", "killed: 9",
     # --- geçici ağ / taşıma katmanı hataları (anlık kopmalar görevi öldürmesin) ---
     "broken pipe", "protocol version", "tls:", "tls handshake", "remote error",
     "unexpected eof", " eof", "eof,", "eof)", "connection refused",
@@ -3534,6 +3536,10 @@ def otomatik_kurtar_ve_temizle(board: dict) -> int:
     return kurtarilan
 
 
+GOREV_HATA_AZAMI = int(os.getenv("STUDIO_GOREV_HATA_AZAMI", "3"))
+_GOREV_HATA_SAYAC: dict = {}
+
+
 def run_board(org: dict, brief: str, once: bool = False,
               max_tasks: int = 0, max_cost: float = 0.0,
               interactive: bool = False) -> int:
@@ -3937,6 +3943,19 @@ def run_board(org: dict, brief: str, once: bool = False,
             _proje_import_taramasi(curr_s["id"])
 
         if not ok:
+            # Geçici hata (kesinti/ağ/kapasite) koşucuyu kapatmasın: görev TODO'ya alınıp sınırlı yeniden denenir (#311).
+            _s, _t = B.find_task(board, task["id"])
+            _not = (_t or {}).get("note", "")
+            _sayac = _GOREV_HATA_SAYAC.get(task["id"], 0) + 1
+            _GOREV_HATA_SAYAC[task["id"]] = _sayac
+            if _t is not None and is_limit_error(_not) and _sayac < GOREV_HATA_AZAMI and not once:
+                print(f"\n[↻] {task['id']} geçici hata ({_not[:80]}); 20 sn sonra yeniden denenecek ({_sayac}/{GOREV_HATA_AZAMI - 1}).")
+                B.mark(board, task["id"], B.TODO, f"geçici hata, yeniden denenecek ({_sayac}): {_not[:60]}")
+                B.refresh(board)
+                B.save(board)
+                time.sleep(20)
+                board = B.load()
+                continue
             print(f"\n[HATA] {task['id']} başarısız — sonraki sprint açılmayacak.")
             break
         if once:
