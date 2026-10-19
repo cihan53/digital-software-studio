@@ -193,7 +193,7 @@ def kapi(etiket_: str | None, root: Path = ROOT):
             eski = K.ROOT
             try:
                 K.ROOT = root
-                h = K.import_cozumleme_hatalari(src_dosyalari())
+                h = K.import_cozumleme_hatalari(src_dosyalari()) + K.sozdizimi_hatalari(src_dosyalari())
                 ws = root / "workspace"
                 betikler = [str(x.relative_to(root)) for pat in ("*.sh", "scripts/*.sh", "scripts/*.mjs") for x in ws.glob(pat)]
                 h += K.betik_sozdizimi_hatalari(betikler)

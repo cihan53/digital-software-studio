@@ -1839,7 +1839,7 @@ def strip_fence(text: str) -> str:
     return m.group(1) if m else text
 
 
-_ARTEFAKT_SON = re.compile(r"(?:\s*</(?:antml:)?(?:parameter|invoke|function_calls)>)+\s*$")
+_ARTEFAKT_SON = re.compile(r"(?:(?:\s*</(?:antml:)?(?:parameter|invoke|function_calls)>)|(?:\s*<\|[a-z_]{2,20}\|>[A-Za-z_ ]{0,30}))+\s*$")      # </parameter> ve <|close|>…<|sep|> özel-token biçimleri (#315)
 _ARTEFAKT_ACILIS = re.compile(r"<(?:antml:)?(?:parameter|invoke|function_calls)\b")
 
 
@@ -2699,7 +2699,7 @@ def _proje_import_taramasi(sprint_id: str) -> None:
             return
         dosyalar = [str(p.relative_to(ROOT)) for p in kok.rglob("*")
                     if p.is_file() and p.suffix in K.SRC_FILE_EXTS and not any(x in p.parts for x in ("node_modules", ".nuxt", ".output", "dist", ".git"))]
-        hatalar = K.import_cozumleme_hatalari(dosyalar)
+        hatalar = K.import_cozumleme_hatalari(dosyalar) + K.sozdizimi_hatalari(dosyalar)
         if not hatalar:
             return
         if any((t.get("baslik") or "").startswith("[BUILD] TARAMA") and t.get("durum") not in ("COZULDU", "IPTAL") for t in MT.load_data().get("talepler", [])):
@@ -3720,6 +3720,24 @@ def run_board(org: dict, brief: str, once: bool = False,
             _yeni_faz = FP.otomatik_ilerlet(board)
             if _yeni_faz:
                 print(f"\n[FAZ] Aktif faz tamamlandı; sistem {_yeni_faz} fazını başlattı.")
+            else:
+                _af, _ = FP.aktif_faz()
+                _engel = FP.kapanis_engeli(_af["id"]) if _af and FP.uygulandi_yolu(_af["id"]).exists() and all(t["status"] in B.TERMINAL for _, t in B.all_tasks(board)) else None
+                if _engel:
+                    B.request("faz_kapanis_engeli", json.dumps({**_engel, "faz": _af["id"]}, ensure_ascii=False), kaynak="engine")
+                    if not _engel["talep"]:
+                        _ozet = ""
+                        try:
+                            _ozet = " ".join((ROOT / _engel["rapor"]).read_text(encoding="utf-8", errors="replace").split())[:1500]
+                        except OSError:
+                            pass
+                        _tid = _auto_talep_uat({"id": _af["id"], "title": "faz kapanış denetimi", "role": "web_engineer", "description": ""},
+                                               f"UAT kabul raporu ({_engel['rapor']}) {_af['id']} fazını reddetti. Özet: {_ozet}", kaynak="UAT", neden=f"{_af['id']} kapanış UAT denetimi reddetti", sinir=4000)
+                        if _tid:
+                            FP.kapanis_talep_yolu(_af["id"]).write_text(json.dumps({"talep": _tid}), encoding="utf-8")
+                            print(f"\n[FAZ] {_af['id']} UAT tarafından reddedildi; ilerleme durdu, {_tid} talebi açıldı.")
+                elif B.is_set("faz_kapanis_engeli"):
+                    B.clear("faz_kapanis_engeli")
         except Exception as e:
             print(f"  [uyarı] faz plan kontrolü: {e}")
 
