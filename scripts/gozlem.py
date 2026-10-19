@@ -45,6 +45,14 @@ def bekleme_nedeni(board: dict | None, ctrl: dict, kosucu: bool, onay_bekliyor: 
         return {"kod": "durduruluyor", "mesaj": "Koşucu durduruluyor: çalışan görev bitince duracak.", "eylem": ""}
     if ctrl.get("paused"):
         return {"kod": "duraklatildi", "mesaj": "Duraklatıldı: görevler başlamıyor.", "eylem": "Sürdür düğmesi / ./basla.sh --surdur"}
+    fk = ctrl.get("faz_kapanis_engeli") if kosucu else None
+    if fk:
+        try:
+            fk = json.loads(fk) if isinstance(fk, str) else fk
+        except ValueError:
+            fk = {"neden": str(fk)}
+        return {"kod": "faz_kapanis_engeli", "mesaj": f"{fk.get('faz', 'Faz')} kapanışa hazır değil: {fk.get('neden', '')}" + (f"; düzeltme talebi {fk['talep']} çözülünce ilerler." if fk.get("talep") else ""),
+                "eylem": "Talepler sekmesinden düzeltme talebini izleyin; zorla ilerletmek için Fazlar → sonraki faza geç"}
     lb = ctrl.get("limit_bekliyor") if kosucu else None
     if lb:
         try:
