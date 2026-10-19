@@ -356,6 +356,7 @@ def _proje_backend() -> str:
 BACKEND = (os.getenv("STUDIO_BACKEND") or _proje_backend()).lower()
 AGY_MODEL = os.getenv("STUDIO_AGY_MODEL", "gemini-3.8-flash-high")
 AGY_TIMEOUT = int(os.getenv("STUDIO_AGY_TIMEOUT", "1800"))
+AGY_CIKIS_TOLERANSI = int(os.getenv("STUDIO_AGY_CIKIS_TOLERANSI", "15"))      # yanıt JSON'u görüldükten sonra süreç çıkmazsa kesmeden önce beklenecek sn (#313)
 # Devin AI arka ucu (devin CLI, -p print kipi; STUDIO_DEVIN_CLOUD=1 ile bulut oturumu).
 DEVIN_MODEL = os.getenv("STUDIO_DEVIN_MODEL", "")   # boş = hesap/CLI varsayılanı
 CLAUDE_MODEL = os.getenv("STUDIO_CLAUDE_MODEL", "sonnet")  # sonnet / opus / haiku
@@ -980,12 +981,31 @@ def _call_agy(system_prompt: str, user_prompt: str, effort: str, model: str,
     t_nabiz = threading.Thread(target=_agy_nabiz, daemon=True)
     t_nabiz.start()
 
+    # agy yanıtı (status alanlı tam JSON) yazıp süreçten çıkmayabiliyor: geçerli çıktıyı tamponla yakalar, 15 sn tolerans sonra süreci keser,
+    # çıktıyı kullanır (31 dk zaman aşımında geçerli yanıtı çöpe atmayız, #313).
+    agy_bitti = threading.Event()
+    agy_tampon: list = []
+
+    def _agy_satir(satir):
+        agy_tampon.append(satir)
+        if agy_bitti.is_set() or not satir.rstrip().endswith("}"):
+            return
+        try:
+            d = json.loads("".join(agy_tampon), strict=False)
+        except (ValueError, TypeError):
+            return
+        if isinstance(d, dict) and "status" in d:
+            threading.Timer(AGY_CIKIS_TOLERANSI, agy_bitti.set).start()
+
     try:
-        rc, out, err = _run_cli(cmd, run_cwd, AGY_TIMEOUT + 60, "agy")
+        rc, out, err = _run_cli(cmd, run_cwd, AGY_TIMEOUT + 60, "agy", on_stdout_line=_agy_satir, kesme=agy_bitti)
     finally:
         izle_dur.set()
         t_nabiz.join(timeout=1)
 
+    if rc != 0 and agy_bitti.is_set() and (out or "").strip():
+        print(f"      [agy] yanıt tamamlandı ama süreç çıkmadı; {AGY_CIKIS_TOLERANSI}s sonra kesildi, çıktı kullanılıyor.", file=sys.stderr)
+        rc = 0
     if rc != 0:
         detail = (err or out or "").strip()[:500]
         raise RuntimeError(f"agy hata koduyla çıktı ({rc}): {detail}")
@@ -1472,6 +1492,7 @@ def query_claude(system_prompt: str, user_prompt: str,
 
     waited = 0
     stall_deneme = 0
+    zaman_asimi = 0
     try:
         while True:
             try:
@@ -1507,6 +1528,11 @@ def query_claude(system_prompt: str, user_prompt: str,
             except RuntimeError as e:
                 if not is_limit_error(str(e)):
                     raise
+                if "içinde yanıt vermedi" in str(e):                       # zaman aşımı kota değildir: sınırlı yeniden dene, sonra motor öner ve hata ver (#313)
+                    zaman_asimi += 1
+                    if zaman_asimi > CALL_RETRY:
+                        B.motor_oneri_yaz(backend, model, meta.get("task") or meta.get("sprint") or "", str(e), _motor_alternatifler(backend))
+                        raise
                 waited = wait_for_quota(str(e), waited, backend,
                                         meta.get("task") or "")
                 if waited >= MOTOR_ONERI_ESIK:
@@ -3948,7 +3974,7 @@ def run_board(org: dict, brief: str, once: bool = False,
             _not = (_t or {}).get("note", "")
             _sayac = _GOREV_HATA_SAYAC.get(task["id"], 0) + 1
             _GOREV_HATA_SAYAC[task["id"]] = _sayac
-            if _t is not None and is_limit_error(_not) and _sayac < GOREV_HATA_AZAMI and not once:
+            if _t is not None and is_limit_error(_not) and "içinde yanıt vermedi" not in _not and _sayac < GOREV_HATA_AZAMI and not once:
                 print(f"\n[↻] {task['id']} geçici hata ({_not[:80]}); 20 sn sonra yeniden denenecek ({_sayac}/{GOREV_HATA_AZAMI - 1}).")
                 B.mark(board, task["id"], B.TODO, f"geçici hata, yeniden denenecek ({_sayac}): {_not[:60]}")
                 B.refresh(board)
