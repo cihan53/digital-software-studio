@@ -455,6 +455,70 @@ def import_cozumleme_hatalari(files: list[str]) -> list[str]:
     return hatalar
 
 
+_OZEL_TOKEN_RE = re.compile(r"<\|[a-z_]{2,20}\|>")
+_SOZDIZIMI_UZANTILARI = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".vue")
+_VUE_SCRIPT_RE = re.compile(r"<script\b([^>]*)>(.*?)</script>", re.S)
+
+
+def _esbuild_yolu(kok: Path | None) -> str | None:
+    import shutil
+    env = os.getenv("STUDIO_ESBUILD")
+    if env and Path(env).is_file():
+        return env
+    adaylar = []
+    if kok is not None:
+        adaylar.append(kok / "node_modules" / ".bin" / "esbuild")
+    adaylar += [p / "node_modules" / ".bin" / "esbuild" for p in (ROOT / "workspace" / "src").glob("*") if p.is_dir()]
+    for a in adaylar:
+        if a.is_file():
+            return str(a)
+    return shutil.which("esbuild")
+
+
+def sozdizimi_hatalari(files: list[str]) -> list[str]:
+    """Değişen kaynakta (1) modelin sızdırdığı özel-token artefaktları (<|close|>…) ve (2) esbuild ile .ts/.js/.vue(script) sözdizimi hataları (#315).
+    esbuild yoksa yalnız artefakt taraması yapılır (yanlış alarm yok). Örn. yorum içindeki '**/' erken kapanışı da yakalanır."""
+    import shutil
+    hatalar = []
+    kok = _uygulama_koku()
+    esb = _esbuild_yolu(kok)
+    for f in files:
+        rel = f.replace("\\", "/")
+        if not rel.endswith(_SOZDIZIMI_UZANTILARI + (".css", ".json")):
+            continue
+        p = ROOT / rel
+        if not p.is_file():
+            continue
+        try:
+            metin = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if _OZEL_TOKEN_RE.search(metin):
+            satir = next((i for i, ln in enumerate(metin.splitlines(), 1) if _OZEL_TOKEN_RE.search(ln)), 0)
+            hatalar.append(f"{rel}:{satir}: modelin sızdırdığı özel token artefaktı (<|…|>) — dosya derlenemez; bu satırları sil")
+            continue
+        if not esb or not rel.endswith(_SOZDIZIMI_UZANTILARI):
+            continue
+        if rel.endswith(".vue"):
+            bloklar = [(a, g) for a, g in _VUE_SCRIPT_RE.findall(metin) if g.strip()]
+            parcalar = [("ts" if "lang=\"ts\"" in a or "lang='ts'" in a else "js", g) for a, g in bloklar]
+        else:
+            parcalar = [("ts" if rel.endswith((".ts", ".tsx")) else "js", metin)]
+        for loader, kod in parcalar:
+            try:
+                r = subprocess.run([esb, f"--loader={'tsx' if rel.endswith(('.tsx', '.jsx')) else loader}", "--log-level=error"], input=kod.encode("utf-8"),
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=30)
+            except (subprocess.TimeoutExpired, OSError):
+                continue
+            if r.returncode != 0:
+                hata_metni = (r.stderr or b"").decode("utf-8", "replace")          # esbuild alıntısı çok baytlı karakteri kesebilir
+                ilk = next((ln.strip() for ln in hata_metni.splitlines() if "ERROR" in ln), hata_metni.strip()[:120])
+                konum = next((ln.strip() for ln in hata_metni.splitlines() if "<stdin>:" in ln), "")
+                hatalar.append(f"{rel}: sözdizimi hatası — {ilk[:110]} {konum[:60]}".strip())
+                break
+    return hatalar
+
+
 def build_checklist() -> tuple[int, int, list[str]]:
     """workspace/build_checklist.json'daki derleme/doğrulama komutlarını koşturur.
 
@@ -719,7 +783,7 @@ def gorev_kapilari(task: dict, pre_snapshot: set[str]) -> list[str]:
     src_files = [f for f in files
                  if f.replace("\\", "/").startswith("workspace/src/")]
     if src_files:
-        imp = import_cozumleme_hatalari(src_files)
+        imp = import_cozumleme_hatalari(src_files) + sozdizimi_hatalari(src_files)
         if imp:
             print(f"   ⚠️  [İMPORT KAPISI] {len(imp)} çözülemeyen import:")
             for f_ in imp[:6]:

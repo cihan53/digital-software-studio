@@ -240,7 +240,10 @@ try {
     await git(rota);
     const son = await degerlendir('location.pathname');
     const yonlendi = son !== rota && !(rota === '/' && son === '/');
+    await sleep(1200);                                                  // istemci tarafı çizimi (ssr:false) otursun; ilk karede 'Yükleniyor…' görünebilir
     const bilgi = await degerlendir(`(()=>({metin:(document.body?.innerText||'').trim().length,
+      govde:(document.body?.innerText||'').replace(/\\s+/g,' ').trim().slice(0,160),
+      overlay:((document.querySelector('vite-error-overlay')?.shadowRoot?.textContent)||'').replace(/\\s+/g,' ').trim().slice(0,200),
       cati:${JSON.stringify(CATI)}.map(q=>!!document.querySelector(q)),
       baslik:document.title}))()`);
     const sorunlar = [];
@@ -253,6 +256,8 @@ try {
       if (neden && neden.length > 3) { sorunlar.push(`sunucu hatası: ${neden}`); sunucuHatalari.set(neden, (sunucuHatalari.get(neden) || 0) + 1); }
     }
     if (bilgi.metin < 5) sorunlar.push('sayfa boş (görünen metin yok)');
+    if (bilgi.overlay) sorunlar.push(`derleme hatası (Vite hata katmanı): ${bilgi.overlay}`);          // modül çözülemedi/sözdizimi hatası: uygulama hiç açılmaz (#315)
+    else if (bilgi.metin < 90 && /y[üu]kleniyor|loading\.\.\.|loading…/i.test(bilgi.govde || '')) sorunlar.push(`yalnız yükleme ekranı görünüyor ("${bilgi.govde}") — uygulama hiç çizilmedi`);
     const catiBeklenir = !HARIC.has(son) && !HARIC.has(rota);
     if (catiBeklenir) {
       bilgi.cati.forEach((var_, i) => { if (!var_) sorunlar.push(`çatı eksik: ${CATI[i]}`); });
