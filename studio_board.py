@@ -1346,6 +1346,7 @@ def control_state() -> dict:
         "reload": is_set("reload"),
         "referans_bekliyor": value_of("referans_bekliyor"),
         "limit_bekliyor": value_of("limit_bekliyor"),
+        "faz_kapanis_engeli": value_of("faz_kapanis_engeli"),
     }
 
 

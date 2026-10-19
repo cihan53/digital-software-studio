@@ -318,6 +318,43 @@ def tetikle(board: dict, org: dict, cfg: dict | None = None, zorla: str | None =
     return planlama_sprinti_ekle(board, faz, org, cfg, kok)
 
 
+_UAT_RED_RX = re.compile(r"KARAR[^\n]{0,160}?(REDDED|REDDEDILDI|HAZIR DEGIL|KABUL EDILEMEZ|KABUL EDILMEDI)")
+
+
+def _uat_red_mi(rapor: Path) -> bool:
+    try:
+        metin = "\n".join(rapor.read_text(encoding="utf-8", errors="replace").splitlines()[:120]).upper().replace("İ", "I").replace("Ğ", "G")
+    except OSError:
+        return False
+    return bool(_UAT_RED_RX.search(metin))
+
+
+def kapanis_talep_yolu(faz_id: str, kok: Path = ROOT) -> Path:
+    return kok / PLAN_DIZIN / f"{faz_id}_kapanis_talep.json"
+
+
+def kapanis_engeli(faz_id: str, kok: Path = ROOT) -> dict | None:
+    """Faz çıkış kapısı (#315): bu faz sırasında üretilen UAT raporu fazı REDDETMİŞSE faz ilerlemez. Reddi gideren (COZULDU/IPTAL) bir kapanış talebi kayıtlıysa engel kalkar.
+    {"neden", "rapor", "talep"} ya da None."""
+    rapor = kok / "workspace" / "docs" / "uat_kabul_raporu.md"
+    u = uygulandi_yolu(faz_id, kok)
+    if not rapor.is_file() or not u.exists() or rapor.stat().st_mtime < u.stat().st_mtime or not _uat_red_mi(rapor):
+        return None
+    talep = None
+    try:
+        talep = json.loads(kapanis_talep_yolu(faz_id, kok).read_text(encoding="utf-8")).get("talep")
+    except (OSError, ValueError):
+        pass
+    if talep:
+        try:
+            import musteri_talepleri as MT
+            if (MT.getir(talep) or {}).get("durum") in ("COZULDU", "IPTAL"):
+                return None
+        except Exception:                                       # noqa: BLE001
+            pass
+    return {"neden": f"{faz_id} UAT kabul raporu fazı REDDETTİ (workspace/docs/uat_kabul_raporu.md)", "rapor": str(rapor.relative_to(kok)), "talep": talep}
+
+
 def otomatik_ilerlet(board: dict, kok: Path = ROOT) -> str | None:
     """Asgari faz çıkış kapısı (#277): aktif fazın planı uygulanmış ve pano tamamen bitmişse sistem fazı kendisi ilerletir.
     Yalnız plan dosyası uygulanmış fazlarda çalışır (eski pilotların ilk fazına dokunmaz). Açılan sonraki fazın id'sini döndürür."""
@@ -326,6 +363,8 @@ def otomatik_ilerlet(board: dict, kok: Path = ROOT) -> str | None:
         return None
     tum = [t for _, t in B.all_tasks(board)]
     if not tum or any(t["status"] not in B.TERMINAL for t in tum):
+        return None
+    if kapanis_engeli(faz["id"], kok):                        # UAT fazı reddetti: ilerleme yok (#315)
         return None
     import karar_verici_triage as KVT
     if not KVT.faz_ilerlet():
