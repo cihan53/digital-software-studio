@@ -1676,6 +1676,19 @@ _UAT_KARAR_RE = re.compile(
     r"(RED|KABUL|ONAY|GEÇT|GECT)")
 
 
+def _sistem_talebi_kabul_kapat(MT, task: dict, karar: str | None) -> bool:
+    """Sistemin kendi açtığı talepte ([UAT]/[RENDER]/[BUILD]/[KAYNAK]/[HİJYEN]) müşteri yoktur: UAT KABUL → COZULDU (#319). Kapattıysa True."""
+    if karar != "KABUL" or not task.get("talep_id"):
+        return False
+    baslik = ((MT.getir(task["talep_id"]) or {}).get("baslik") or "")
+    if not baslik.startswith(SISTEM_TALEP_ONEKLERI):
+        return False
+    MT.guncelle(task["talep_id"], durum="COZULDU", studio_notu=f"UAT KABUL ({task['id']}); sistemin kendi açtığı talep otomatik kapatıldı.")
+    B.audit("engine", "sistem_talebi_kapandi", gorev_id=task["id"], detay={"talep": task["talep_id"], "karar": "KABUL"})
+    print(f"   ✅ [SİSTEM TALEBİ] {task['talep_id']} UAT KABUL → COZULDU (müşteri onayı gerekmez).")
+    return True
+
+
 def uat_karari(rapor_yolu) -> str | None:
     """UAT raporunun kararı: 'RED' | 'KABUL' | None (okunamadı/bulunamadı).
 
@@ -1696,6 +1709,7 @@ def uat_karari(rapor_yolu) -> str | None:
     return "RED" if re.match(r"\s*(EDILEMEZ|EDILMEDI|EDILMEZ)", sonrasi) else "KABUL"
 
 
+SISTEM_TALEP_ONEKLERI = ("[UAT]", "[RENDER]", "[BUILD]", "[KAYNAK]", "[HİJYEN]")      # sistemin kapı/denetimlerden kendi açtığı talepler (müşteri yok)
 UAT_RED_LIMIT = 2  # bu kadar UAT reddinden sonra talep insana devredilir
 
 
@@ -3396,6 +3410,8 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
                                         studio_notu=f"UAT reddetti (rapor: {rapor}); "
                                                     "bulgular giderilmek üzere yeniden sprinte alınacak.")
                         print(f"   ↩️  [UAT REDDİ] {task['talep_id']} onaya sunulmadı → geliştirmeye döndü ({rapor}).")
+                    elif _sistem_talebi_kabul_kapat(MT, task, karar):
+                        pass                                                    # sistemin kendi açtığı talep UAT KABUL ile kapandı (#319)
                     else:
                         MT.guncelle(task["talep_id"], durum="ONAY_BEKLIYOR",
                                     studio_notu=f"Görev {task['id']} tamamlandı — "
