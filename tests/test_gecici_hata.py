@@ -52,3 +52,25 @@ class AgyAsiliKalma313(unittest.TestCase):
     def test_zaman_asimi_gecici_hata_sayilsa_da_kosucu_duzeyinde_yeniden_denenmez(self):
         self.assertTrue(E.is_limit_error("agy 1860s içinde yanıt vermedi."))
         self.assertEqual(E.CALL_RETRY, 2)
+
+
+class SistemTalebi319(unittest.TestCase):
+    def test_sistem_talebi_kabulde_kapanir_insan_talebi_kapanmaz(self):
+        from unittest import mock
+        guncel = []
+
+        class MT:
+            @staticmethod
+            def getir(tid):
+                return {"TALEP-1": {"baslik": "[UAT] FAZ-3 kapanış"}, "TALEP-2": {"baslik": "[RENDER] S1-T1 çizim"}, "TALEP-3": {"baslik": "Dashboard filtresi çalışmıyor"}}[tid]
+
+            @staticmethod
+            def guncelle(tid, **kw):
+                guncel.append((tid, kw["durum"]))
+        with mock.patch.object(E.B, "audit"):
+            self.assertTrue(E._sistem_talebi_kabul_kapat(MT, {"id": "S1-T2", "talep_id": "TALEP-1"}, "KABUL"))
+            self.assertTrue(E._sistem_talebi_kabul_kapat(MT, {"id": "S1-T2", "talep_id": "TALEP-2"}, "KABUL"))
+            self.assertFalse(E._sistem_talebi_kabul_kapat(MT, {"id": "S1-T2", "talep_id": "TALEP-3"}, "KABUL"))       # müşteri talebi: onay müşteride
+            self.assertFalse(E._sistem_talebi_kabul_kapat(MT, {"id": "S1-T2", "talep_id": "TALEP-1"}, "RED"))
+            self.assertFalse(E._sistem_talebi_kabul_kapat(MT, {"id": "S1-T2", "talep_id": "TALEP-1"}, None))
+        self.assertEqual(guncel, [("TALEP-1", "COZULDU"), ("TALEP-2", "COZULDU")])
