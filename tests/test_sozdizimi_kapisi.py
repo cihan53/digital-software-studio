@@ -149,6 +149,24 @@ class FazKapanis(unittest.TestCase):
         with mock.patch.object(MT, "getir", return_value={"durum": "COZULDU"}):
             self.assertIsNone(FP.kapanis_engeli("FAZ-1", self.tmp))
 
+    def test_kapanis_ozeti_bulgu_bolumlerini_alir_anlatimi_atar(self):
+        p = self.tmp / "workspace/docs/rapor.md"
+        p.write_text("Sunucu canlı. Şimdi bakıyorum ve doğruluyorum.\n\n# UAT Raporu\n\n## Yönetim Özeti — KARAR: REDDEDİLDİ\nözet satırı\n\n## Test Ortamı\nsunucu 3200 canlı gürültü\n\n"
+                     "## Hata Kayıtları\nBUG-1 KRİTİK useUrlState varsayılanı siliyor\n\n## Kapanış İçin Zorunlu Düzeltmeler\n1. applyFromRoute düzelt\n\n## Sonuç\nbitti\n", encoding="utf-8")
+        o = FP.kapanis_ozeti(p)
+        self.assertIn("BUG-1", o)
+        self.assertIn("applyFromRoute", o)
+        self.assertIn("özet satırı", o)
+        self.assertNotIn("Şimdi bakıyorum", o)
+        self.assertNotIn("gürültü", o)
+        p.write_text("anlatım başı\n\n# Başlık\ngövde metni\n", encoding="utf-8")
+        self.assertEqual(FP.kapanis_ozeti(p).split()[0], "#")                      # bölüm yoksa ilk başlıktan itibaren, anlatım atılır
+
+    def test_faz_kapanis_talebi_web_rolune_gider(self):
+        import studio_yetkilisi as SY
+        k = SY.tespit_et_kategori({"baslik": "[UAT] FAZ-3 FAZ-3 kapanış UAT denetimi reddetti başarısız", "aciklama": "sunucu canlı deploy docker altyapı"})
+        self.assertEqual(k["id"], "web_engineer")
+
     def test_panel_nedeni(self):
         import gozlem as GO
         ctrl = {"faz_kapanis_engeli": json.dumps({"faz": "FAZ-2", "neden": "UAT reddetti", "talep": "TALEP-9"})}
