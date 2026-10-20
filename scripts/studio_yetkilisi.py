@@ -315,7 +315,7 @@ def tespit_et_kategori(talep: dict) -> dict:
                       talep.get("sayfa_url") or ""]).lower()
 
     # [RENDER] (tarayıcıda çizim) talepleri her zaman web arayüzü işidir; metindeki 'kaynak/import' gibi sözcükler veri rolüne saptırmasın (#225)
-    if baslik.lstrip().startswith("[render]"):
+    if baslik.lstrip().startswith(("[render]", "[uat] faz-")):               # faz kapanış UAT talepleri de web arayüzü işidir; 'sunucu/canlı' sözcükleri devops'a saptırmasın (#317)
         web = next((k for k in KATEGORILER if k["id"] == "web_engineer"), KATEGORILER[-1])
         return {**web, "dosyalar": [_proje_yolu_coz(d) for d in web["dosyalar"]]}
 

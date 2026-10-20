@@ -3726,11 +3726,7 @@ def run_board(org: dict, brief: str, once: bool = False,
                 if _engel:
                     B.request("faz_kapanis_engeli", json.dumps({**_engel, "faz": _af["id"]}, ensure_ascii=False), kaynak="engine")
                     if not _engel["talep"]:
-                        _ozet = ""
-                        try:
-                            _ozet = " ".join((ROOT / _engel["rapor"]).read_text(encoding="utf-8", errors="replace").split())[:1500]
-                        except OSError:
-                            pass
+                        _ozet = FP.kapanis_ozeti(ROOT / _engel["rapor"])
                         _tid = _auto_talep_uat({"id": _af["id"], "title": "faz kapanış denetimi", "role": "web_engineer", "description": ""},
                                                f"UAT kabul raporu ({_engel['rapor']}) {_af['id']} fazını reddetti. Özet: {_ozet}", kaynak="UAT", neden=f"{_af['id']} kapanış UAT denetimi reddetti", sinir=4000)
                         if _tid:

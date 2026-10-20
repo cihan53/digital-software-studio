@@ -333,6 +333,25 @@ def kapanis_talep_yolu(faz_id: str, kok: Path = ROOT) -> Path:
     return kok / PLAN_DIZIN / f"{faz_id}_kapanis_talep.json"
 
 
+def kapanis_ozeti(rapor: Path, sinir: int = 3500) -> str:
+    """UAT raporundan talebe girecek özet (#317): Yönetim Özeti + Hata Kayıtları + Zorunlu Düzeltmeler bölümleri.
+    Bölüm bulunamazsa ilk '# ' başlığından itibaren (öncesindeki ajan anlatımı atılır) ilk `sinir` karakter."""
+    try:
+        m = rapor.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    baslik_rx = re.compile(r"^#{1,3}\s+(.*)$", re.M)
+    isaretler = [(x.start(), x.group(1)) for x in baslik_rx.finditer(m)]
+    parcalar = []
+    for i, (bas, ad) in enumerate(isaretler):
+        kucuk = ad.lower().replace("İ", "i")
+        if any(k in kucuk for k in ("yönetim özeti", "yonetim ozeti", "hata kay", "zorunlu düzeltme", "zorunlu duzeltme", "kapanış için", "kapanis icin")):
+            son = isaretler[i + 1][0] if i + 1 < len(isaretler) else len(m)
+            parcalar.append(m[bas:son].strip())
+    metin = "\n\n".join(parcalar) if parcalar else (m[isaretler[0][0]:] if isaretler else m)
+    return metin.strip()[:sinir]
+
+
 def kapanis_engeli(faz_id: str, kok: Path = ROOT) -> dict | None:
     """Faz çıkış kapısı (#315): bu faz sırasında üretilen UAT raporu fazı REDDETMİŞSE faz ilerlemez. Reddi gideren (COZULDU/IPTAL) bir kapanış talebi kayıtlıysa engel kalkar.
     {"neden", "rapor", "talep"} ya da None."""
