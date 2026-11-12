@@ -1,6 +1,6 @@
 {
-  "version": "1.10.113",
-  "released": "2026-10-20",
+  "version": "1.10.114",
+  "released": "2026-11-12",
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
     "scripts/musteri_talepleri.py",
@@ -64,6 +64,13 @@
   ],
   "protected_files": [],
   "changelog": [
+    {
+      "version": "1.10.114",
+      "date": "2026-11-12",
+      "changes": [
+        "feat(mod2): terminal sihirbazı (wizard), salt-Gemini kilidi (--gemini / STUDIO_ONLY_GEMINI) ve var olan projeyi tahribatsız devralma, mutabakat ve eklemeli planlama (#321)"
+      ]
+    },
     {
       "version": "1.10.113",
       "date": "2026-10-20",

@@ -354,6 +354,7 @@ def _proje_backend() -> str:
 
 
 BACKEND = (os.getenv("STUDIO_BACKEND") or _proje_backend()).lower()
+ONLY_GEMINI = bool(os.getenv("STUDIO_ONLY_GEMINI") == "1")
 AGY_MODEL = os.getenv("STUDIO_AGY_MODEL", "gemini-3.8-flash-high")
 AGY_TIMEOUT = int(os.getenv("STUDIO_AGY_TIMEOUT", "1800"))
 AGY_CIKIS_TOLERANSI = int(os.getenv("STUDIO_AGY_CIKIS_TOLERANSI", "15"))      # yanıt JSON'u görüldükten sonra süreç çıkmazsa kesmeden önce beklenecek sn (#313)
@@ -627,6 +628,20 @@ def resolve_engine(agent: dict, override: dict | None = None) -> tuple[str, str,
     claude (Claude Code CLI).
     """
     override = override or {}
+    if ONLY_GEMINI or os.getenv("STUDIO_ONLY_GEMINI") == "1":
+        backend = "agy"
+        model = AGY_MODEL
+        if override and override.get("backend") == "agy" and override.get("model"):
+            model = override["model"]
+        elif agent.get("backend") == "agy" and agent.get("model"):
+            model = agent["model"]
+        if any(k in (model or "").lower() for k in ("opus", "sonnet", "claude", "swe-", "gpt")):
+            model = AGY_MODEL
+        tools = agent.get("tools") or []
+        if not isinstance(tools, list):
+            raise ValueError(f"'{agent['id']}' rolünde 'tools' liste olmalı")
+        return (backend, model, override.get("effort") or agent.get("effort") or EFFORT, tools)
+
     backend = (override.get("backend") or agent.get("backend")
                or BACKEND or "agy").lower()
     if backend not in VALID_BACKENDS:
@@ -4057,6 +4072,8 @@ def main():
                     help="aktif faz için sprint planlamasını (planlayıcı + insan onay kapısı) tetikle")
     ap.add_argument("--mod", type=int, choices=[1, 2], default=1,
                     help="çalışma modu: 1 = sıfırdan proje, 2 = var olan projeyi devralma")
+    ap.add_argument("--gemini", action="store_true",
+                    help="tüm rolleri kesin olarak Google Gemini (agy) ile çalıştır; harici motorları engelle")
     ap.add_argument("--analiz", action="store_true",
                     help="Mod 2: mevcut proje için salt-okunur analiz üretir ve çıkar")
     ap.add_argument("--backend", choices=sorted(VALID_BACKENDS), default=None,
@@ -4066,8 +4083,12 @@ def main():
                          "(derin analiz için ör. 3; varsayılan: STUDIO_WORD_SCALE veya 1)")
     args = ap.parse_args()
 
-    global BACKEND, WORD_SCALE
-    BACKEND = (args.backend or os.getenv("STUDIO_BACKEND") or _proje_backend()).lower()
+    global BACKEND, WORD_SCALE, ONLY_GEMINI
+    if args.gemini or os.getenv("STUDIO_ONLY_GEMINI") == "1":
+        ONLY_GEMINI = True
+        BACKEND = "agy"
+    else:
+        BACKEND = (args.backend or os.getenv("STUDIO_BACKEND") or _proje_backend()).lower()
     if args.word_scale:
         WORD_SCALE = args.word_scale
 

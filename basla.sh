@@ -558,6 +558,15 @@ PYEOF
       exit 0 ;;
 esac
 
+STUDIO_ONLY_GEMINI="${STUDIO_ONLY_GEMINI:-0}"
+for _arg in "$@"; do
+  if [ "$_arg" = "--gemini" ]; then
+    export STUDIO_BACKEND="agy"
+    export STUDIO_ONLY_GEMINI="1"
+    break
+  fi
+done
+
 SADECE_KONTROL=0
 [ "${1:-}" = "--kontrol" ] && SADECE_KONTROL=1
 
@@ -609,7 +618,12 @@ grn "✓ Python ortamı hazır"
 export PATH="$HOME/.local/bin:$PATH"
 
 # Model arka ucu kontrolü (STUDIO_BACKEND: agy | devin)
-STUDIO_BACKEND="${STUDIO_BACKEND:-agy}"
+if [ "$STUDIO_ONLY_GEMINI" = "1" ]; then
+  STUDIO_BACKEND="agy"
+  grn "✓ Motor: Yalnızca Google Gemini (agy) kilitlendi (harici motorlar devre dışı)"
+else
+  STUDIO_BACKEND="${STUDIO_BACKEND:-agy}"
+fi
 
 if [ "$STUDIO_BACKEND" = "devin" ]; then
   DEVIN_EXE="$(command -v devin 2>/dev/null || true)"
@@ -736,6 +750,19 @@ web_panel_baslat() {
 
 web_panel_baslat
 
+# Mod 2: Eğer mutabakat henüz planlanmadıysa doğrudan terminal sihirbazını aç
+if [ "$STUDIO_MOD" = "2" ] && [ -t 0 ]; then
+  _MUT_DURUM="$($PY -c "import json; p='workspace/docs/mod2_mutabakat.json'; print(json.load(open(p)).get('durum') if __import__('os').path.exists(p) else '')" 2>/dev/null || true)"
+  if [ "$_MUT_DURUM" != "PLANLANDI" ]; then
+    $PY scripts/mod2_mutabakat.py --wizard
+    _WIZ_EXIT=$?
+    if [ $_WIZ_EXIT -ne 0 ]; then
+      dim "Mod 2 mutabakatı tamamlanmadı. Çıkılıyor."
+      exit $_WIZ_EXIT
+    fi
+  fi
+fi
+
 # Bilinçli başlatma: 'acil durdur' (devre_disi) bayrağı kalmışsa temizle,
 # yoksa koşucu ilk döngüde hiçbir şey yapmadan çıkar.
 $PY -c "import studio_board as B; B.clear('devre_disi')" 2>/dev/null || true
@@ -745,7 +772,7 @@ export STUDIO_BACKEND="${STUDIO_BACKEND:-agy}"
 export STUDIO_AGY_BIN="${AGY_EXE:-$HOME/.local/bin/agy}"
 [ -n "${DEVIN_EXE:-}" ] && export STUDIO_DEVIN_BIN="$DEVIN_EXE"
 mkdir -p "$(dirname "$LOG")"
-nohup $PY studio_engine.py --full --mod "$STUDIO_MOD" --yes ${STUDIO_BUTCE:+--max-cost $STUDIO_BUTCE} "$@" > "$LOG" 2>&1 &
+nohup $PY studio_engine.py --full --mod "$STUDIO_MOD" ${STUDIO_ONLY_GEMINI:+--gemini} --yes ${STUDIO_BUTCE:+--max-cost $STUDIO_BUTCE} "$@" > "$LOG" 2>&1 &
 PID=$!
 sleep 2
 if ! kill -0 "$PID" 2>/dev/null; then

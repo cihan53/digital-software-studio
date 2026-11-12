@@ -282,3 +282,112 @@ def planlamaya_aktar(kok: Path = ROOT) -> dict:
     s["planlanan_talepler"].extend(talep_idler)
     kaydet(s, kok)
     return {"ok": True, "sprint_id": yeni_sprint["id"], "gorev_sayisi": len(gorevler), "talepler": talep_idler}
+
+
+def terminal_wizard(kok: Path = ROOT) -> int:
+    """Mod 2 için terminalde interaktif analiz, öneri sunumu ve müşteri ortak karar sihirbazı."""
+    import mevcut_proje_analizi as MPA
+    print("\n" + "═" * 60)
+    print("  🔍  MOD 2 — MEVCUT PROJE ANALİZİ & ORTAK KARAR SİHİRBAZI")
+    print("═" * 60)
+    print("  [1/3] Mevcut kod tabanı ve proje sağlığı analiz ediliyor...")
+    durum = MPA.analiz_calistir(kok)
+    print(f"  ✓ Analiz tamamlandı: {len(durum.get('bulgular', []))} bulgu tespit edildi.")
+
+    print("\n  [2/3] CTO ve Product Owner öneri paketi hazırlanıyor...")
+    oneri_paketi_olustur(kok)
+    s = yukle(kok)
+    maddeler = s.get("maddeler") or []
+
+    print("\n" + "─" * 60)
+    print(f"  💡  TESPİT EDİLEN BULGULAR VE STÜDYO ÖNERİLERİ ({len(maddeler)} madde)")
+    print("─" * 60)
+    for m in maddeler:
+        karar_renk = "✓ ONAYLANDI" if m.get("karar") == "ONAYLANDI" else ("✗ REDDEDİLDİ" if m.get("karar") == "REDDEDILDI" else "⏳ BEKLİYOR")
+        print(f"\n  [{m['id']}] {m['baslik']} ({m.get('siddet', '').upper()}) — [{karar_renk}]")
+        print(f"       💡 Öneri  : {m.get('oneri', '')}")
+        print(f"       ⚠️ Risk   : {m.get('risk', '')}")
+        print(f"       👤 Rol    : {m.get('rol', 'web_engineer')}")
+    print("─" * 60)
+
+    if mutabakat_hazir_mi(s):
+        print("\n  ✓ Tüm maddeler karara bağlanmış durumda.")
+        if s.get("durum") != "PLANLANDI":
+            res = planlamaya_aktar(kok)
+            print(f"  🚀 Sprint planlandı: {res.get('sprint_id')} ({res.get('gorev_sayisi')} görev)")
+        return 0
+
+    while True:
+        print("\nNe yapmak istersiniz?")
+        print("  [1] Tüm önerileri ONAYLA ve geliştirme sprintini planla")
+        print("  [2] Yeni bir müşteri isteği ekle")
+        print("  [3] Maddeleri tek tek incele / karar ver")
+        print("  [4] Çıkış (kararı ertele)")
+        try:
+            secim = input("\nSeçiminiz (1-4): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nÇıkıldı.")
+            return 2
+
+        if secim == "1":
+            for m in maddeler:
+                karar_ver(m["id"], "ONAYLANDI", kok=kok)
+            res = planlamaya_aktar(kok)
+            if res.get("ok"):
+                print(f"\n  🚀 Harika! Ortak karar sağlandı ve sprint planlandı: {res.get('sprint_id')}")
+                return 0
+            else:
+                print(f"  ✗ Planlama hatası: {res.get('mesaj')}")
+                return 1
+        elif secim == "2":
+            try:
+                istek = input("\nMüşteri isteğinizi yazın: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                continue
+            if istek:
+                istek_ekle(istek, kok=kok)
+                print("  ✓ İstek kaydedildi, öneri paketi güncelleniyor...")
+                oneri_paketi_olustur(kok, yeniden=True)
+                s = yukle(kok)
+                maddeler = s.get("maddeler") or []
+        elif secim == "3":
+            for m in maddeler:
+                print(f"\n[{m['id']}] {m['baslik']}")
+                print(f"Öneri: {m.get('oneri', '')}")
+                try:
+                    k = input("Kararınız ([O]nay / [R]ed / [A]tla): ").strip().upper()
+                except (EOFError, KeyboardInterrupt):
+                    break
+                if k in ("O", "ONAY", "1"):
+                    karar_ver(m["id"], "ONAYLANDI", kok=kok)
+                elif k in ("R", "RED", "2"):
+                    karar_ver(m["id"], "REDDEDILDI", kok=kok)
+            s = yukle(kok)
+            if mutabakat_hazir_mi(s):
+                res = planlamaya_aktar(kok)
+                print(f"\n  🚀 Ortak karar sağlandı! Sprint planlandı: {res.get('sprint_id')}")
+                return 0
+        elif secim == "4":
+            print("\nÇıkıldı. İstediğiniz zaman `./basla.sh --mod 2` veya Web (/musteri) üzerinden devam edebilirsiniz.")
+            return 2
+
+
+if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser(description="Mod 2 Mutabakat Yönetimi")
+    ap.add_argument("--wizard", action="store_true", help="İnteraktif terminal sihirbazını başlat")
+    ap.add_argument("--onayla-hepsi", action="store_true", help="Tüm maddeleri onayla ve planla")
+    args = ap.parse_args()
+
+    if args.onayla_hepsi:
+        oneri_paketi_olustur(ROOT)
+        s = yukle(ROOT)
+        for m in s.get("maddeler", []):
+            karar_ver(m["id"], "ONAYLANDI", kok=ROOT)
+        r = planlamaya_aktar(ROOT)
+        print(f"Planlama sonucu: {r}")
+        sys.exit(0 if r.get("ok") else 1)
+    elif args.wizard or sys.stdin.isatty():
+        sys.exit(terminal_wizard(ROOT))
+    else:
+        ap.print_help()
