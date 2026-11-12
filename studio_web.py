@@ -809,6 +809,21 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "fazlar": KVT.load_fazlar()})
             except Exception as e:
                 return self._json({"ok": False, "mesaj": str(e)}, 500)
+        if path == "/api/mod2/durum":
+            try:
+                import mevcut_proje_analizi as MPA
+                import mod2_mutabakat as M2
+                ap = MPA.ROOT / "workspace" / "docs" / "mevcut_proje_durumu.json"
+                analiz = read_json(ap, None)
+                mut = M2.yukle()
+                return self._json({
+                    "ok": True,
+                    "analiz": analiz,
+                    "mutabakat": mut,
+                    "mutabakat_hazir": M2.mutabakat_hazir_mi(mut),
+                })
+            except Exception as e:
+                return self._json({"ok": False, "mesaj": str(e)}, 500)
         if path == "/api/sohbet":
             try:
                 import musteri_temsilcisi as MTC
@@ -878,6 +893,31 @@ class Handler(BaseHTTPRequestHandler):
                 return hata
             try:
                 return self._json(brief_islem(body))
+            except Exception as e:
+                return self._json({"ok": False, "mesaj": str(e)}, 500)
+
+        if path.startswith("/api/mod2/"):
+            hata = self._yazma_guvenligi()
+            if hata:
+                return hata
+            sub = path.rsplit("/", 1)[1]
+            try:
+                import mevcut_proje_analizi as MPA
+                import mod2_mutabakat as M2
+                if sub == "analiz":
+                    d = MPA.analiz_calistir(ROOT, hizli=bool(body.get("hizli")))
+                    M2.oneri_paketi_olustur(ROOT, yeniden=True)
+                    return self._json({"ok": True, "bulgu_sayisi": len(d["bulgular"])})
+                if sub == "istek":
+                    r = M2.istek_ekle(body.get("metin", ""), body.get("tur", "ISTEK"), body.get("oncelik", "NORMAL"))
+                    if r.get("ok"):
+                        M2.oneri_paketi_olustur(ROOT, yeniden=True)
+                    return self._json(r)
+                if sub == "karar":
+                    return self._json(M2.karar_ver(body.get("madde_id", ""), body.get("karar", ""), body.get("not", "")))
+                if sub == "planla":
+                    return self._json(M2.planlamaya_aktar(ROOT))
+                return self._json({"ok": False, "mesaj": "bilinmeyen mod2 işlemi"}, 404)
             except Exception as e:
                 return self._json({"ok": False, "mesaj": str(e)}, 500)
 

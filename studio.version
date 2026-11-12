@@ -10,6 +10,8 @@
     "scripts/recovery_sentinel.py",
     "scripts/studio_yetkilisi.py",
     "scripts/studio_updater.py",
+    "scripts/mevcut_proje_analizi.py",
+    "scripts/mod2_mutabakat.py",
     "scripts/kalite_kapilari.py",
     "scripts/kesif_denetle.py",
     "scripts/kesif_yaz.py",
