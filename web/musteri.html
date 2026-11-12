@@ -68,6 +68,15 @@
       </div>
     </div>
     <div class="yan-panel">
+      <div class="kart" id="mod2-kart" style="font-size:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <b>🔍 Mod 2 Mutabakat</b>
+          <button onclick="mod2Analiz()" title="Salt-okunur proje analizi">Analiz</button>
+        </div>
+        <div id="mod2-ozet" class="soluk" style="margin-top:6px">Mevcut proje durumu yükleniyor…</div>
+        <div id="mod2-maddeler" style="max-height:180px;overflow-y:auto;margin-top:6px"></div>
+        <button id="mod2-planla" class="birincil gizli" style="width:100%;margin-top:6px" onclick="mod2Planla()">Onaylıları Panoya Planla</button>
+      </div>
       <div class="kart gizli" id="onay-bildirim"
            style="border-color:var(--sari);font-size:13px">
         🔔 Tamamlanan talebiniz var — kapatmak için onayınız gerekiyor.
@@ -314,6 +323,44 @@ girdiEl.addEventListener('input',()=>{
 });
 motorModelDoldur();
 yukle(true); setInterval(yukle,3000);
+mod2Yukle(); setInterval(mod2Yukle,8000);
+
+async function mod2Yukle(){
+  try{
+    const d=await(await fetch('/api/mod2/durum')).json();
+    if(!d.ok)return;
+    const m=d.mutabakat||{}, maddeler=m.maddeler||[];
+    const a=d.analiz;
+    $('mod2-ozet').textContent=a
+      ? `Bulgu: ${(a.bulgular||[]).length} · Madde: ${maddeler.length} (${m.durum||'ACIK'})`
+      : 'Henüz Mod 2 analizi çalıştırılmadı.';
+    const el=$('mod2-maddeler');
+    el.innerHTML=maddeler.map(x=>`<div style="padding:6px;border:1px solid var(--sinir);border-radius:6px;margin-bottom:4px">
+      <div><b>${esc(x.id)}</b> [${esc(x.karar)}] ${esc(x.baslik)}</div>
+      <div class="soluk">${esc(x.oneri||'')}</div>
+      <div style="margin-top:4px;display:flex;gap:4px">
+        <button onclick="mod2Karar('${esc(x.id)}','ONAYLANDI')">✓</button>
+        <button onclick="mod2Karar('${esc(x.id)}','REVIZE')">↻</button>
+        <button onclick="mod2Karar('${esc(x.id)}','REDDEDILDI')">✕</button>
+      </div></div>`).join('');
+    $('mod2-planla').classList.toggle('gizli',!(d.mutabakat_hazir && m.durum!=='PLANLANDI'));
+  }catch(_){}
+}
+async function mod2Analiz(){
+  const d=await(await fetch('/api/mod2/analiz',{method:'POST',headers:{'Content-Type':'application/json'},body:'{"hizli":true}'})).json();
+  toast(d.ok?`Analiz tamamlandı (${d.bulgu_sayisi} bulgu)`:(d.mesaj||'Hata'));
+  mod2Yukle();
+}
+async function mod2Karar(id,karar){
+  const d=await(await fetch('/api/mod2/karar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({madde_id:id,karar})})).json();
+  toast(d.ok?`${id}: ${karar}`:(d.mesaj||'Hata'));
+  mod2Yukle();
+}
+async function mod2Planla(){
+  const d=await(await fetch('/api/mod2/planla',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).json();
+  toast(d.ok?`Planlandı: ${d.sprint_id}`:(d.mesaj||'Hata'));
+  mod2Yukle(); yukle(true);
+}
 // "Temsilci yazıyor" göstergesine geçen süre — uzun sürerse kota ipucu.
 setInterval(()=>{
   const y=$('yaziyor');

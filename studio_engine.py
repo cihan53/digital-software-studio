@@ -354,6 +354,7 @@ def _proje_backend() -> str:
 
 
 BACKEND = (os.getenv("STUDIO_BACKEND") or _proje_backend()).lower()
+ONLY_GEMINI = bool(os.getenv("STUDIO_ONLY_GEMINI") == "1")
 AGY_MODEL = os.getenv("STUDIO_AGY_MODEL", "gemini-3.8-flash-high")
 AGY_TIMEOUT = int(os.getenv("STUDIO_AGY_TIMEOUT", "1800"))
 AGY_CIKIS_TOLERANSI = int(os.getenv("STUDIO_AGY_CIKIS_TOLERANSI", "15"))      # yanıt JSON'u görüldükten sonra süreç çıkmazsa kesmeden önce beklenecek sn (#313)
@@ -627,6 +628,20 @@ def resolve_engine(agent: dict, override: dict | None = None) -> tuple[str, str,
     claude (Claude Code CLI).
     """
     override = override or {}
+    if ONLY_GEMINI or os.getenv("STUDIO_ONLY_GEMINI") == "1":
+        backend = "agy"
+        model = AGY_MODEL
+        if override and override.get("backend") == "agy" and override.get("model"):
+            model = override["model"]
+        elif agent.get("backend") == "agy" and agent.get("model"):
+            model = agent["model"]
+        if any(k in (model or "").lower() for k in ("opus", "sonnet", "claude", "swe-", "gpt")):
+            model = AGY_MODEL
+        tools = agent.get("tools") or []
+        if not isinstance(tools, list):
+            raise ValueError(f"'{agent['id']}' rolünde 'tools' liste olmalı")
+        return (backend, model, override.get("effort") or agent.get("effort") or EFFORT, tools)
+
     backend = (override.get("backend") or agent.get("backend")
                or BACKEND or "agy").lower()
     if backend not in VALID_BACKENDS:
@@ -4055,6 +4070,12 @@ def main():
                     help="ortam raporunu yeniden ölç")
     ap.add_argument("--review", action="store_true",
                     help="aktif faz için sprint planlamasını (planlayıcı + insan onay kapısı) tetikle")
+    ap.add_argument("--mod", type=int, choices=[1, 2], default=1,
+                    help="çalışma modu: 1 = sıfırdan proje, 2 = var olan projeyi devralma")
+    ap.add_argument("--gemini", action="store_true",
+                    help="tüm rolleri kesin olarak Google Gemini (agy) ile çalıştır; harici motorları engelle")
+    ap.add_argument("--analiz", action="store_true",
+                    help="Mod 2: mevcut proje için salt-okunur analiz üretir ve çıkar")
     ap.add_argument("--backend", choices=sorted(VALID_BACKENDS), default=None,
                     help="çalıştırma arka ucu (varsayılan: STUDIO_BACKEND veya agy)")
     ap.add_argument("--word-scale", type=float, default=None, metavar="N",
@@ -4062,8 +4083,12 @@ def main():
                          "(derin analiz için ör. 3; varsayılan: STUDIO_WORD_SCALE veya 1)")
     args = ap.parse_args()
 
-    global BACKEND, WORD_SCALE
-    BACKEND = (args.backend or os.getenv("STUDIO_BACKEND") or _proje_backend()).lower()
+    global BACKEND, WORD_SCALE, ONLY_GEMINI
+    if args.gemini or os.getenv("STUDIO_ONLY_GEMINI") == "1":
+        ONLY_GEMINI = True
+        BACKEND = "agy"
+    else:
+        BACKEND = (args.backend or os.getenv("STUDIO_BACKEND") or _proje_backend()).lower()
     if args.word_scale:
         WORD_SCALE = args.word_scale
 
@@ -4075,6 +4100,39 @@ def main():
     org = load_and_merge_dynamic_roles(org)
 
     brief_path = resolve_doc(args.brief)
+    if args.analiz:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import mevcut_proje_analizi as MPA
+        durum = MPA.analiz_calistir(ROOT)
+        print(f"[✓] Mod 2 analiz tamamlandı: {len(durum['bulgular'])} bulgu -> workspace/docs/mevcut_proje_analizi.md")
+        return
+
+    if args.mod == 2:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import mevcut_proje_analizi as MPA
+        import mod2_mutabakat as M2
+        print("\n########## MOD 2 — VAR OLAN PROJE DEVRALMA ##########")
+        durum = MPA.analiz_calistir(ROOT)
+        print(f"[✓] 1/4 Tahribatsız analiz: {len(durum['bulgular'])} bulgu (workspace/docs/mevcut_proje_analizi.md)")
+        M2.oneri_paketi_olustur(ROOT)
+        mut = M2.yukle(ROOT)
+        if mut.get("durum") != "PLANLANDI":
+            if not M2.mutabakat_hazir_mi(mut):
+                print("[⏸] 2-3/4 Müşteri istekleri ve madde bazlı ortak karar bekleniyor.")
+                print("    Web Müşteri Odası (/musteri) veya scripts/mod2_mutabakat.py üzerinden maddeleri onaylayın.")
+                return
+            sonuc = M2.planlamaya_aktar(ROOT)
+            if not sonuc.get("ok"):
+                sys.exit(f"[HATA] Mod 2 planlama: {sonuc.get('mesaj')}")
+            print(f"[✓] 4/4 Eklemeli planlama tamam: {sonuc.get('sprint_id')} ({sonuc.get('gorev_sayisi')} görev)")
+        brief_text = brief_path.read_text(encoding="utf-8") if brief_path.exists() else ""
+        is_interactive = not args.yes and sys.stdin.isatty()
+        n = run_board(org, brief_text, once=args.tick,
+                      max_tasks=args.max_tasks, max_cost=args.max_cost,
+                      interactive=is_interactive)
+        print(f"[i] Mod 2 yürütme: {n} görev tamamlandı.")
+        return
+
     if not brief_path.exists():
         sys.exit(f"[HATA] Proje özeti bulunamadı: {args.brief} "
                  f"(kökte ve workspace/docs/ altında yok)")

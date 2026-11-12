@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # ChyzTV Sanal Stüdyo — tek giriş noktası.
 #
-#   ./basla.sh              her şeyi sırayla çalıştırır ve kontrol ekranını açar
+#   ./basla.sh              her şeyi sırayla çalıştırır ve kontrol ekranını açar (Mod 1)
+#   ./basla.sh --mod 2      var olan projeyi tahribatsız devralma & iyileştirme (Mod 2)
+#   ./basla.sh --mevcut     --mod 2 ile aynı
+#   ./basla.sh --analiz     yalnız mevcut proje salt-okunur sağlık denetimi üretir
 #   ./basla.sh --kontrol    hiçbir şey çalıştırmaz, sadece ön koşulları denetler
 #   ./basla.sh --durdur     çalışan koşuyu nazikçe durdurur
 #   ./basla.sh --oldur      koşucuyu ve aktif çağrıyı ANINDA öldürür (hard stop)
@@ -107,6 +110,9 @@ case "${1:-}" in
         node scripts/tarayici_test_izle.mjs
       fi
       exit 0 ;;
+  --analiz)
+      $PY scripts/mevcut_proje_analizi.py "${@:2}"
+      exit $? ;;
   --faz-planla|--incele|--review)
       $PY studio_engine.py --review
       exit 0 ;;
@@ -552,8 +558,51 @@ PYEOF
       exit 0 ;;
 esac
 
+STUDIO_ONLY_GEMINI="${STUDIO_ONLY_GEMINI:-0}"
+for _arg in "$@"; do
+  if [ "$_arg" = "--gemini" ]; then
+    export STUDIO_BACKEND="agy"
+    export STUDIO_ONLY_GEMINI="1"
+    break
+  fi
+done
+
 SADECE_KONTROL=0
 [ "${1:-}" = "--kontrol" ] && SADECE_KONTROL=1
+
+STUDIO_MOD="${STUDIO_MOD:-}"
+if [ "${1:-}" = "--mevcut" ] || [ "${1:-}" = "--mod2" ]; then
+  STUDIO_MOD="2"
+  shift
+elif [ "${1:-}" = "--mod" ]; then
+  STUDIO_MOD="${2:-}"
+  if [ "$STUDIO_MOD" != "1" ] && [ "$STUDIO_MOD" != "2" ]; then
+    red "Kullanım: ./basla.sh --mod <1|2>"
+    exit 1
+  fi
+  shift 2
+fi
+
+# Güvenli koruma: workspace/src altında mevcut kod varsa ve mod belirtilmemişse Mod 1'in üzerine yazmasını önle
+if [ -z "$STUDIO_MOD" ] && [ "$SADECE_KONTROL" = "0" ] && [ -d workspace/src ] && [ -n "$(ls -A workspace/src 2>/dev/null)" ]; then
+  if [ ! -f workspace/studio.db ] && [ ! -f workspace/docs/mod2_mutabakat.json ]; then
+    ylw "! workspace/src altında mevcut kod tabanı tespit edildi (Mod 2 önerilir)."
+    dim "  Mevcut koda ve manuel değişikliklere zarar vermeden devralmak için: ./basla.sh --mod 2"
+    dim "  Yine de sıfırdan Mod 1 akışını zorlamak için: ./basla.sh --mod 1"
+    if [ -t 0 ]; then
+      printf "Mod 2 (mevcut proje devralma) ile devam edilsin mi? (e/h): "
+      read -r _MOD_SECIM
+      if [ "$_MOD_SECIM" = "e" ] || [ "$_MOD_SECIM" = "E" ]; then
+        STUDIO_MOD="2"
+      else
+        exit 2
+      fi
+    else
+      exit 2
+    fi
+  fi
+fi
+STUDIO_MOD="${STUDIO_MOD:-1}"
 
 # ---------------------------------------------------------------- ön koşullar
 echo "── Ön koşullar ──────────────────────────────"
@@ -569,7 +618,12 @@ grn "✓ Python ortamı hazır"
 export PATH="$HOME/.local/bin:$PATH"
 
 # Model arka ucu kontrolü (STUDIO_BACKEND: agy | devin)
-STUDIO_BACKEND="${STUDIO_BACKEND:-agy}"
+if [ "$STUDIO_ONLY_GEMINI" = "1" ]; then
+  STUDIO_BACKEND="agy"
+  grn "✓ Motor: Yalnızca Google Gemini (agy) kilitlendi (harici motorlar devre dışı)"
+else
+  STUDIO_BACKEND="${STUDIO_BACKEND:-agy}"
+fi
 
 if [ "$STUDIO_BACKEND" = "devin" ]; then
   DEVIN_EXE="$(command -v devin 2>/dev/null || true)"
@@ -609,7 +663,11 @@ fi
 KAPSAM="workspace/docs/proje_kapsami.md"
 [ -f "$KAPSAM" ] || KAPSAM="proje_kapsami.md"
 if [ ! -f "$KAPSAM" ]; then
-  red "✗ proje_kapsami.md yok (kökte ve workspace/docs/ altında bulunamadı)"; HATA=1
+  if [ "$STUDIO_MOD" = "2" ]; then
+    ylw "! proje_kapsami.md yok (Mod 2'de mevcut kod tabanından analizle başlanabilir)"
+  else
+    red "✗ proje_kapsami.md yok (kökte ve workspace/docs/ altında bulunamadı)"; HATA=1
+  fi
 elif grep -q "BURAYI DOLDUR" "$KAPSAM"; then
   ylw "! proje_kapsami.md'de doldurulmamış bölümler var — roller varsayım üretecek"
 else
@@ -692,6 +750,19 @@ web_panel_baslat() {
 
 web_panel_baslat
 
+# Mod 2: Eğer mutabakat henüz planlanmadıysa doğrudan terminal sihirbazını aç
+if [ "$STUDIO_MOD" = "2" ] && [ -t 0 ]; then
+  _MUT_DURUM="$($PY -c "import json; p='workspace/docs/mod2_mutabakat.json'; print(json.load(open(p)).get('durum') if __import__('os').path.exists(p) else '')" 2>/dev/null || true)"
+  if [ "$_MUT_DURUM" != "PLANLANDI" ]; then
+    $PY scripts/mod2_mutabakat.py --wizard
+    _WIZ_EXIT=$?
+    if [ $_WIZ_EXIT -ne 0 ]; then
+      dim "Mod 2 mutabakatı tamamlanmadı. Çıkılıyor."
+      exit $_WIZ_EXIT
+    fi
+  fi
+fi
+
 # Bilinçli başlatma: 'acil durdur' (devre_disi) bayrağı kalmışsa temizle,
 # yoksa koşucu ilk döngüde hiçbir şey yapmadan çıkar.
 $PY -c "import studio_board as B; B.clear('devre_disi')" 2>/dev/null || true
@@ -701,7 +772,7 @@ export STUDIO_BACKEND="${STUDIO_BACKEND:-agy}"
 export STUDIO_AGY_BIN="${AGY_EXE:-$HOME/.local/bin/agy}"
 [ -n "${DEVIN_EXE:-}" ] && export STUDIO_DEVIN_BIN="$DEVIN_EXE"
 mkdir -p "$(dirname "$LOG")"
-nohup $PY studio_engine.py --full --yes ${STUDIO_BUTCE:+--max-cost $STUDIO_BUTCE} "$@" > "$LOG" 2>&1 &
+nohup $PY studio_engine.py --full --mod "$STUDIO_MOD" ${STUDIO_ONLY_GEMINI:+--gemini} --yes ${STUDIO_BUTCE:+--max-cost $STUDIO_BUTCE} "$@" > "$LOG" 2>&1 &
 PID=$!
 sleep 2
 if ! kill -0 "$PID" 2>/dev/null; then
