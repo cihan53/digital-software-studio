@@ -662,7 +662,9 @@ def resolve_engine(agent: dict, override: dict | None = None) -> tuple[str, str,
             model = CLAUDE_MODEL
     else:
         model = override.get("model") or agent.get("model") or AGY_MODEL
-        # agy altında claude ailesi isim kalmışsa Gemini 3.8 karşılığına eşle:
+        # agy altında eski/geçersiz model isimlerini güncel 3.8 karşılığına eşle:
+        if "3.7" in model or "3.1" in model:
+            model = model.replace("3.7", "3.8").replace("3.1", "3.8")
         if any(k in model.lower() for k in ("opus", "sonnet", "claude")):
             model = "gemini-3.8-flash-high"
 
@@ -948,6 +950,12 @@ def _call_agy(system_prompt: str, user_prompt: str, effort: str, model: str,
     exe = find_exe("agy")
     if not exe:
         sys.exit("[HATA] 'agy' bulunamadı. Lütfen Antigravity CLI'nın kurulu olduğundan emin olun (~/.local/bin/agy).")
+
+    # Model adı normalleştirme: agy artık 3.7/3.1 modellerini desteklemiyor; güncel 3.8'e yükselt:
+    if "3.7" in model or "3.1" in model:
+        model = model.replace("3.7", "3.8").replace("3.1", "3.8")
+    if not model or model.strip() == "":
+        model = AGY_MODEL
 
     merged = (
         f"<rol_tanimi>\n{system_prompt}\n</rol_tanimi>\n\n"
@@ -1392,6 +1400,9 @@ WAIT_STEP = 20
 
 def is_limit_error(msg: str) -> bool:
     low = msg.lower()
+    # Model seçim / parametre hataları kota hatası değildir; kota beklemesine sokulmamalı:
+    if any(k in low for k in ("not recognized as a known model", "invalid model selection", "unknown model")):
+        return False
     return any(pat in low for pat in LIMIT_PATTERNS)
 
 

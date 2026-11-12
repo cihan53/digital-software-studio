@@ -210,12 +210,24 @@ def _ajan_cagri(oid: str) -> dict:
         temiz = temiz.strip("`")
         if temiz.lower().startswith("json"):
             temiz = temiz[4:]
-    i, j = temiz.find("{"), temiz.rfind("}")
-    if i == -1 or j <= i:
-        return {"yanit": ham.strip()[:2000], "taslak": None}
-    try:
-        veri = json.loads(temiz[i:j + 1])
-    except json.JSONDecodeError:
+
+    decoder = json.JSONDecoder()
+    pos = 0
+    veri = {}
+    while pos < len(temiz):
+        idx = temiz.find("{", pos)
+        if idx == -1:
+            break
+        try:
+            obj, end = decoder.raw_decode(temiz, idx)
+            if isinstance(obj, dict) and ("yanit" in obj or "taslak" in obj):
+                veri = obj
+                break
+            pos = end
+        except json.JSONDecodeError:
+            pos = idx + 1
+
+    if not veri:
         return {"yanit": ham.strip()[:2000], "taslak": None}
 
     taslak = veri.get("taslak")
