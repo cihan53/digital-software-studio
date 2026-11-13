@@ -160,12 +160,18 @@ PYEOF
       if [ ! -d .git ]; then
         red "Bu klasör bir git reposu değil."; exit 1
       fi
-      echo "Onay: çalışma dalı '$DAL' → main"
-      git checkout main \
-        && git pull --ff-only origin main \
+      ANA_DAL="main"
+      if git show-ref --verify --quiet refs/heads/master || git show-ref --verify --quiet refs/remotes/origin/master; then
+        if ! git show-ref --verify --quiet refs/heads/main && ! git show-ref --verify --quiet refs/remotes/origin/main; then
+          ANA_DAL="master"
+        fi
+      fi
+      echo "Onay: çalışma dalı '$DAL' → $ANA_DAL"
+      git checkout "$ANA_DAL" \
+        && git pull --ff-only origin "$ANA_DAL" \
         && git merge --no-ff -X theirs "$DAL" \
              -m "merge: $DAL (onaylandı)" \
-        && git push origin main \
+        && git push origin "$ANA_DAL" \
         && git checkout -q "$DAL" \
         && echo "OK merge tamam - tekrar '$DAL' dalindasin."
       exit $? ;;
