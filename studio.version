@@ -1,5 +1,5 @@
 {
-  "version": "1.10.122",
+  "version": "1.10.123",
   "released": "2026-11-13",
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
@@ -66,6 +66,13 @@
   ],
   "protected_files": [],
   "changelog": [
+    {
+      "version": "1.10.123",
+      "date": "2026-11-13",
+      "changes": [
+        "feat(brief): DevOps ve canlı dağıtım/altyapı brief görüşmesi desteği (#336) (#337)"
+      ]
+    },
     {
       "version": "1.10.122",
       "date": "2026-11-13",
