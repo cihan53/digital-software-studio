@@ -1,5 +1,5 @@
 {
-  "version": "1.10.116",
+  "version": "1.10.117",
   "released": "2026-11-13",
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
@@ -66,6 +66,13 @@
   ],
   "protected_files": [],
   "changelog": [
+    {
+      "version": "1.10.117",
+      "date": "2026-11-13",
+      "changes": [
+        "chore: add mobil_yonetici and cozum_kaniti to tracked_files in studio.version"
+      ]
+    },
     {
       "version": "1.10.116",
       "date": "2026-11-13",
