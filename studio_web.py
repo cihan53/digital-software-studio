@@ -1022,7 +1022,7 @@ class Handler(BaseHTTPRequestHandler):
                     cihaz = body.get("cihaz")
                     tid = body.get("talep_id")
                     gid = body.get("gorev_id")
-                    ok, yol, msg = MY.ekran_goruntusu_al(cihaz_id=cihaz, talep_id=tid, gorev_id=gid)
+                    ok, yol, msg = MY.ekran_goruntusu_al(cihaz_id=cihaz, talep_id=tid, gorev_id=gid, otomatik_baslat=True)
                     if ok and tid:
                         kanitlar = B.kanit_listele(talep_id=tid)
                         if kanitlar:

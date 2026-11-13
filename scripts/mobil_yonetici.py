@@ -204,9 +204,10 @@ def emulatore_durdur(cihaz_id: str = None) -> tuple[bool, str]:
 # Ekran Görüntüsü Alma & UAT Kanıtı Kaydetme
 # ==============================================================================
 
-def ekran_goruntusu_al(cihaz_id: str = None, talep_id: str = None, gorev_id: str = None) -> tuple[bool, str, str]:
+def ekran_goruntusu_al(cihaz_id: str = None, talep_id: str = None, gorev_id: str = None, otomatik_baslat: bool = True) -> tuple[bool, str, str]:
     """Çalışan cihazdan ekran görüntüsü alır ve workspace/docs/uat_kanitlari/ altına yazar.
 
+    otomatik_baslat=True ise ve çalışan emülatör yoksa önce emülatörü başlatıp bekler.
     Döndürür: (basarili, goreceli_dosya_yolu, mesaj)
     """
     adb = bul_adb()
@@ -215,7 +216,18 @@ def ekran_goruntusu_al(cihaz_id: str = None, talep_id: str = None, gorev_id: str
 
     cihazlar = calisan_cihazlar()
     if not cihazlar:
-        return False, "", "Ekran görüntüsü alınacak çalışan cihaz veya emülatör bulunamadı."
+        if otomatik_baslat:
+            ok_baslat, msg_baslat = emulatore_baslat()
+            if not ok_baslat:
+                return False, "", f"Emülatör otomatik başlatılamadı: {msg_baslat}"
+            # Cihazın hazır olması için bekle (azami 30sn)
+            for _ in range(30):
+                time.sleep(1)
+                cihazlar = [c for c in calisan_cihazlar() if c["durum"] == "device"]
+                if cihazlar:
+                    break
+        if not cihazlar:
+            return False, "", "Ekran görüntüsü alınacak çalışan cihaz veya emülatör bulunamadı."
 
     hedef_id = cihaz_id
     if not hedef_id:
