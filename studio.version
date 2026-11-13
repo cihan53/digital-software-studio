@@ -1,5 +1,5 @@
 {
-  "version": "1.10.119",
+  "version": "1.10.120",
   "released": "2026-11-13",
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
@@ -66,6 +66,13 @@
   ],
   "protected_files": [],
   "changelog": [
+    {
+      "version": "1.10.120",
+      "date": "2026-11-13",
+      "changes": [
+        "feat: UAT Kanıtlarında Before-After karşılaştırma ve görsel rozetleme (#330) (#331)"
+      ]
+    },
     {
       "version": "1.10.119",
       "date": "2026-11-13",
