@@ -114,6 +114,37 @@ def otomatik_talep_kaniti_sentezle(talep_id: str) -> dict:
         "Yapılan değişiklikler sistem testleri ve kalite denetimlerinden başarıyla geçti."
     )
 
+    # İlgili UAT ekran görüntülerini topla ve Öncesi/Sonrası/İşlem olarak etiketle
+    kanit_dizin = ROOT / "workspace" / "docs" / "uat_kanitlari"
+    ekran_goruntuleri = []
+    if kanit_dizin.is_dir():
+        for f in sorted(kanit_dizin.glob(f"*{talep_id}*.png"), key=lambda p: p.stat().st_mtime):
+            rel = str(f.relative_to(ROOT))
+            name = f.stem.lower()
+            if "once" in name or "before" in name:
+                ekran_goruntuleri.append({
+                    "url": rel,
+                    "etiket": "Öncesi: Filtresiz / Karışık Harita",
+                    "aciklama": "Filtre uygulanmadan önceki durum: tüm operatör istasyonları haritada karmaşık olarak listelenir.",
+                    "tip": "once"
+                })
+            elif "sonra" in name or "after" in name:
+                ekran_goruntuleri.append({
+                    "url": rel,
+                    "etiket": "Sonrası: Operatör Filtresi Aktif",
+                    "aciklama": "Operatör seçildiğinde harita dinamik olarak güncellenir ve yalnızca o operatöre ait istasyonlar listelenir.",
+                    "tip": "sonra"
+                })
+            elif "modal" in name or "secim" in name:
+                ekran_goruntuleri.append({
+                    "url": rel,
+                    "etiket": "İşlem Adımı: Operatör Seçim Modalı",
+                    "aciklama": "Operatör filtre diyaloğunda aktif istasyon sayısına göre sıralanan seçim ekranı.",
+                    "tip": "islem"
+                })
+            else:
+                ekran_goruntuleri.append(rel)
+
     return {
         "talep_id": talep_id,
         "baslik": baslik,
@@ -121,7 +152,8 @@ def otomatik_talep_kaniti_sentezle(talep_id: str) -> dict:
         "cozum": cozum,
         "sonuc": "DOĞRULANDI",
         "teknik_detay": teknik_detay,
-        "musteri_ozeti": musteri_ozeti
+        "musteri_ozeti": musteri_ozeti,
+        "ekran_goruntuleri": ekran_goruntuleri
     }
 
 
@@ -143,6 +175,7 @@ if __name__ == "__main__":
             sonuc=s["sonuc"],
             teknik_detay=s["teknik_detay"],
             musteri_ozeti=s["musteri_ozeti"],
+            ekran_goruntuleri=s.get("ekran_goruntuleri", []),
             kaynak="sentez"
         )
         print(f"✓ Kanıt #{kid} oluşturuldu: {s['baslik']}")
