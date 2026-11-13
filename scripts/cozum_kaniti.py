@@ -124,22 +124,22 @@ def otomatik_talep_kaniti_sentezle(talep_id: str) -> dict:
             if "once" in name or "before" in name:
                 ekran_goruntuleri.append({
                     "url": rel,
-                    "etiket": "Öncesi: Filtresiz / Karışık Harita",
-                    "aciklama": "Filtre uygulanmadan önceki durum: tüm operatör istasyonları haritada karmaşık olarak listelenir.",
+                    "etiket": "Öncesi: Filtresiz / Karışık Durum",
+                    "aciklama": "Filtre uygulanmadan önceki durum: tüm öğeler karmaşık olarak listelenir.",
                     "tip": "once"
                 })
             elif "sonra" in name or "after" in name:
                 ekran_goruntuleri.append({
                     "url": rel,
-                    "etiket": "Sonrası: Operatör Filtresi Aktif",
-                    "aciklama": "Operatör seçildiğinde harita dinamik olarak güncellenir ve yalnızca o operatöre ait istasyonlar listelenir.",
+                    "etiket": "Sonrası: Filtre Aktif",
+                    "aciklama": "Filtre seçildiğinde ekran dinamik olarak güncellenir ve yalnızca seçilen öğeler listelenir.",
                     "tip": "sonra"
                 })
             elif "modal" in name or "secim" in name:
                 ekran_goruntuleri.append({
                     "url": rel,
-                    "etiket": "İşlem Adımı: Operatör Seçim Modalı",
-                    "aciklama": "Operatör filtre diyaloğunda aktif istasyon sayısına göre sıralanan seçim ekranı.",
+                    "etiket": "İşlem Adımı: Seçim Ekranı",
+                    "aciklama": "Filtre diyaloğunda aktif kayıt sayısına göre sıralanan seçim ekranı.",
                     "tip": "islem"
                 })
             else:

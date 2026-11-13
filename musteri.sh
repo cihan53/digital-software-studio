@@ -146,6 +146,10 @@ case "${1:-}" in
     $PY scripts/studio_yetkilisi.py --cozum-onayla "$2"
     exit 0
     ;;
+  --sync-github|--github-sync)
+    $PY scripts/github_issue_bridge.py --interactive
+    exit 0
+    ;;
 esac
 
 # Eğer parametre doğrudan metin ise hızlı talep olarak al
@@ -165,9 +169,10 @@ while true; do
   echo -e "  ${CYAN}5)${NC} 🌐 Canlı Test Ortamını Başlat (workspace/yerel_ortam.sh)"
   echo -e "  ${CYAN}6)${NC} 📑 Talep Havuzu Dosyasını Aç (musteri_talepleri.md)"
   echo -e "  ${CYAN}7)${NC} ⚖️  Karar Verici Masası (Triage, Fazlama & Onay)"
+  echo -e "  ${CYAN}8)${NC} 🐙 GitHub Açık İşleri Tara & Stüdyoya Aktar"
   echo -e "  ${CYAN}0)${NC} Çıkış"
   echo
-  read -r -p "Seçiminiz [0-7]: " SECIM
+  read -r -p "Seçiminiz [0-8]: " SECIM
 
   case "$SECIM" in
     1)
@@ -229,6 +234,12 @@ while true; do
         [ -z "$F_ID" ] && F_ID="FAZ-2"
         $PY scripts/karar_verici_triage.py --ata "$T_ID" --faz "$F_ID"
       fi
+      echo
+      read -r -p "Devam etmek için Enter'a basın..." _
+      ;;
+    8)
+      header
+      $PY scripts/github_issue_bridge.py --interactive
       echo
       read -r -p "Devam etmek için Enter'a basın..." _
       ;;

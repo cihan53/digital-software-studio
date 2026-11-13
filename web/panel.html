@@ -1010,16 +1010,16 @@ function kanitGorselleriHtml(liste) {
       let aciklama = '';
       if (dosya.toLowerCase().includes('once') || dosya.toLowerCase().includes('before')) {
         tip = 'once';
-        etiket = 'Öncesi: Filtresiz / Karışık Harita';
-        aciklama = 'Filtre seçilmeden önceki durum: haritada tüm operatör istasyonları (ZES, Trugo, vs.) görünür.';
+        etiket = 'Öncesi: Filtresiz / Karışık Durum';
+        aciklama = 'Filtre seçilmeden önceki durum: ekranda tüm kayıtlar görünür.';
       } else if (dosya.toLowerCase().includes('sonra') || dosya.toLowerCase().includes('after')) {
         tip = 'sonra';
-        etiket = 'Sonrası: Operatör Filtresi Aktif';
-        aciklama = 'Operatör filtresi seçildiğinde harita dinamik olarak güncellendi ve yalnızca seçilen operatör istasyonları listelendi.';
+        etiket = 'Sonrası: Filtre Aktif';
+        aciklama = 'Filtre seçildiğinde ekran dinamik olarak güncellendi ve yalnızca seçilen kayıtlar listelendi.';
       } else if (dosya.toLowerCase().includes('modal') || dosya.toLowerCase().includes('secim')) {
         tip = 'islem';
-        etiket = 'İşlem Adımı: Operatör Seçim Modalı';
-        aciklama = 'Kullanıcı filtre diyaloğunda aktif istasyon sayısına göre sıralanan listeden operatör seçer.';
+        etiket = 'İşlem Adımı: Seçim Ekranı';
+        aciklama = 'Kullanıcı filtre diyaloğunda aktif kayıt sayısına göre sıralanan listeden seçim yapar.';
       }
       return { url: item, etiket, aciklama, tip };
     }
