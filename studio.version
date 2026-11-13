@@ -3,6 +3,8 @@
   "released": "2026-11-13",
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
+    "scripts/cozum_kaniti.py",
+    "scripts/mobil_yonetici.py",
     "scripts/musteri_talepleri.py",
     "scripts/musteri_temsilcisi.py",
     "scripts/karar_verici_triage.py",
