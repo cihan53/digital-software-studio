@@ -718,7 +718,21 @@ try:
     eklenen = SY.otomatik_musteri_talepleri_senkronize_et()
     if eklenen > 0:
         print(f"  [✓] {eklenen} adet müşteri talebi algılandı ve sprint panosuna eklendi.")
-except Exception as e:
+except Exception:
+    pass
+
+try:
+    import github_issue_bridge as GH
+    eslenmemis = GH.eslenmemis_github_islerini_bul()
+    if eslenmemis:
+        print(f"  [!] 🐙 GitHub üzerinde stüdyoya henüz aktarılmamış {len(eslenmemis)} açık iş var:")
+        for item in eslenmemis[:3]:
+            tur = 'PR' if item.get('is_pr') else 'Issue'
+            print(f"      • #{item.get('number')} [{tur}] {item.get('title')}")
+        if len(eslenmemis) > 3:
+            print(f"      ... ve {len(eslenmemis) - 3} adet daha.")
+        print("      Stüdyo iş listesine almak için: ./musteri.sh --sync-github")
+except Exception:
     pass
 PYEOF
 

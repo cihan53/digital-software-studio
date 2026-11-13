@@ -214,7 +214,15 @@ def mobil_uygulama_paket_bul() -> str:
                 return m.group(1)
         except Exception:
             pass
-    return "tr.com.chy.elektriklioto"
+    manifest_dosya = ROOT / "workspace/src/mobile/android/app/src/main/AndroidManifest.xml"
+    if manifest_dosya.is_file():
+        try:
+            m = re.search(r'package\s*=\s*["\']([^"\']+)["\']', manifest_dosya.read_text(encoding="utf-8"))
+            if m:
+                return m.group(1)
+        except Exception:
+            pass
+    return "com.example.app"
 
 
 def mobil_uygulama_baslat(cihaz_id: str = None) -> bool:
