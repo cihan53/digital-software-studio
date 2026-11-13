@@ -1,5 +1,5 @@
 {
-  "version": "1.10.118",
+  "version": "1.10.119",
   "released": "2026-11-13",
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
@@ -66,6 +66,13 @@
   ],
   "protected_files": [],
   "changelog": [
+    {
+      "version": "1.10.119",
+      "date": "2026-11-13",
+      "changes": [
+        "Merge pull request #329 from cihan53/feature/328"
+      ]
+    },
     {
       "version": "1.10.118",
       "date": "2026-11-13",
