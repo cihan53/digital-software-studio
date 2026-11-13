@@ -1,5 +1,5 @@
 {
-  "version": "1.10.120",
+  "version": "1.10.121",
   "released": "2026-11-13",
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
@@ -66,6 +66,13 @@
   ],
   "protected_files": [],
   "changelog": [
+    {
+      "version": "1.10.121",
+      "date": "2026-11-13",
+      "changes": [
+        "fix(cli): basla.sh merge komutunda main/master dinamik tespiti (#332) (#333)"
+      ]
+    },
     {
       "version": "1.10.120",
       "date": "2026-11-13",
