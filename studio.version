@@ -1,5 +1,5 @@
 {
-  "version": "1.10.121",
+  "version": "1.10.122",
   "released": "2026-11-13",
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
@@ -66,6 +66,13 @@
   ],
   "protected_files": [],
   "changelog": [
+    {
+      "version": "1.10.122",
+      "date": "2026-11-13",
+      "changes": [
+        "feat(bridge): GitHub açık issue/PR otomatik tarama ve stüdyoya aktarma (#334) (#335)"
+      ]
+    },
     {
       "version": "1.10.121",
       "date": "2026-11-13",
