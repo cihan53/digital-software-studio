@@ -204,10 +204,54 @@ def emulatore_durdur(cihaz_id: str = None) -> tuple[bool, str]:
 # Ekran Görüntüsü Alma & UAT Kanıtı Kaydetme
 # ==============================================================================
 
+def mobil_uygulama_paket_bul() -> str:
+    """Projedeki mobil uygulamanın paket adını bulur."""
+    gradle_dosya = WORKSPACE / "src" / "mobile" / "android" / "app" / "build.gradle"
+    if gradle_dosya.is_file():
+        try:
+            m = re.search(r'applicationId\s*=?\s*["\']([^"\']+)["\']', gradle_dosya.read_text(encoding="utf-8"))
+            if m:
+                return m.group(1)
+        except Exception:
+            pass
+    return "tr.com.chy.elektriklioto"
+
+
+def mobil_uygulama_baslat(cihaz_id: str = None) -> bool:
+    """Emülatörde projeye ait mobil uygulamayı ön plana getirir/başlatır."""
+    adb = bul_adb()
+    if not adb:
+        return False
+    paket = mobil_uygulama_paket_bul()
+    if not paket:
+        return False
+    cihazlar = [c for c in calisan_cihazlar() if c["durum"] == "device"]
+    if not cihazlar:
+        return False
+    hedef_id = cihaz_id or cihazlar[0]["id"]
+    try:
+        res = subprocess.run([adb, "-s", hedef_id, "shell", "cmd", "package", "resolve-activity", "--brief", paket],
+                             capture_output=True, text=True, timeout=5)
+        act = f"{paket}/.MainActivity"
+        for line in res.stdout.splitlines():
+            line = line.strip()
+            if "/" in line and paket in line:
+                act = line
+                break
+        subprocess.run([adb, "-s", hedef_id, "shell", "am", "start", "-n", act],
+                       capture_output=True, text=True, timeout=10)
+        time.sleep(2)
+        return True
+    except Exception as e:
+        print(f"[!] mobil_uygulama_baslat hatası: {e}", file=sys.stderr)
+        return False
+
+
 def ekran_goruntusu_al(cihaz_id: str = None, talep_id: str = None, gorev_id: str = None, otomatik_baslat: bool = True) -> tuple[bool, str, str]:
     """Çalışan cihazdan ekran görüntüsü alır ve workspace/docs/uat_kanitlari/ altına yazar.
 
     otomatik_baslat=True ise ve çalışan emülatör yoksa önce emülatörü başlatıp bekler.
+    Ekran görüntüsü öncesinde projeye ait mobil uygulama ön plana getirilir.
     Döndürür: (basarili, goreceli_dosya_yolu, mesaj)
     """
     adb = bul_adb()
@@ -237,6 +281,9 @@ def ekran_goruntusu_al(cihaz_id: str = None, talep_id: str = None, gorev_id: str
                 break
     if not hedef_id:
         hedef_id = cihazlar[0]["id"]
+
+    # Ekran görüntüsü öncesi uygulamanın kendisini ön plana getir
+    mobil_uygulama_baslat(hedef_id)
 
     UAT_KANIT_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
