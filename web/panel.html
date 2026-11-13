@@ -997,6 +997,103 @@ async function mobilIslem(aksiyon){
   }
 }
 
+function kanitGorselleriHtml(liste) {
+  if (!liste || !liste.length) {
+    return '<div class="soluk" style="font-size:12px;padding:8px 0">Henüz görsel kanıt iliştirilmedi. Canlı sistem üzerinden test edildi.</div>';
+  }
+
+  const norm = liste.map(item => {
+    if (typeof item === 'string') {
+      const dosya = item.split('/').pop() || '';
+      let tip = 'diger';
+      let etiket = dosya;
+      let aciklama = '';
+      if (dosya.toLowerCase().includes('once') || dosya.toLowerCase().includes('before')) {
+        tip = 'once';
+        etiket = 'Öncesi: Filtresiz / Karışık Harita';
+        aciklama = 'Filtre seçilmeden önceki durum: haritada tüm operatör istasyonları (ZES, Trugo, vs.) görünür.';
+      } else if (dosya.toLowerCase().includes('sonra') || dosya.toLowerCase().includes('after')) {
+        tip = 'sonra';
+        etiket = 'Sonrası: Operatör Filtresi Aktif';
+        aciklama = 'Operatör filtresi seçildiğinde harita dinamik olarak güncellendi ve yalnızca seçilen operatör istasyonları listelendi.';
+      } else if (dosya.toLowerCase().includes('modal') || dosya.toLowerCase().includes('secim')) {
+        tip = 'islem';
+        etiket = 'İşlem Adımı: Operatör Seçim Modalı';
+        aciklama = 'Kullanıcı filtre diyaloğunda aktif istasyon sayısına göre sıralanan listeden operatör seçer.';
+      }
+      return { url: item, etiket, aciklama, tip };
+    }
+    return {
+      url: item.url || item.yol || '',
+      etiket: item.etiket || item.baslik || (item.url ? item.url.split('/').pop() : 'Kanıt'),
+      aciklama: item.aciklama || '',
+      tip: item.tip || 'diger'
+    };
+  });
+
+  const onceGorseller = norm.filter(x => x.tip === 'once');
+  const sonraGorseller = norm.filter(x => x.tip === 'sonra');
+  const digerGorseller = norm.filter(x => x.tip !== 'once' && x.tip !== 'sonra');
+
+  let html = '';
+
+  if (onceGorseller.length > 0 && sonraGorseller.length > 0) {
+    const o = onceGorseller[0];
+    const s = sonraGorseller[0];
+    html += `
+      <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--metin)">
+        ⚖️ Önce / Sonra (Before & After) Doğrulama Karşılaştırması
+      </div>
+      <div class="kanit-karsilastirma">
+        <div class="kanit-karsilastirma-kart once">
+          <div class="kanit-kart-baslik">
+            <span>🔴 Önceki Durum</span>
+            <span class="rozet-once">Sorunlu / Filtresiz</span>
+          </div>
+          <div class="kanit-kart-gorsel" onclick="window.open('/api/gorsel?yol=${encodeURIComponent(o.url)}', '_blank')">
+            <img src="/api/gorsel?yol=${encodeURIComponent(o.url)}" alt="Önceki Durum">
+          </div>
+          <div class="kanit-kart-aciklama">
+            <b>${esc(o.etiket)}</b>
+            ${o.aciklama ? `<div style="font-size:11px;color:var(--soluk);margin-top:2px">${esc(o.aciklama)}</div>` : ''}
+          </div>
+        </div>
+
+        <div class="kanit-karsilastirma-kart sonra">
+          <div class="kanit-kart-baslik">
+            <span>🟢 Sonraki Durum</span>
+            <span class="rozet-sonra">Doğrulandı / Çözüm</span>
+          </div>
+          <div class="kanit-kart-gorsel" onclick="window.open('/api/gorsel?yol=${encodeURIComponent(s.url)}', '_blank')">
+            <img src="/api/gorsel?yol=${encodeURIComponent(s.url)}" alt="Sonraki Durum">
+          </div>
+          <div class="kanit-kart-aciklama">
+            <b>${esc(s.etiket)}</b>
+            ${s.aciklama ? `<div style="font-size:11px;color:var(--soluk);margin-top:2px">${esc(s.aciklama)}</div>` : ''}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  const gosterilecekDiger = (onceGorseller.length > 0 && sonraGorseller.length > 0) ? digerGorseller : norm;
+  if (gosterilecekDiger.length > 0) {
+    if (onceGorseller.length > 0 && sonraGorseller.length > 0) {
+      html += `<div style="font-size:12px;font-weight:600;margin:12px 0 6px;color:var(--soluk)">📸 Ek İşlem Adımları & Görseller (${gosterilecekDiger.length})</div>`;
+    }
+    html += '<div class="mobil-galeri">';
+    html += gosterilecekDiger.map(item => `
+      <div class="mobil-galeri-oge" onclick="window.open('/api/gorsel?yol=${encodeURIComponent(item.url)}', '_blank')" title="${esc(item.aciklama || item.etiket)}">
+        <img src="/api/gorsel?yol=${encodeURIComponent(item.url)}" alt="Kanıt Ekranı">
+        <div class="mobil-galeri-etiket">${esc(item.etiket)}</div>
+      </div>
+    `).join('');
+    html += '</div>';
+  }
+
+  return html;
+}
+
 // ---------- UAT ve Çözüm Kanıtı Modalı ----------
 async function kanitModalAc(talepId){
   const mic = document.getElementById('modal-ic');
@@ -1017,12 +1114,7 @@ async function kanitModalAc(talepId){
       return;
     }
     const k = kanitlar[0];
-    const gorseller = (k.ekran_goruntuleri || []).map(yol => `
-      <div class="mobil-galeri-oge" onclick="window.open('/api/gorsel?yol=${encodeURIComponent(yol)}', '_blank')">
-        <img src="/api/gorsel?yol=${encodeURIComponent(yol)}" alt="Kanıt Ekranı">
-        <div class="mobil-galeri-etiket">${esc(yol.split('/').pop())}</div>
-      </div>
-    `).join('');
+    const gorsellerHtml = kanitGorselleriHtml(k.ekran_goruntuleri || []);
 
     mic.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
@@ -1063,9 +1155,7 @@ async function kanitModalAc(talepId){
           <div class="kanit-baslik">📸 Görsel Kanıtlar ve Ekran Görüntüleri (${(k.ekran_goruntuleri||[]).length})</div>
           <button class="kucuk birincil" onclick="kanitMobilScreencap('${esc(talepId)}')">📱 Emülatörden Anlık Görüntü Al</button>
         </div>
-        <div class="mobil-galeri">
-          ${gorseller || '<div class="soluk" style="font-size:12px">Henüz görsel kanıt iliştirilmedi. Yukarıdaki butonla emülatörden canlı görüntü alabilirsiniz.</div>'}
-        </div>
+        ${gorsellerHtml}
       </div>
     `;
   } catch (err) {
