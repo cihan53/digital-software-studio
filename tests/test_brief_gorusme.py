@@ -90,6 +90,19 @@ class Gorusme(unittest.TestCase):
             srv.shutdown()
             W._bg = eski
 
+    def test_devops_modu_ve_brief_ekleme(self):
+        BG.yeni_gorusme(mod="devops")
+        t1 = BG.soru_uret("devops")["tur"]
+        self.assertEqual(t1["rol"], "devops_engineer")
+        BG.cevapla("Prerender sırasında 404 sayfası CI/CD derlemesini engellemesin.")
+        t2 = BG.soru_uret("devops")["tur"]
+        self.assertEqual(t2["rol"], "cto")
+        BG.cevapla("Nitro ignore ve failOnError ayarlarıyla izole edelim.")
+        brief = (self.tmp / "workspace" / "docs" / "proje_kapsami.md").read_text(encoding="utf-8")
+        self.assertIn("## DevOps ve Dağıtım Notları", brief)
+        self.assertIn("<!-- rol: devops_engineer -->", brief)
+        self.assertIn("<!-- rol: cto -->", brief)
+
 
 if __name__ == "__main__":
     unittest.main()

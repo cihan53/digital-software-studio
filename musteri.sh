@@ -150,6 +150,10 @@ case "${1:-}" in
     $PY scripts/github_issue_bridge.py --interactive
     exit 0
     ;;
+  --devops-brief|--brief-devops)
+    $PY scripts/brief_gorusme.py --devops
+    exit 0
+    ;;
 esac
 
 # Eğer parametre doğrudan metin ise hızlı talep olarak al
@@ -170,9 +174,10 @@ while true; do
   echo -e "  ${CYAN}6)${NC} 📑 Talep Havuzu Dosyasını Aç (musteri_talepleri.md)"
   echo -e "  ${CYAN}7)${NC} ⚖️  Karar Verici Masası (Triage, Fazlama & Onay)"
   echo -e "  ${CYAN}8)${NC} 🐙 GitHub Açık İşleri Tara & Stüdyoya Aktar"
+  echo -e "  ${CYAN}9)${NC} 🛠️  DevOps & Dağıtım Brief Görüşmesi Başlat"
   echo -e "  ${CYAN}0)${NC} Çıkış"
   echo
-  read -r -p "Seçiminiz [0-8]: " SECIM
+  read -r -p "Seçiminiz [0-9]: " SECIM
 
   case "$SECIM" in
     1)
@@ -240,6 +245,12 @@ while true; do
     8)
       header
       $PY scripts/github_issue_bridge.py --interactive
+      echo
+      read -r -p "Devam etmek için Enter'a basın..." _
+      ;;
+    9)
+      header
+      $PY scripts/brief_gorusme.py --devops
       echo
       read -r -p "Devam etmek için Enter'a basın..." _
       ;;
