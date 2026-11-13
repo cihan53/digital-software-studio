@@ -149,10 +149,15 @@ def db_durumu(kok: Path = ROOT) -> dict:
         if "pano_gorevleri" in tablolar:
             durumlar: Counter[str] = Counter()
             sorunlu: list[dict] = []
-            for r in cur.execute("SELECT id, title, status, note FROM pano_gorevleri").fetchall():
-                durumlar[r["status"]] += 1
-                if r["status"] in ("FAILED", "RUNNING"):
-                    sorunlu.append({"id": r["id"], "title": r["title"], "status": r["status"], "note": (r["note"] or "")[:160]})
+            cols = {c[1] for c in cur.execute("PRAGMA table_info(pano_gorevleri)").fetchall()}
+            c_baslik = "baslik" if "baslik" in cols else "title"
+            c_durum = "durum" if "durum" in cols else "status"
+            c_not = "not_" if "not_" in cols else ("note" if "note" in cols else "NULL")
+            for r in cur.execute(f"SELECT id, {c_baslik} AS baslik, {c_durum} AS durum, {c_not} AS not_ FROM pano_gorevleri").fetchall():
+                st = r["durum"]
+                durumlar[st] += 1
+                if st in ("FAILED", "RUNNING"):
+                    sorunlu.append({"id": r["id"], "title": r["baslik"], "status": st, "note": (r["not_"] or "")[:160]})
             ozet["gorev_durumlari"] = dict(durumlar)
             ozet["sorunlu_gorevler"] = sorunlu
         if "talepler" in tablolar:

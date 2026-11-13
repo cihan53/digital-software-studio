@@ -4118,6 +4118,9 @@ def main():
         print(f"[✓] Mod 2 analiz tamamlandı: {len(durum['bulgular'])} bulgu -> workspace/docs/mevcut_proje_analizi.md")
         return
 
+    if not args.dry_run and not acquire_lock():
+        return
+
     if args.mod == 2:
         sys.path.insert(0, str(ROOT / "scripts"))
         import mevcut_proje_analizi as MPA
@@ -4165,9 +4168,6 @@ def main():
             print(f"[✓] {faz['id']} planlama sprinti ({sid}) eklendi; plan üretilince Onaylar sekmesinden onaylayın.")
         else:
             print(f"[i] {faz['id']} için planlama sprinti zaten var.")
-        return
-
-    if not args.dry_run and not acquire_lock():
         return
 
     preflight_env(force=args.refresh_env)

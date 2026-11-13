@@ -828,10 +828,40 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 import musteri_temsilcisi as MTC
                 oid = q.get("oturum", [""])[0]
+                if not oid or not MTC._oturum_var(oid):
+                    conn = B.db_conn()
+                    try:
+                        row = conn.execute("SELECT id FROM sohbet_oturumlari WHERE durum = 'ACIK' ORDER BY son_aktivite DESC LIMIT 1").fetchone()
+                        if row:
+                            oid = row[0]
+                    finally:
+                        conn.close()
                 return self._json({"ok": True,
-                                   "mesajlar": MTC.mesajlar(oid),
+                                   "oturum_id": oid,
+                                   "mesajlar": MTC.mesajlar(oid) if oid else [],
                                    "talepler": MTC.musteri_talepleri(),
                                    "motor": MTC.aktif_motor()})
+            except Exception as e:
+                return self._json({"ok": False, "mesaj": str(e)}, 500)
+
+        if path == "/api/mobil/durum":
+            try:
+                import mobil_yonetici as MY
+                return self._json(MY.genel_mobil_durum())
+            except Exception as e:
+                return self._json({"ok": False, "mesaj": str(e)}, 500)
+
+        if path == "/api/kanitlar":
+            try:
+                import cozum_kaniti as CK
+                tid = q.get("talep_id", [""])[0] or None
+                gid = q.get("gorev_id", [""])[0] or None
+                lim = int(q.get("limit", ["50"])[0] or 50)
+                liste = B.kanit_listele(talep_id=tid, gorev_id=gid, limit=lim)
+                if tid and not liste:
+                    sentez = CK.otomatik_talep_kaniti_sentezle(tid)
+                    liste = [sentez]
+                return self._json({"ok": True, "kanitlar": liste})
             except Exception as e:
                 return self._json({"ok": False, "mesaj": str(e)}, 500)
 
@@ -973,7 +1003,71 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json({"ok": False, "mesaj": str(e)}, 400)
 
+        if path == "/api/mobil/islem":
+            if self._yazma_guvenligi():
+                return
+            try:
+                import mobil_yonetici as MY
+                aksiyon = body.get("aksiyon")
+                if aksiyon == "baslat":
+                    avd = body.get("avd", "Galaxy_S24")
+                    basliksiz = bool(body.get("basliksiz", False))
+                    ok, msg = MY.emulatore_baslat(avd, basliksiz=basliksiz)
+                    return self._json({"ok": ok, "mesaj": msg})
+                elif aksiyon == "durdur":
+                    cihaz = body.get("cihaz")
+                    ok, msg = MY.emulatore_durdur(cihaz)
+                    return self._json({"ok": ok, "mesaj": msg})
+                elif aksiyon == "ekran_goruntusu":
+                    cihaz = body.get("cihaz")
+                    tid = body.get("talep_id")
+                    gid = body.get("gorev_id")
+                    ok, yol, msg = MY.ekran_goruntusu_al(cihaz_id=cihaz, talep_id=tid, gorev_id=gid)
+                    if ok and tid:
+                        kanitlar = B.kanit_listele(talep_id=tid)
+                        if kanitlar:
+                            k = kanitlar[0]
+                            gorseller = k.get("ekran_goruntuleri") or []
+                            if yol not in gorseller:
+                                gorseller.append(yol)
+                                conn = B.db_conn()
+                                try:
+                                    conn.execute("UPDATE cozum_kanitlari SET ekran_goruntuleri = ? WHERE id = ?",
+                                                 (json.dumps(gorseller, ensure_ascii=False), k["id"]))
+                                    conn.commit()
+                                finally:
+                                    conn.close()
+                    return self._json({"ok": ok, "yol": yol, "mesaj": msg})
+                return self._json({"ok": False, "mesaj": f"Bilinmeyen mobil aksiyon: {aksiyon}"}, 400)
+            except Exception as e:
+                return self._json({"ok": False, "mesaj": str(e)}, 500)
+
+        if path == "/api/kanitlar/ekle":
+            if self._yazma_guvenligi():
+                return
+            try:
+                kid = B.kanit_ekle(
+                    talep_id=body.get("talep_id"),
+                    gorev_id=body.get("gorev_id"),
+                    baslik=body.get("baslik", ""),
+                    sorun=body.get("sorun", ""),
+                    cozum=body.get("cozum", ""),
+                    sonuc=body.get("sonuc", "BASARILI"),
+                    teknik_detay=body.get("teknik_detay", ""),
+                    musteri_ozeti=body.get("musteri_ozeti", ""),
+                    ekran_goruntuleri=body.get("ekran_goruntuleri", []),
+                    kaynak=body.get("kaynak", "manuel")
+                )
+                return self._json({"ok": True, "kanit_id": kid, "mesaj": "Kanıt kaydedildi"})
+            except Exception as e:
+                return self._json({"ok": False, "mesaj": str(e)}, 500)
+
         return self._json({"ok": False, "mesaj": "bulunamadı"}, 404)
+
+
+class StudioServer(ThreadingHTTPServer):
+    allow_reuse_address = True
+    daemon_threads = True
 
 
 def main():
@@ -984,7 +1078,24 @@ def main():
                     default=int(os.getenv("STUDIO_WEB_PORT", "8090")))
     args = ap.parse_args()
 
-    srv = ThreadingHTTPServer((args.host, args.port), Handler)
+    pid_file = ROOT / "workspace" / ".web.pid"
+    try:
+        srv = StudioServer((args.host, args.port), Handler)
+    except OSError as e:
+        if getattr(e, "errno", None) in (48, 98):
+            print(f"\n  ⚠ Port {args.port} zaten kullanımda (başka bir web arayüzü veya servis aktif).", file=sys.stderr)
+            print(f"     Aktif arayüze erişmek için  : http://{args.host}:{args.port}/panel", file=sys.stderr)
+            print(f"     Mevcut süreci kapatmak için : ./basla.sh --servisler-kapat", file=sys.stderr)
+            print(f"     Farklı portla açmak için    : STUDIO_WEB_PORT={args.port + 1} ./basla.sh --web\n", file=sys.stderr)
+            sys.exit(1)
+        raise
+
+    try:
+        pid_file.parent.mkdir(parents=True, exist_ok=True)
+        pid_file.write_text(str(os.getpid()), encoding="utf-8")
+    except OSError:
+        pass
+
     print(f"  🌐 Studio Web  →  http://{args.host}:{args.port}/")
     print(f"     Panel   : http://{args.host}:{args.port}/panel")
     print(f"     Müşteri : http://{args.host}:{args.port}/musteri")
@@ -995,6 +1106,10 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        try:
+            pid_file.unlink(missing_ok=True)
+        except OSError:
+            pass
         srv.server_close()
 
 

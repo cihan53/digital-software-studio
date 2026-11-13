@@ -281,6 +281,19 @@ def _import_cozulur_mu(dosya_dir: Path, spec: str) -> bool:
             return True
     if base.is_dir() and any((base / idx).is_file() for idx in INDEX_FILES):
         return True
+    # TS ESM (NodeNext/Node16): './foo.js' diskte foo.ts / foo.tsx / foo.d.ts olabilir (#309, TALEP-074)
+    if spec.endswith(".js"):
+        base_ts = dosya_dir / spec[:-3]
+        for ext in (".ts", ".tsx", ".d.ts"):
+            if Path(str(base_ts) + ext).is_file():
+                return True
+        if base_ts.is_dir() and any((base_ts / f"index{e}").is_file() for e in (".ts", ".tsx")):
+            return True
+    elif spec.endswith(".mjs"):
+        base_ts = dosya_dir / spec[:-4]
+        for ext in (".mts", ".ts"):
+            if Path(str(base_ts) + ext).is_file():
+                return True
     return False
 
 
@@ -320,6 +333,19 @@ def _alias_cozulur_mu(kok: Path, spec: str) -> bool:
                 return True
         if base.is_dir() and any((base / idx).is_file() for idx in INDEX_FILES):
             return True
+        # TS ESM (NodeNext/Node16)
+        if spec.endswith(".js"):
+            base_ts = Path(str(base)[:-3])
+            for ext in (".ts", ".tsx", ".d.ts"):
+                if Path(str(base_ts) + ext).is_file():
+                    return True
+            if base_ts.is_dir() and any((base_ts / f"index{e}").is_file() for e in (".ts", ".tsx")):
+                return True
+        elif spec.endswith(".mjs"):
+            base_ts = Path(str(base)[:-4])
+            for ext in (".mts", ".ts"):
+                if Path(str(base_ts) + ext).is_file():
+                    return True
     return False
 
 
@@ -362,6 +388,24 @@ def _hedef_dosya(taban: Path, spec: str) -> Path | None:
         for idx in INDEX_FILES:
             if (taban / idx).is_file():
                 return taban / idx
+    # TS ESM (NodeNext/Node16): './foo.js' diskte foo.ts / foo.tsx / foo.d.ts olabilir (#309, TALEP-074)
+    if spec.endswith(".js"):
+        base_str = str(taban)[:-3]
+        for ext in (".ts", ".tsx", ".d.ts"):
+            p = Path(base_str + ext)
+            if p.is_file():
+                return p
+        base_p = Path(base_str)
+        if base_p.is_dir():
+            for idx in ("index.ts", "index.tsx"):
+                if (base_p / idx).is_file():
+                    return base_p / idx
+    elif spec.endswith(".mjs"):
+        base_str = str(taban)[:-4]
+        for ext in (".mts", ".ts"):
+            p = Path(base_str + ext)
+            if p.is_file():
+                return p
     return None
 
 

@@ -70,6 +70,10 @@ class AdliImport(unittest.TestCase):
         self.assertEqual(len(h), 1)
         self.assertIn("'b'", h[0])
 
+    def test_ts_esm_js_uzantili_import_cozulur(self):
+        d = kur({self.P + "data.ts": DATA, self.P + "a.ts": "import { getDeveloperList } from './data.js'\n"})
+        self.assertEqual(kos(d, [self.P + "a.ts"]), [])
+
 
 if __name__ == "__main__":
     unittest.main()
