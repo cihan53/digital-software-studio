@@ -190,10 +190,11 @@ def karar_ver(madde_id: str, karar: str, not_: str = "", kok: Path = ROOT) -> di
     hedef["karar"] = karar_u
     hedef["karar_notu"] = (not_ or "").strip()[:400]
     hedef["karar_zaman"] = _simdi()
-    if mutabakat_hazir_mi(s):
-        s["durum"] = "MUTABAKAT_TAMAM"
-    else:
-        s["durum"] = "ONERI_HAZIR"
+    if s.get("durum") != "PLANLANDI":
+        if mutabakat_hazir_mi(s):
+            s["durum"] = "MUTABAKAT_TAMAM"
+        else:
+            s["durum"] = "ONERI_HAZIR"
     kaydet(s, kok)
     return {"ok": True, "madde": hedef, "mutabakat_hazir": mutabakat_hazir_mi(s)}
 
@@ -211,7 +212,7 @@ def planlamaya_aktar(kok: Path = ROOT) -> dict:
     """Onaylanan maddeleri mevcut `studio.db` geçmişini bozmadan sprint ve taleplere dönüştürür."""
     s = yukle(kok)
     if s.get("durum") == "PLANLANDI":
-        return {"ok": True, "mesaj": "Mutabakat zaten planlandı.",
+        return {"ok": False, "mesaj": "Bu mutabakat zaten panoya planlandı. Tekrar planlanamaz.",
                 "sprintler": s.get("planlanan_sprintler", []),
                 "talepler": s.get("planlanan_talepler", [])}
     if not mutabakat_hazir_mi(s):

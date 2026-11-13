@@ -656,7 +656,8 @@ async function talepYukle(){
      <td title="${esc(t.aciklama||'')}">${esc(t.baslik||'')}</td>
      <td class="soluk">${esc(t.sayfa_url||'')}</td><td>${fazSecim(t)}</td>
      <td>${t.github_issue_url?`<a href="${esc(t.github_issue_url)}" target="_blank">#${t.github_issue_number}</a>`:'—'}</td>
-     <td>${t.durum==='IPTAL'?
+     <td><button class="kucuk" title="Çözüm ve UAT Kanıtı" onclick="kanitModalAc('${t.id}')">🔍 Kanıt</button>
+       ${t.durum==='IPTAL'?
        `<button class="kucuk" title="Talebi yeniden devreye al" onclick="talepDevreyeAl('${t.id}')">↺ Devreye Al</button>`:''}
        ${['DEGERLENDIRMEDE','FAZ_BEKLIYOR','BEKLEMEDE'].includes(t.durum)?
        `<button class="kucuk" title="Sprint'e al (aktif faz kapsamında planla)" onclick="talepOnayla('${t.id}')">▶ Al</button>`:''}
@@ -824,19 +825,78 @@ const ORTAM_PROFIL={ortam:'yerel_ortam', onz:'onizleme'};
 const ORTAM_BASLIK={ortam:'Yerel ortam (geliştirme sunucusu — ajanlar kullanır)', onz:'Önizleme (üretim derlemesi — müşteriye gösterilir)'};
 const ortamZaman={};
 function ortamBolumKur(){
-  for(const p of ['ortam','onz']){
-    document.getElementById('s-'+p).innerHTML=`<div class="onay-kutu">
-      <div class="soluk" style="margin-bottom:6px">${ORTAM_BASLIK[p]}</div>
+  // 1. Yerel ortam sekmesi
+  document.getElementById('s-ortam').innerHTML=`<div class="onay-kutu">
+    <div class="soluk" style="margin-bottom:6px">${ORTAM_BASLIK['ortam']}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <b id="ortam-durum">…</b><span id="ortam-portlar"></span><span style="flex:1"></span>
+      <button id="ortam-b" onclick="ortamIslem('baslat','ortam')">▶ Başlat</button>
+      <button id="ortam-y" onclick="ortamIslem('yeniden','ortam')">↻ Yeniden başlat</button>
+      <button id="ortam-d" onclick="ortamIslem('durdur','ortam')">■ Durdur</button>
+    </div>
+    <div id="ortam-not" class="soluk" style="margin-top:6px"></div></div>
+    <div class="soluk" style="margin:10px 0 4px">Log: <span id="ortam-logyol"></span></div>
+    <pre id="ortam-log" style="min-height:300px;max-height:60vh;overflow-y:auto"></pre>`;
+
+  // 2. Önizleme sekmesi (Web Önizleme + Mobil Canlı Önizleme & Emülatör)
+  document.getElementById('s-onz').innerHTML=`
+    <div class="onay-kutu" style="margin-bottom:16px">
+      <div class="soluk" style="margin-bottom:6px">🌐 Web Önizleme (Üretim Derlemesi)</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <b id="${p}-durum">…</b><span id="${p}-portlar"></span><span style="flex:1"></span>
-        <button id="${p}-b" onclick="ortamIslem('baslat','${p}')">▶ ${p==='onz'?'Derle ve başlat':'Başlat'}</button>
-        <button id="${p}-y" onclick="ortamIslem('yeniden','${p}')">↻ ${p==='onz'?'Yeniden derle':'Yeniden başlat'}</button>
-        <button id="${p}-d" onclick="ortamIslem('durdur','${p}')">■ Durdur</button>
+        <b id="onz-durum">…</b><span id="onz-portlar"></span><span style="flex:1"></span>
+        <button id="onz-b" onclick="ortamIslem('baslat','onz')">▶ Derle ve başlat</button>
+        <button id="onz-y" onclick="ortamIslem('yeniden','onz')">↻ Yeniden derle</button>
+        <button id="onz-d" onclick="ortamIslem('durdur','onz')">■ Durdur</button>
       </div>
-      <div id="${p}-not" class="soluk" style="margin-top:6px"></div></div>
-      <div class="soluk" style="margin:10px 0 4px">Log: <span id="${p}-logyol"></span></div>
-      <pre id="${p}-log" style="min-height:300px;max-height:60vh;overflow-y:auto"></pre>`;
-  }
+      <div id="onz-not" class="soluk" style="margin-top:6px"></div>
+    </div>
+
+    <div class="kart" style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+        <div>
+          <b style="font-size:15px">📱 Mobil Canlı Önizleme & Emülatör Yönetimi</b>
+          <div class="soluk" style="font-size:12px;margin-top:2px">Android AVD emülatörünü başlatın, ekran görüntüsü alın ve UAT kanıtlarını inceleyin.</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span id="mobil-durum" style="font-weight:600">⚪ Yükleniyor…</span>
+          <select id="mobil-avd-secim" style="font-size:12px"><option value="Galaxy_S24">Galaxy_S24</option></select>
+          <button class="birincil kucuk" onclick="mobilIslem('baslat')">▶ Emülatörü Aç (Masaüstü)</button>
+          <button class="kucuk" onclick="mobilIslem('ekran_goruntusu')">📸 Ekran Görüntüsü Al</button>
+          <button class="kucuk tehlike" onclick="mobilIslem('durdur')">■ Kapat</button>
+        </div>
+      </div>
+
+      <div class="mobil-onizleme-kapsayici">
+        <!-- Telefon Çerçevesi -->
+        <div class="mobil-telefon-kutusu">
+          <div class="mobil-ahize"></div>
+          <div class="mobil-ekran">
+            <img id="mobil-canli-resim" class="gizli" alt="Canlı Mobil Ekran">
+            <div id="mobil-canli-bos" class="mobil-ekran-bos">
+              📱 Henüz ekran görüntüsü alınmadı.<br><br>
+              Yukarıdaki <b>'▶ Emülatörü Aç'</b> ve <b>'📸 Ekran Görüntüsü Al'</b> butonlarıyla canlı mobil ekranı yakalayabilirsiniz.
+            </div>
+          </div>
+        </div>
+
+        <!-- UAT Kanıt Galerisi -->
+        <div style="flex:1;min-width:280px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <b style="font-size:13px">📸 Son UAT Ekran Görüntüleri</b>
+            <button class="kucuk" onclick="mobilYukle()">↻ Yenile</button>
+          </div>
+          <div class="soluk" style="font-size:11px;margin-bottom:8px">Galerideki herhangi bir ekran görüntüsüne tıklayarak telefon çerçevesinde görüntüleyebilirsiniz.</div>
+          <div id="mobil-galeri-liste" class="mobil-galeri"></div>
+        </div>
+      </div>
+    </div>
+
+    <details style="margin-top:12px">
+      <summary class="soluk" style="cursor:pointer;font-size:12px">Önizleme Derleme / Süreç Logları</summary>
+      <div class="soluk" style="margin:8px 0 4px">Log: <span id="onz-logyol"></span></div>
+      <pre id="onz-log" style="min-height:160px;max-height:40vh;overflow-y:auto"></pre>
+    </details>
+  `;
 }
 async function ortamYukle(p='ortam'){
   clearTimeout(ortamZaman[p]);
@@ -844,20 +904,192 @@ async function ortamYukle(p='ortam'){
     const d=await(await fetch('/api/ortam?profil='+ORTAM_PROFIL[p])).json();
     const AD={calisiyor:'🟢 Çalışıyor',kismen:'🟡 Kısmen açık',baslatiliyor:'🟡 Başlatılıyor…',durdu:'⚪ Durdu'};
     const g=id=>document.getElementById(p+'-'+id);
-    g('durum').textContent=AD[d.durum]||d.durum;
-    g('portlar').innerHTML=(d.portlar||[]).map(x=>x.acik?`<a href="${x.url}" target="_blank" rel="noopener">:${x.port} ✓</a>`:`<span class="soluk">:${x.port} kapalı</span>`).join(' · ');
-    g('logyol').textContent=d.log_yolu||'';
+    if(g('durum')) g('durum').textContent=AD[d.durum]||d.durum;
+    if(g('portlar')) g('portlar').innerHTML=(d.portlar||[]).map(x=>x.acik?`<a href="${x.url}" target="_blank" rel="noopener">:${x.port} ✓</a>`:`<span class="soluk">:${x.port} kapalı</span>`).join(' · ');
+    if(g('logyol')) g('logyol').textContent=d.log_yolu||'';
     const var_=d.betik_var, cal=d.durum!=='durdu';
-    g('b').disabled=!var_||cal; g('y').disabled=!var_; g('d').disabled=!cal;
-    g('not').textContent=var_?('Komut: '+d.betik):(p==='onz'?'Önizleme için uygulama dizininde package.json içinde build ve preview betikleri (ya da workspace/onizleme.sh) gerekli.':'workspace/yerel_ortam.sh henüz yok. Pano görevi (devops, S1-T1) üretince bu düğmeler açılır.');
-    const pre=g('log'), alta=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;
-    if(pre.textContent!==d.log){ pre.textContent=d.log||'(log boş)'; if(alta) pre.scrollTop=pre.scrollHeight; }
-  }catch(e){ document.getElementById(p+'-durum').textContent='Okunamadı: '+e; }
+    if(g('b')) g('b').disabled=!var_||cal;
+    if(g('y')) g('y').disabled=!var_;
+    if(g('d')) g('d').disabled=!cal;
+    if(g('not')) g('not').textContent=var_?('Komut: '+d.betik):(p==='onz'?'Önizleme için uygulama dizininde package.json içinde build ve preview betikleri (ya da workspace/onizleme.sh) gerekli.':'workspace/yerel_ortam.sh henüz yok. Pano görevi (devops, S1-T1) üretince bu düğmeler açılır.');
+    const pre=g('log');
+    if(pre){
+      const alta=pre.scrollTop+pre.clientHeight>=pre.scrollHeight-20;
+      if(pre.textContent!==d.log){ pre.textContent=d.log||'(log boş)'; if(alta) pre.scrollTop=pre.scrollHeight; }
+    }
+  }catch(e){ const el=document.getElementById(p+'-durum'); if(el) el.textContent='Okunamadı: '+e; }
+
+  if(p==='onz') await mobilYukle();
+
   if(!document.getElementById('s-'+p).classList.contains('gizli')) ortamZaman[p]=setTimeout(()=>ortamYukle(p),3000);
 }
 async function ortamIslem(i,p='ortam'){
   const r=await(await fetch('/api/ortam',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({islem:i,profil:ORTAM_PROFIL[p]})})).json();
   toast(r.mesaj||(r.ok?'Tamam':'Hata')); ortamYukle(p);
+}
+
+// ---------- Mobil Emülatör & UAT Yönetimi ----------
+async function mobilYukle(){
+  try {
+    const d = await (await fetch('/api/mobil/durum')).json();
+    const md = document.getElementById('mobil-durum');
+    if (!md) return;
+    const aktif = (d.cihazlar || []).find(c => c.durum === 'device');
+    if (aktif) {
+      md.innerHTML = `<span style="color:var(--yesil)">🟢 Aktif: ${esc(aktif.id)} (${esc(aktif.model)})</span>`;
+    } else if ((d.cihazlar || []).length) {
+      md.innerHTML = `<span style="color:var(--sari)">🟡 Başlatılıyor: ${esc(d.cihazlar[0].id)}</span>`;
+    } else {
+      md.innerHTML = `<span style="color:var(--soluk)">⚪ Emülatör Kapalı</span>`;
+    }
+
+    const sel = document.getElementById('mobil-avd-secim');
+    if (sel && d.avd_listesi && d.avd_listesi.length) {
+      const curVal = sel.value;
+      sel.innerHTML = d.avd_listesi.map(a => `<option value="${esc(a)}"${a===curVal?' selected':''}>${esc(a)}</option>`).join('');
+    }
+
+    const sonKanit = (d.son_kanitlar || [])[0];
+    const imgEl = document.getElementById('mobil-canli-resim');
+    const bosEl = document.getElementById('mobil-canli-bos');
+    if (sonKanit && imgEl) {
+      imgEl.src = '/api/gorsel?yol=' + encodeURIComponent(sonKanit.yol);
+      imgEl.classList.remove('gizli');
+      if (bosEl) bosEl.classList.add('gizli');
+    }
+
+    const galEl = document.getElementById('mobil-galeri-liste');
+    if (galEl && d.son_kanitlar) {
+      galEl.innerHTML = d.son_kanitlar.map(k => `
+        <div class="mobil-galeri-oge" onclick="mobilGoster('${esc(k.yol)}')">
+          <img src="/api/gorsel?yol=${encodeURIComponent(k.yol)}" alt="Kanıt">
+          <div class="mobil-galeri-etiket">${esc(k.zaman)}</div>
+        </div>
+      `).join('') || '<div class="soluk" style="font-size:12px">Henüz ekran görüntüsü alınmadı.</div>';
+    }
+  } catch(e){}
+}
+
+function mobilGoster(yol){
+  const imgEl = document.getElementById('mobil-canli-resim');
+  const bosEl = document.getElementById('mobil-canli-bos');
+  if (imgEl) {
+    imgEl.src = '/api/gorsel?yol=' + encodeURIComponent(yol);
+    imgEl.classList.remove('gizli');
+    if (bosEl) bosEl.classList.add('gizli');
+  }
+}
+
+async function mobilIslem(aksiyon){
+  const sel = document.getElementById('mobil-avd-secim');
+  const avd = sel ? sel.value : 'Galaxy_S24';
+  toast('İşlem yapılıyor: ' + aksiyon);
+  try {
+    const res = await (await fetch('/api/mobil/islem', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({aksiyon: aksiyon, avd: avd})
+    })).json();
+    toast(res.mesaj || (res.ok ? 'Tamam' : 'Hata'));
+    await mobilYukle();
+  } catch(e) {
+    toast('Hata: ' + e.message);
+  }
+}
+
+// ---------- UAT ve Çözüm Kanıtı Modalı ----------
+async function kanitModalAc(talepId){
+  const mic = document.getElementById('modal-ic');
+  mic.innerHTML = '<div style="padding:20px;text-align:center">Kanıtlar yükleniyor…</div>';
+  document.getElementById('modal').classList.remove('gizli');
+
+  try {
+    const res = await (await fetch('/api/kanitlar?talep_id=' + encodeURIComponent(talepId))).json();
+    const kanitlar = res.kanitlar || [];
+    if (!kanitlar.length) {
+      mic.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <h3>🔍 UAT ve Çözüm Kanıtı: ${esc(talepId)}</h3>
+          <button onclick="modalKapat()">✕ Kapat</button>
+        </div>
+        <div class="soluk" style="padding:20px;text-align:center">Bu talep için henüz kayıtlı kanıt bulunamadı.</div>
+      `;
+      return;
+    }
+    const k = kanitlar[0];
+    const gorseller = (k.ekran_goruntuleri || []).map(yol => `
+      <div class="mobil-galeri-oge" onclick="window.open('/api/gorsel?yol=${encodeURIComponent(yol)}', '_blank')">
+        <img src="/api/gorsel?yol=${encodeURIComponent(yol)}" alt="Kanıt Ekranı">
+        <div class="mobil-galeri-etiket">${esc(yol.split('/').pop())}</div>
+      </div>
+    `).join('');
+
+    mic.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <h3>🔍 UAT & Çözüm Kanıtı: <span style="color:var(--vurgu)">${esc(talepId)}</span></h3>
+        <button onclick="modalKapat()">✕ Kapat</button>
+      </div>
+
+      <div class="kanit-bolum">
+        <div class="kanit-baslik">📋 Talep ve Başlık</div>
+        <div style="font-size:15px;font-weight:600;margin-bottom:4px">${esc(k.baslik || talepId)}</div>
+      </div>
+
+      <div class="kanit-bolum">
+        <div class="kanit-baslik kanit-hata">🔴 Bildirilen Sorun / Problem Tanımı</div>
+        <div style="white-space:pre-wrap;font-size:13px">${esc(k.sorun || 'Belirtilmedi')}</div>
+      </div>
+
+      <div class="kanit-bolum">
+        <div class="kanit-baslik kanit-onemli">🟢 Uygulanan Çözüm ve Mimari Değişiklikler</div>
+        <div style="white-space:pre-wrap;font-size:13px">${esc(k.cozum || 'Çözüm bilgisi kaydedilmedi')}</div>
+      </div>
+
+      <div class="kanit-bolum">
+        <div class="kanit-baslik kanit-vurgu">🧪 Doğrulama ve Test Sonucu</div>
+        <div style="font-weight:600;color:var(--yesil);margin-bottom:6px">Durum: ${esc(k.sonuc || 'DOĞRULANDI')}</div>
+        <pre style="margin-top:4px">${esc(k.teknik_detay || 'Ek teknik detay yok.')}</pre>
+      </div>
+
+      <div class="kanit-bolum">
+        <div class="kanit-baslik">👥 Müşteri Özeti (Sade Açıklama)</div>
+        <div style="font-size:13px;color:var(--metin);background:#161b22;padding:8px 10px;border-radius:6px;border:1px solid var(--sinir)">
+          ${esc(k.musteri_ozeti || 'Müşteri bilgilendirme metni hazırlanıyor.')}
+        </div>
+      </div>
+
+      <div class="kanit-bolum">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div class="kanit-baslik">📸 Görsel Kanıtlar ve Ekran Görüntüleri (${(k.ekran_goruntuleri||[]).length})</div>
+          <button class="kucuk birincil" onclick="kanitMobilScreencap('${esc(talepId)}')">📱 Emülatörden Anlık Görüntü Al</button>
+        </div>
+        <div class="mobil-galeri">
+          ${gorseller || '<div class="soluk" style="font-size:12px">Henüz görsel kanıt iliştirilmedi. Yukarıdaki butonla emülatörden canlı görüntü alabilirsiniz.</div>'}
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    mic.innerHTML = `<div style="color:var(--kirmizi)">Kanıt yüklenemedi: ${esc(err.message)}</div>`;
+  }
+}
+
+async function kanitMobilScreencap(talepId){
+  toast('Emülatörden ekran görüntüsü alınıyor…');
+  try {
+    const res = await (await fetch('/api/mobil/islem', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({aksiyon: 'ekran_goruntusu', talep_id: talepId})
+    })).json();
+    if (res.ok) {
+      toast('✓ Ekran görüntüsü alındı ve kanıta eklendi.');
+      kanitModalAc(talepId);
+    } else {
+      toast('Hata: ' + (res.mesaj || 'Görüntü alınamadı'));
+    }
+  } catch(e) {
+    toast('Hata: ' + e.message);
+  }
 }
 ortamBolumKur();
 let onaySig='';

@@ -160,6 +160,21 @@ CREATE TABLE IF NOT EXISTS sohbet_mesajlari (
     talep_id    TEXT
 );
 
+CREATE TABLE IF NOT EXISTS cozum_kanitlari (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    talep_id            TEXT,
+    gorev_id            TEXT,
+    baslik              TEXT,
+    sorun               TEXT,
+    cozum               TEXT,
+    sonuc               TEXT,
+    teknik_detay        TEXT,
+    musteri_ozeti       TEXT,
+    ekran_goruntuleri   TEXT,
+    kaynak              TEXT DEFAULT 'otomatik',
+    zaman               TEXT
+);
+
 -- Görev/sprint bazlı motor geçersiz kılması. Ayrı tabloda durur çünkü
 -- db_save_board INSERT OR REPLACE yapar — kolon olsaydı her kayıtta silinirdi.
 CREATE TABLE IF NOT EXISTS motor_override (
@@ -1741,6 +1756,82 @@ def framework_update_info(ttl: int = UPDATE_CHECK_TTL) -> dict | None:
     except OSError:
         pass
     return info
+
+
+# ---------------------------------------------------------- UAT & Çözüm Kanıtı
+def kanit_ekle(talep_id: str = None, gorev_id: str = None, baslik: str = "",
+               sorun: str = "", cozum: str = "", sonuc: str = "BASARILI",
+               teknik_detay: str = "", musteri_ozeti: str = "",
+               ekran_goruntuleri: list = None, kaynak: str = "otomatik") -> int:
+    """Teknik ve müşteri UAT kanıtını kaydeder."""
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        gorsel_json = json.dumps(ekran_goruntuleri or [], ensure_ascii=False)
+        zaman = datetime.now().isoformat(timespec="seconds")
+        cur.execute("""
+            INSERT INTO cozum_kanitlari
+            (talep_id, gorev_id, baslik, sorun, cozum, sonuc,
+             teknik_detay, musteri_ozeti, ekran_goruntuleri, kaynak, zaman)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (talep_id, gorev_id, baslik, sorun, cozum, sonuc,
+              teknik_detay, musteri_ozeti, gorsel_json, kaynak, zaman))
+        kanit_id = cur.lastrowid
+        conn.commit()
+        audit("uat", "kanit_eklendi", gorev_id=gorev_id, talep_id=talep_id,
+              detay={"kanit_id": kanit_id, "baslik": (baslik or "")[:100], "kaynak": kaynak})
+        return kanit_id
+    finally:
+        conn.close()
+
+
+def kanit_listele(talep_id: str = None, gorev_id: str = None, limit: int = 50) -> list[dict]:
+    """Kayıtlı kanıtları listeler."""
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        sorgu = "SELECT * FROM cozum_kanitlari WHERE 1=1"
+        params = []
+        if talep_id:
+            sorgu += " AND talep_id = ?"
+            params.append(talep_id)
+        if gorev_id:
+            sorgu += " AND gorev_id = ?"
+            params.append(gorev_id)
+        sorgu += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        cur.execute(sorgu, tuple(params))
+        rows = cur.fetchall()
+        sonuc = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["ekran_goruntuleri"] = json.loads(d.get("ekran_goruntuleri") or "[]")
+            except Exception:
+                d["ekran_goruntuleri"] = []
+            sonuc.append(d)
+        return sonuc
+    finally:
+        conn.close()
+
+
+def kanit_getir(kanit_id: int) -> dict | None:
+    """ID'ye göre tek bir kanıt kaydını getirir."""
+    conn = db_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM cozum_kanitlari WHERE id = ?", (kanit_id,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        try:
+            d["ekran_goruntuleri"] = json.loads(d.get("ekran_goruntuleri") or "[]")
+        except Exception:
+            d["ekran_goruntuleri"] = []
+        return d
+    finally:
+        conn.close()
 
 
 # ------------------------------------------------------------------- CLI

@@ -12,6 +12,7 @@
   --mor: #bc8cff;
   --r: 10px;
 }
+.gizli { display: none !important; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
   background: var(--bg); color: var(--metin);
@@ -96,3 +97,59 @@ pre {
   padding: 12px; overflow: auto; font-size: 12px; line-height: 1.45;
   white-space: pre-wrap; word-break: break-word;
 }
+
+/* Mobil Önizleme ve Telefon Çerçevesi */
+.mobil-onizleme-kapsayici {
+  display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; margin-top: 16px;
+}
+.mobil-telefon-kutusu {
+  width: 320px; height: 600px; background: #000;
+  border: 10px solid #2d333b; border-radius: 40px;
+  box-shadow: 0 16px 36px rgba(0,0,0,0.6), inset 0 0 8px rgba(255,255,255,0.1);
+  position: relative; overflow: hidden; display: flex; flex-direction: column;
+}
+.mobil-ahize {
+  position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+  width: 80px; height: 14px; background: #1c2330; border-radius: 8px; z-index: 10;
+}
+.mobil-ekran {
+  flex: 1; width: 100%; height: 100%; background: #12161c;
+  display: flex; align-items: center; justify-content: center;
+  position: relative; overflow: hidden;
+}
+.mobil-ekran img {
+  width: 100%; height: 100%; object-fit: contain; background: #000;
+}
+.mobil-ekran-bos {
+  padding: 30px; text-align: center; color: var(--soluk); font-size: 13px;
+}
+.mobil-galeri {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px; margin-top: 12px;
+}
+.mobil-galeri-oge {
+  border: 1px solid var(--sinir); border-radius: 8px; overflow: hidden;
+  background: var(--panel2); cursor: pointer; transition: transform .2s, border-color .2s;
+}
+.mobil-galeri-oge:hover {
+  transform: scale(1.03); border-color: var(--vurgu);
+}
+.mobil-galeri-oge img {
+  width: 100%; height: 140px; object-fit: cover; display: block;
+}
+.mobil-galeri-etiket {
+  padding: 4px 6px; font-size: 11px; color: var(--soluk); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* UAT ve Çözüm Kanıtı */
+.kanit-bolum {
+  background: var(--panel2); border: 1px solid var(--sinir); border-radius: 8px;
+  padding: 12px 14px; margin-bottom: 12px;
+}
+.kanit-baslik {
+  font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--soluk);
+  margin-bottom: 6px; display: flex; align-items: center; gap: 6px;
+}
+.kanit-vurgu { color: var(--yesil); font-weight: 600; }
+.kanit-onemli { color: var(--vurgu); }
+.kanit-hata { color: var(--kirmizi); }
