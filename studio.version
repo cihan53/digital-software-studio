@@ -1,6 +1,6 @@
 {
-  "version": "1.10.123",
-  "released": "2026-11-13",
+  "version": "1.10.124",
+  "released": "2026-11-14",
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
     "scripts/cozum_kaniti.py",
@@ -66,6 +66,13 @@
   ],
   "protected_files": [],
   "changelog": [
+    {
+      "version": "1.10.124",
+      "date": "2026-11-14",
+      "changes": [
+        "feat(uat): UAT canli ortami otomatik baslatma, durum bayragi ve devops devri (#338) (#340)"
+      ]
+    },
     {
       "version": "1.10.123",
       "date": "2026-11-13",
