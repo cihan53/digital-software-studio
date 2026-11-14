@@ -1328,6 +1328,35 @@ def needs_live(task: dict) -> bool:
 CONTROL_DIR = ROOT / "workspace" / ".control"
 
 
+def yerel_ortam_bayrak_yaz(durum: str, detay: dict | None = None) -> None:
+    """Yerel test ortamı durum bayrağını kaydeder (issue #338):
+    durum: 'baslatiliyor' | 'hazir' | 'hata' | 'durdu'
+    """
+    CONTROL_DIR.mkdir(parents=True, exist_ok=True)
+    veri = {
+        "durum": durum,
+        "zaman": datetime.now().isoformat(timespec="seconds"),
+        "detay": detay or {}
+    }
+    try:
+        (CONTROL_DIR / "yerel_ortam_durum.json").write_text(
+            json.dumps(veri, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except OSError:
+        pass
+
+
+def yerel_ortam_bayrak_oku() -> dict:
+    """Yerel test ortamı durum bayrağını okur; yoksa varsayılan durum döner."""
+    f = CONTROL_DIR / "yerel_ortam_durum.json"
+    if f.is_file():
+        try:
+            return json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
+    return {"durum": "durdu", "zaman": "", "detay": {}}
+
+
 def _flag(name: str) -> Path:
     return CONTROL_DIR / name
 
