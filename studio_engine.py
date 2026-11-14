@@ -3553,22 +3553,25 @@ def spent_so_far() -> float:
     return total
 
 
-CANLI_DENEME_ARALIK_SN = 300
-CANLI_DENEME_SINIR = 3
+CANLI_DENEME_ARALIK_SN = 15
+CANLI_DENEME_SINIR = 2
 
 
 def _canli_otomatik_baslat(task: dict) -> bool:
     """Canlı gerektiren görev sırada ve canlı kapalıysa yerel ortamı başlatır (yerel_ortam_yonet + sağlık bekleme).
-    5 dk arayla en çok 3 ardışık deneme; başarısızlık audit'e yazılır, panelde neden kartı gösterir. STUDIO_CANLI_OTOMATIK=0 kapatır."""
+    Test ortamı ayağa kaldırılırken bayrak ('baslatiliyor') konur, hazır olunca 'hazir', hata verirse 'hata' yazılır (#338).
+    STUDIO_CANLI_OTOMATIK=0 kapatır."""
     if os.getenv("STUDIO_CANLI_OTOMATIK", "1") == "0" or not B.live_baslatilabilir():
         return False
     st = run_board.__dict__.setdefault("_canli_oto", {"deneme": 0, "son": 0.0})
-    if st["deneme"] >= CANLI_DENEME_SINIR or time.time() - st["son"] < CANLI_DENEME_ARALIK_SN:
+    if st["deneme"] >= CANLI_DENEME_SINIR or (st["son"] > 0 and time.time() - st["son"] < CANLI_DENEME_ARALIK_SN):
         return False
     st["deneme"] += 1
     st["son"] = time.time()
-    print(f"\n[CANLI] {task['id']} canlı sistem gerektiriyor; yerel ortam başlatılıyor "
-          f"(deneme {st['deneme']}/{CANLI_DENEME_SINIR})...")
+    ports_str = ", ".join(str(p) for p in B.live_ports())
+    print(f"\n[ORTAM] ⏳ {task['id']} canlı sistem gerektiriyor; yerel test ortamı ayağa kaldırılıyor "
+          f"(portlar: {ports_str}, deneme {st['deneme']}/{CANLI_DENEME_SINIR})...")
+    B.yerel_ortam_bayrak_yaz("baslatiliyor", {"gorev_id": task["id"], "portlar": list(B.live_ports()), "deneme": st["deneme"]})
     try:
         sys.path.insert(0, str(ROOT / "scripts"))
         import onarim as ON
@@ -3579,10 +3582,96 @@ def _canli_otomatik_baslat(task: dict) -> bool:
     B.audit("engine", "canli_otomatik_baslatma", gorev_id=task["id"], detay={"basarili": bool(ok), "deneme": st["deneme"]})
     if ok and B.live_up():
         st["deneme"] = 0
-        print("  [✓] canlı ortam hazır.")
+        B.yerel_ortam_bayrak_yaz("hazir", {"portlar": list(B.live_ports())})
+        print(f"  [ORTAM] ✓ Yerel test ortamı hazır (portlar: {ports_str}).")
         return True
-    print("  [!] canlı ortam hazır olmadı; görev bekliyor (panel → Yerel Ortam log'una bakın).")
+    B.yerel_ortam_bayrak_yaz("hata", {"gorev_id": task["id"], "portlar": list(B.live_ports()), "deneme": st["deneme"]})
+    print("  [ORTAM] ❌ Yerel test ortamı hazır olmadı / hata verdi (panel → Yerel Ortam log'una bakın).")
     return False
+
+
+def _ortam_hatasi_devopsa_devret(task: dict, sprint: dict, board: dict) -> None:
+    """Canlı test ortamı ayağa kalkmadığında UAT görevini BLOCKED yapar,
+    DevOps ekibine (devops_engineer) acil onarım talebi ve görevi açar (issue #338)."""
+    hata_metni = ""
+    log_f = ROOT / "workspace" / "logs" / "yerel_ortam.log"
+    if log_f.is_file():
+        try:
+            satirlar = log_f.read_text(encoding="utf-8", errors="replace").splitlines()
+            hata_metni = "\n".join(satirlar[-25:])
+        except OSError:
+            pass
+    if not hata_metni:
+        hata_metni = f"Portlar kapalı: {list(B.live_ports())}. yerel_ortam.sh zaman aşımına uğradı."
+
+    kapali = [str(p) for p, ok in B.live_status().items() if not ok]
+    tid = None
+    try:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import musteri_talepleri as MT
+        # Halihazırda açık bir ortam hatası talebi var mı?
+        mevcut = [t for t in MT.db_tum_talepler() if "[DEVOPS/ORTAM]" in (t.get("baslik") or "") and t.get("durum") not in ("COZULDU", "IPTAL")]
+        if mevcut:
+            tid = mevcut[0]["id"]
+        else:
+            y_t = MT.yeni_talep(
+                tur="HATA",
+                baslik=f"[DEVOPS/ORTAM] Canlı test ortamı başlatılamadı: Port {', '.join(kapali)} kapalı",
+                aciklama=(
+                    f"UAT ve canlı kabul testi sırasında yerel ortam başlatılamadı ({task['id']}).\n"
+                    f"Kapalı portlar: {', '.join(kapali)}\n\n"
+                    f"Son Log Çıktısı:\n```\n{hata_metni[-800:]}\n```\n\n"
+                    "Lütfen yerel_ortam.sh betiğini, paket bağımlılıklarını ve servis yapılandırmasını kontrol edin."
+                ),
+                oncelik="KRITIK",
+                sayfa_url="/"
+            )
+            tid = y_t.get("id") if isinstance(y_t, dict) else None
+            if tid:
+                MT.guncelle(tid, gorevli_rol="devops_engineer")
+    except Exception as e:
+        print(f"  [!] DevOps talebi açılamadı: {e}")
+
+    # Sprint panosuna acil devops_engineer onarım görevi enjekte et
+    devops_gid = f"{sprint['id']}-DEVOPS"
+    mevcut_gidler = [t["id"] for s in board.get("sprints", []) for t in s.get("tasks", [])]
+    if devops_gid not in mevcut_gidler:
+        devops_gorev = {
+            "id": devops_gid,
+            "sprint_id": sprint["id"],
+            "title": "[DEVOPS/ORTAM] Yerel test ortamını ve servisleri onar",
+            "description": f"UAT için yerel ortam ayağa kaldırılamadı. workspace/yerel_ortam.sh betiğini ve servisleri incele, çalışır duruma getir. Hata: {hata_metni[:200]}",
+            "role": "devops_engineer",
+            "phase": "fix",
+            "outputs": ["workspace/yerel_ortam.sh"],
+            "depends_on": [],
+            "status": "READY",
+            "order": 0,
+            "priority": 100,
+            "talep_id": tid
+        }
+        # Başa ekle ki hemen devops ajanı çalışsın
+        sprint.setdefault("tasks", []).insert(0, devops_gorev)
+        try:
+            conn = B.db_conn()
+            conn.execute(
+                "INSERT OR REPLACE INTO pano_gorevleri (id, sprint_id, baslik, aciklama, rol, phase, ciktilar, bagimlilik, durum, oncelik, sira, talep_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'READY', 100, 0, ?)",
+                (devops_gorev["id"], sprint["id"], devops_gorev["title"], devops_gorev["description"],
+                 devops_gorev["role"], devops_gorev["phase"], json.dumps(devops_gorev["outputs"]),
+                 "[]", devops_gorev.get("talep_id"))
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
+    # UAT görevini BLOCKED yap ki UAT takılı kalmasın, panoyu kilitlemesin
+    B.mark(board, task["id"], "BLOCKED", f"yerel ortam başlatılamadı — onarım {devops_gid} ile DevOps ekibine devredildi")
+    B.save(board)
+    B.audit("engine", "ortam_hatasi_devopsa_devredildi", gorev_id=task["id"], detay={"talep_id": tid, "devops_gorev": devops_gid})
+    print(f"\n[DEVOPS DEVİR] 🛠️ {task['id']} için canlı ortam açılamadı. Görev BLOCKED yapıldı ve onarım DevOps ekibine devredildi ({devops_gid}).")
+    git_auto_commit(f"studio: görev BLOCKED (ortam hatası DevOps'a devredildi) — {task['id']}")
 
 
 def otomatik_kurtar_ve_temizle(board: dict) -> int:
@@ -3984,6 +4073,7 @@ def run_board(org: dict, brief: str, once: bool = False,
 
         # UAT/canlı test görevi canlı ortam gerektirir. Kapalıysa görevi
         # koşturma (garanti-fail + talep spam'i): READY'de beklet.
+        # UAT/canlı test görevi canlı ortam gerektirir (issue #338).
         if B.needs_live(task) and not B.live_up():
             kapali = [str(p) for p, ok in B.live_status().items() if not ok]
             if once:
@@ -3991,35 +4081,30 @@ def run_board(org: dict, brief: str, once: bool = False,
                       f"port {', '.join(kapali)} kapalı. Görev bekletildi; "
                       f"başlatmak için: ./basla.sh --canli")
                 break
+            if not B.live_baslatilabilir():
+                # Başlatacak betik yok: DevOps ekibine devret, UAT takılı kalmasın (#338)
+                _ortam_hatasi_devopsa_devret(task, sprint, board)
+                board = B.load()
+                continue
+
+            # UAT beklemez: Canlı sistemi kendisi ayağa kaldırır
+            ok = _canli_otomatik_baslat(task)
+            if ok and B.live_up():
+                run_board._live_warn = 0
+                board = B.load()
+                continue
+
+            # Ortam ayağa kalkmadıysa / hata verdiyse:
             # Canlı gerektirmeyen başka bir READY görev varsa onu al: bekleme tüm panoyu kilitlemesin (#219).
             alt_s, alt_t = B.next_ready(board, uygun=lambda t: not B.needs_live(t))
             if alt_t is not None:
                 print(f"\n[↪] {task['id']} canlı sistem bekliyor; bu arada {alt_t['id']} yürütülüyor.")
                 sprint, task = alt_s, alt_t
-            elif not B.live_baslatilabilir():
-                # Başlatacak betik yok (yerel_ortam.sh üretilmemiş): beklemek sonsuz kilit olur → görev bu notla geçilir.
-                B.mark(board, task["id"], B.SKIPPED, "canlı ortam tanımsız (yerel_ortam.sh yok); ortam kurulunca yeniden açın")
-                B.save(board)
-                B.audit("engine", "canli_tanimsiz_atla", detay={"gorev": task["id"]})
-                print(f"\n[⏭] {task['id']} canlı sistem gerektiriyor ama yerel_ortam.sh yok; görev 'canlı ortam tanımsız' notuyla geçildi.")
-                git_auto_commit(f"studio: görev SKIPPED (canlı ortam tanımsız) — {task['id']}")
+            else:
+                # Alternatif görev yok ve ortam başlatılamadı: UAT takılı kalmasın, hatayı DevOps ekibine devret (#338)
+                _ortam_hatasi_devopsa_devret(task, sprint, board)
                 board = B.load()
                 continue
-        if B.needs_live(task) and not B.live_up():
-            # Canlı ortamı çerçeve kendisi açar (v2 ortam yönetimi); başarısızsa bekleme/hatırlatma eski gibi sürer.
-            _canli_otomatik_baslat(task)
-            if B.live_up():
-                board = B.load()
-                continue
-            # ~2 dk'da bir hatırlat; görev READY kalır, live açılınca koşar.
-            if getattr(run_board, "_live_warn", 0) % 24 == 0:
-                print(f"\n[⏸ CANLI BEKLENİYOR] {task['id']} için port "
-                      f"{', '.join(kapali)} kapalı — görev READY'de bekliyor. "
-                      f"(./basla.sh --canli)")
-            run_board._live_warn = getattr(run_board, "_live_warn", 0) + 1
-            time.sleep(5)
-            board = B.load()
-            continue
         run_board._live_warn = 0
         if "_canli_oto" in run_board.__dict__:
             run_board._canli_oto["deneme"] = 0

@@ -148,7 +148,13 @@ def durum(kok: Path = ROOT, portlar_: list[int] | None = None, profil: str = "ye
         d = "baslatiliyor"
     else:
         d = "durdu"
-    return {"profil": profil, "betik": ad, "betik_var": bool(komut), "durum": d, "pid": pid,
+    bayrak = d
+    try:
+        import studio_board as B
+        bayrak = B.yerel_ortam_bayrak_oku().get("durum", d)
+    except Exception:
+        pass
+    return {"profil": profil, "betik": ad, "betik_var": bool(komut), "durum": d, "bayrak": bayrak, "pid": pid,
             "portlar": [{"port": p, "acik": a, "url": f"http://localhost:{p}"} for p, a in acik.items()],
             "log_yolu": str(_logf(kok, profil).relative_to(kok))}
 
@@ -187,6 +193,11 @@ def baslat(kok: Path = ROOT, portlar_: list[int] | None = None, profil: str = "y
         log.flush()
     p = subprocess.Popen(["bash", "-c", komut], cwd=kok, env=ortam, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     _pidf(kok, profil).write_text(str(p.pid))
+    try:
+        import studio_board as B
+        B.yerel_ortam_bayrak_yaz("baslatiliyor", {"pid": p.pid, "profil": profil})
+    except Exception:
+        pass
     return {"ok": True, "mesaj": "Başlatıldı.", "pid": p.pid}
 
 
@@ -228,6 +239,11 @@ def durdur(kok: Path = ROOT, portlar_: list[int] | None = None, profil: str = "y
     _logf(kok, profil).parent.mkdir(parents=True, exist_ok=True)
     with open(_logf(kok, profil), "ab") as h:
         h.write(f"\n=== {time.strftime('%Y-%m-%d %H:%M:%S')} durduruldu ===\n".encode())
+    try:
+        import studio_board as B
+        B.yerel_ortam_bayrak_yaz("durdu", {"profil": profil})
+    except Exception:
+        pass
     return {"ok": True, "mesaj": "Durduruldu." if kapatilan else "Çalışan süreç yoktu.", "kapatilan": sorted(set(kapatilan))}
 
 

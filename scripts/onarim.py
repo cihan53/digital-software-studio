@@ -161,19 +161,27 @@ def _script(ad: str, root: Path) -> Path:
 def ortam_hazirla(root: Path, yeniden: bool = False, bekle_sn: int = 150) -> bool:
     """Canlı sistemi (yerel ortam) hazırlar. Başlatacak betik yoksa False."""
     import yerel_ortam_yonet as YO
+    import studio_board as B
     d = YO.durum(root)
     if not d["betik_var"]:
+        B.yerel_ortam_bayrak_yaz("hata", {"neden": "betik_yok"})
         return False
     if yeniden or d["durum"] == "durdu":
+        B.yerel_ortam_bayrak_yaz("baslatiliyor", {"neden": "ortam_hazirla"})
         YO.durdur(root)
         time.sleep(1)
         YO.baslat(root)
+    else:
+        B.yerel_ortam_bayrak_yaz("baslatiliyor", {"durum": d["durum"]})
     bit = time.time() + bekle_sn
     while time.time() < bit:
         if YO.durum(root)["durum"] == "calisiyor":
             time.sleep(2)
+            B.yerel_ortam_bayrak_yaz("hazir")
             return True
         time.sleep(3)
+    # Hazır olamadı — hata olarak işaretle
+    B.yerel_ortam_bayrak_yaz("hata", {"neden": "zaman_asimi", "bekleme_sn": bekle_sn})
     return False
 
 
