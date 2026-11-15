@@ -66,6 +66,24 @@ def bul_emulator() -> str | None:
     return None
 
 
+def bul_flutter() -> str | None:
+    """Sistemde veya bilinen dizinlerde flutter CLI yolunu bulur."""
+    fl_which = shutil.which("flutter")
+    if fl_which:
+        return fl_which
+    ev = Path.home()
+    olasi = [
+        ev / "development" / "flutter" / "bin" / "flutter",
+        ev / "flutter" / "bin" / "flutter",
+        Path("/opt/homebrew/bin/flutter"),
+        ev / ".local" / "bin" / "flutter",
+    ]
+    for p in olasi:
+        if p.is_file() and os.access(p, os.X_OK):
+            return str(p)
+    return None
+
+
 # ==============================================================================
 # AVD ve Cihaz Durumları
 # ==============================================================================
@@ -204,24 +222,214 @@ def emulatore_durdur(cihaz_id: str = None) -> tuple[bool, str]:
 # Ekran Görüntüsü Alma & UAT Kanıtı Kaydetme
 # ==============================================================================
 
+def _proje_koku() -> Path:
+    cwd = Path.cwd()
+    if (cwd / "workspace").is_dir() or (cwd / ".git").is_dir() or (cwd / "basla.sh").is_file():
+        return cwd
+    return Path(__file__).resolve().parent.parent
+
+
+def mobil_proje_dizini() -> Path | None:
+    """Projedeki mobil uygulama kök dizinini (pubspec.yaml içeren) bulur."""
+    kokler = [_proje_koku(), Path.cwd(), ROOT]
+    for k in kokler:
+        for base in (k / "workspace", k):
+            for sub in ("src/mobile", "mobile", "src/frontend"):
+                p = base / sub
+                if (p / "pubspec.yaml").is_file():
+                    return p
+    return None
+
+
+def mobil_kaynak_son_degisiklik_zamani() -> float:
+    """Mobil kaynak kodların (lib, pubspec, android) en son değiştirilme zamanını döndürür."""
+    mdir = mobil_proje_dizini()
+    if not mdir:
+        return 0.0
+    son_zaman = 0.0
+    for p in mdir.rglob("*"):
+        if p.is_file() and not any(ign in str(p) for ign in [".git", ".dart_tool", "build", ".gradle", ".idea", ".history"]):
+            try:
+                t = p.stat().st_mtime
+                if t > son_zaman:
+                    son_zaman = t
+            except OSError:
+                pass
+    return son_zaman
+
+
+def pubspec_versiyon_bilgisi() -> tuple[str, int]:
+    """pubspec.yaml dosyasından versionName ve versionCode'u okur."""
+    mdir = mobil_proje_dizini()
+    if not mdir:
+        return "1.0.0", 1
+    pubspec = mdir / "pubspec.yaml"
+    if pubspec.is_file():
+        try:
+            m = re.search(r"^version:\s*([0-9\.]+)\+?(\d+)?", pubspec.read_text(encoding="utf-8"), re.MULTILINE)
+            if m:
+                vn = m.group(1)
+                vc = int(m.group(2)) if m.group(2) else 1
+                return vn, vc
+        except Exception:
+            pass
+    return "1.0.0", 1
+
+
+def cihazdaki_paket_bilgisi(cihaz_id: str = None) -> dict:
+    """Emülatör/cihazda kurulu uygulamanın sürüm ve güncelleme tarihlerini döndürür."""
+    adb = bul_adb()
+    if not adb:
+        return {}
+    paket = mobil_uygulama_paket_bul()
+    if not paket:
+        return {}
+    cihazlar = [c for c in calisan_cihazlar() if c["durum"] == "device"]
+    if not cihazlar:
+        return {}
+    hedef_id = cihaz_id or cihazlar[0]["id"]
+    try:
+        out = subprocess.run([adb, "-s", hedef_id, "shell", "dumpsys", "package", paket],
+                             capture_output=True, text=True, timeout=10).stdout
+        if "Unable to find package" in out or not out.strip():
+            return {"kurulu": False, "paket": paket, "cihaz_id": hedef_id}
+        info = {"kurulu": True, "paket": paket, "cihaz_id": hedef_id}
+        m_vc = re.search(r"versionCode=(\d+)", out)
+        if m_vc:
+            info["versionCode"] = int(m_vc.group(1))
+        m_vn = re.search(r"versionName=([^\s]+)", out)
+        if m_vn:
+            info["versionName"] = m_vn.group(1)
+        m_lut = re.search(r"lastUpdateTime=([^\r\n]+)", out)
+        if m_lut:
+            info["lastUpdateTime"] = m_lut.group(1).strip()
+            try:
+                dt = datetime.strptime(info["lastUpdateTime"][:19], "%Y-%m-%d %H:%M:%S")
+                info["lastUpdateTs"] = dt.timestamp()
+            except Exception:
+                info["lastUpdateTs"] = 0.0
+        return info
+    except Exception as e:
+        print(f"[!] cihazdaki_paket_bilgisi hatası: {e}", file=sys.stderr)
+        return {}
+
+
+def apk_guncel_mi(cihaz_id: str = None) -> tuple[bool, str]:
+    """Cihazdaki uygulamanın güncel kaynak kodları yansıtıp yansıtmadığını doğrular."""
+    info = cihazdaki_paket_bilgisi(cihaz_id)
+    if not info:
+        return False, "Cihaz veya paket bilgisi alınamadı."
+    if not info.get("kurulu"):
+        return False, f"'{info.get('paket', '')}' uygulaması cihazda kurulu değil."
+
+    pub_vn, pub_vc = pubspec_versiyon_bilgisi()
+    dev_vc = info.get("versionCode", 0)
+    dev_vn = info.get("versionName", "")
+
+    if dev_vc < pub_vc:
+        return False, f"Cihazdaki sürüm kodu (v{dev_vn}+{dev_vc}), pubspec sürüm kodundan (v{pub_vn}+{pub_vc}) eski."
+
+    kaynak_ts = mobil_kaynak_son_degisiklik_zamani()
+    dev_ts = info.get("lastUpdateTs", 0.0)
+    # Kaynak kod cihazdaki güncelleme tarihinden 5 saniyeden daha yeniyse bayattır
+    if kaynak_ts > (dev_ts + 5.0):
+        t_str = datetime.fromtimestamp(kaynak_ts).strftime("%Y-%m-%d %H:%M:%S")
+        lut_str = info.get("lastUpdateTime", "bilinmiyor")
+        return False, f"Mobil kodlar ({t_str}) emülatördeki yükleme tarihinden ({lut_str}) daha yeni."
+
+    return True, f"Cihazdaki uygulama güncel (v{dev_vn}+{dev_vc})."
+
+
+def mobil_uygulama_derle_ve_yukle(cihaz_id: str = None, zorla: bool = False) -> tuple[bool, str]:
+    """Mobil uygulamayı derleyip (flutter build apk --debug) bağlı cihaza yükler."""
+    if not zorla:
+        guncel, msg = apk_guncel_mi(cihaz_id)
+        if guncel:
+            return True, f"Derleme gerekmiyor: {msg}"
+
+    mdir = mobil_proje_dizini()
+    if not mdir:
+        return False, "workspace/src/mobile dizini bulunamadı."
+
+    flutter_bin = bul_flutter()
+    if not flutter_bin:
+        return False, "Flutter SDK ('flutter') bulunamadı."
+
+    adb = bul_adb()
+    if not adb:
+        return False, "ADB aracı bulunamadı."
+
+    cihazlar = [c for c in calisan_cihazlar() if c["durum"] == "device"]
+    if not cihazlar:
+        return False, "Uygulamanın yüklenebileceği aktif cihaz/emülatör bulunamadı."
+    hedef_id = cihaz_id or cihazlar[0]["id"]
+
+    print(f"   🔨 [MOBİL DERLEME] Flutter debug APK derleniyor ({mdir})...", flush=True)
+    try:
+        build_proc = subprocess.run([flutter_bin, "build", "apk", "--debug"],
+                                    cwd=mdir, capture_output=True, text=True, timeout=240)
+        if build_proc.returncode != 0:
+            err = (build_proc.stderr or build_proc.stdout).strip().splitlines()[-5:]
+            return False, f"Flutter derleme hatası: {' '.join(err)}"
+    except subprocess.TimeoutExpired:
+        return False, "Flutter derleme işlemi zaman aşımına uğradı (240s)."
+    except Exception as e:
+        return False, f"Flutter derleme çalıştırılamadı: {e}"
+
+    # Üretilen APK'yı bul
+    apk_yollari = [
+        mdir / "build" / "app" / "outputs" / "flutter-apk" / "app-debug.apk",
+        mdir / "build" / "app" / "outputs" / "apk" / "debug" / "app-debug.apk",
+        mdir / "build" / "app" / "outputs" / "flutter-apk" / "app-release.apk",
+    ]
+    apk_path = None
+    for p in apk_yollari:
+        if p.is_file():
+            apk_path = p
+            break
+
+    if not apk_path:
+        return False, "Derleme sonrası APK dosyası bulunamadı."
+
+    print(f"   📲 [MOBİL YÜKLEME] APK emülatöre yükleniyor: {apk_path.name} -> {hedef_id}...", flush=True)
+    try:
+        install_proc = subprocess.run([adb, "-s", hedef_id, "install", "-r", str(apk_path)],
+                                      capture_output=True, text=True, timeout=90)
+        if install_proc.returncode == 0 or "Success" in install_proc.stdout:
+            info = cihazdaki_paket_bilgisi(hedef_id)
+            return True, f"APK başarıyla yüklendi: v{info.get('versionName', '?')}+{info.get('versionCode', '?')}"
+        else:
+            return False, f"ADB yükleme hatası: {install_proc.stdout.strip() or install_proc.stderr.strip()}"
+    except Exception as e:
+        return False, f"ADB yükleme çalıştırılamadı: {e}"
+
+
 def mobil_uygulama_paket_bul() -> str:
     """Projedeki mobil uygulamanın paket adını bulur."""
-    gradle_dosya = WORKSPACE / "src" / "mobile" / "android" / "app" / "build.gradle"
-    if gradle_dosya.is_file():
-        try:
-            m = re.search(r'applicationId\s*=?\s*["\']([^"\']+)["\']', gradle_dosya.read_text(encoding="utf-8"))
-            if m:
-                return m.group(1)
-        except Exception:
-            pass
-    manifest_dosya = ROOT / "workspace/src/mobile/android/app/src/main/AndroidManifest.xml"
-    if manifest_dosya.is_file():
-        try:
-            m = re.search(r'package\s*=\s*["\']([^"\']+)["\']', manifest_dosya.read_text(encoding="utf-8"))
-            if m:
-                return m.group(1)
-        except Exception:
-            pass
+    mdir = mobil_proje_dizini()
+    if mdir:
+        gradle_dosya = mdir / "android" / "app" / "build.gradle"
+        if not gradle_dosya.is_file():
+            gradle_dosya = mdir / "android" / "app" / "build.gradle.kts"
+        if gradle_dosya.is_file():
+            try:
+                txt = gradle_dosya.read_text(encoding="utf-8")
+                m = re.search(r'applicationId\s*=?\s*["\']([^"\']+)["\']', txt)
+                if m:
+                    return m.group(1)
+                m_ns = re.search(r'namespace\s*=?\s*["\']([^"\']+)["\']', txt)
+                if m_ns:
+                    return m_ns.group(1)
+            except Exception:
+                pass
+        manifest_dosya = mdir / "android" / "app" / "src" / "main" / "AndroidManifest.xml"
+        if manifest_dosya.is_file():
+            try:
+                m = re.search(r'package\s*=\s*["\']([^"\']+)["\']', manifest_dosya.read_text(encoding="utf-8"))
+                if m:
+                    return m.group(1)
+            except Exception:
+                pass
     return "com.example.app"
 
 
@@ -255,10 +463,12 @@ def mobil_uygulama_baslat(cihaz_id: str = None) -> bool:
         return False
 
 
-def ekran_goruntusu_al(cihaz_id: str = None, talep_id: str = None, gorev_id: str = None, otomatik_baslat: bool = True) -> tuple[bool, str, str]:
+def ekran_goruntusu_al(cihaz_id: str = None, talep_id: str = None, gorev_id: str = None,
+                       otomatik_baslat: bool = True, otomatik_guncelle: bool = True) -> tuple[bool, str, str]:
     """Çalışan cihazdan ekran görüntüsü alır ve workspace/docs/uat_kanitlari/ altına yazar.
 
     otomatik_baslat=True ise ve çalışan emülatör yoksa önce emülatörü başlatıp bekler.
+    otomatik_guncelle=True ise cihazdaki APK bayatsa veya kaynak kod daha yeniyse derleyip yükler.
     Ekran görüntüsü öncesinde projeye ait mobil uygulama ön plana getirilir.
     Döndürür: (basarili, goreceli_dosya_yolu, mesaj)
     """
@@ -290,6 +500,17 @@ def ekran_goruntusu_al(cihaz_id: str = None, talep_id: str = None, gorev_id: str
     if not hedef_id:
         hedef_id = cihazlar[0]["id"]
 
+    # Otomatik APK güncelleme: kod değiştiyse veya cihazdaki APK bayatsa derle ve yükle
+    if otomatik_guncelle:
+        guncel, neden = apk_guncel_mi(hedef_id)
+        if not guncel:
+            print(f"   📱 [MOBİL APK GÜNCELLEME] Emülatördeki uygulama eski ({neden}); yeniden derlenip yükleniyor...", flush=True)
+            ok_up, msg_up = mobil_uygulama_derle_ve_yukle(cihaz_id=hedef_id)
+            if ok_up:
+                print(f"   ✓ [MOBİL APK YÜKLENDİ] {msg_up}", flush=True)
+            else:
+                print(f"   ⚠️  [MOBİL APK UYARI] {msg_up} (Mevcut APK ile devam ediliyor)", flush=True)
+
     # Ekran görüntüsü öncesi uygulamanın kendisini ön plana getir
     mobil_uygulama_baslat(hedef_id)
 
@@ -317,7 +538,10 @@ def ekran_goruntusu_al(cihaz_id: str = None, talep_id: str = None, gorev_id: str
             tam_yol.unlink(missing_ok=True)
             return False, "", "Ekran görüntüsü boş üretildi (cihaz hazır olmayabilir)."
 
-        return True, rel_yol, f"Ekran görüntüsü kaydedildi: {dosya_adi}"
+        info = cihazdaki_paket_bilgisi(hedef_id)
+        sürüm_str = f"v{info.get('versionName', '?')}+{info.get('versionCode', '?')}"
+        lut_str = info.get("lastUpdateTime", "")
+        return True, rel_yol, f"Ekran görüntüsü kaydedildi: {dosya_adi} [{sürüm_str} - {lut_str}]"
     except Exception as e:
         tam_yol.unlink(missing_ok=True)
         return False, "", f"Ekran yakalama hatası: {e}"
@@ -388,6 +612,17 @@ if __name__ == "__main__":
     p_ss.add_argument("--cihaz", help="Cihaz ID")
     p_ss.add_argument("--talep", help="İlişkili talep ID")
     p_ss.add_argument("--gorev", help="İlişkili görev ID")
+    p_ss.add_argument("--no-build", action="store_true", help="Otomatik APK güncellemesini atla")
+
+    p_dy = sub.add_parser("derle-yukle", help="Mobil uygulamayı derleyip emülatöre yükler")
+    p_dy.add_argument("--cihaz", help="Cihaz ID")
+    p_dy.add_argument("--force", action="store_true", help="Güncel olsa bile zorla derle")
+
+    p_gm = sub.add_parser("guncel-mi", help="Cihazdaki uygulamanın güncelliğini kontrol eder")
+    p_gm.add_argument("--cihaz", help="Cihaz ID")
+
+    p_pb = sub.add_parser("paket-bilgi", help="Cihazdaki uygulamanın paket ve sürüm detayını gösterir")
+    p_pb.add_argument("--cihaz", help="Cihaz ID")
 
     args = ap.parse_args()
 
@@ -405,8 +640,16 @@ if __name__ == "__main__":
     elif args.cmd == "durdur":
         ok, msg = emulatore_durdur(args.cihaz_id)
         print(("✓ " if ok else "✗ ") + msg)
+    elif args.cmd == "guncel-mi":
+        ok, msg = apk_guncel_mi(args.cihaz)
+        print(("✓ " if ok else "✗ ") + msg)
+    elif args.cmd == "paket-bilgi":
+        print(json.dumps(cihazdaki_paket_bilgisi(args.cihaz), indent=2, ensure_ascii=False))
+    elif args.cmd == "derle-yukle":
+        ok, msg = mobil_uygulama_derle_ve_yukle(args.cihaz, zorla=args.force)
+        print(("✓ " if ok else "✗ ") + msg)
     elif args.cmd == "screencap":
-        ok, yol, msg = ekran_goruntusu_al(cihaz_id=args.cihaz, talep_id=args.talep, gorev_id=args.gorev)
+        ok, yol, msg = ekran_goruntusu_al(cihaz_id=args.cihaz, talep_id=args.talep, gorev_id=args.gorev, otomatik_guncelle=not args.no_build)
         if ok:
             print(f"✓ {msg} -> {yol}")
         else:
