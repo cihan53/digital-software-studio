@@ -1,5 +1,5 @@
 {
-  "version": "1.10.132",
+  "version": "1.10.133",
   "released": "2026-11-15",
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
@@ -67,6 +67,13 @@
   ],
   "protected_files": [],
   "changelog": [
+    {
+      "version": "1.10.133",
+      "date": "2026-11-15",
+      "changes": [
+        "feat: izole dal yasam dongusu, granuler deploy ve kod temizligi (#355) (#356)"
+      ]
+    },
     {
       "version": "1.10.132",
       "date": "2026-11-15",
