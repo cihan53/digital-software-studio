@@ -711,6 +711,7 @@ def kontrol(body: dict) -> dict:
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "StudioWeb/1.0"
+    timeout = 15
 
     def log_message(self, fmt, *args):
         sys.stderr.write("[web] %s - %s\n" % (self.address_string(), fmt % args))

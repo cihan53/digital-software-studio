@@ -11,6 +11,9 @@
 #   ./basla.sh --izle       sadece kontrol ekranını açar
 #   ./basla.sh --durum      tek satırlık durum özeti (ekran açmadan)
 #   ./basla.sh --web        web arayüzünü başlatır (panel + müşteri odası, :8090)
+#   ./basla.sh --web-restart web arayüzünü yeniden başlatır (donan paneli kurtarır)
+#   ./basla.sh --web-kill   web arayüzünü durdurur
+#   ./basla.sh --restart    web panelini ve gerekiyorsa koşucuyu yeniden başlatır
 #   ./basla.sh --kapat      koşuyu durdurur + panel ve yerel ortam servislerini kapatır
 #   ./basla.sh --servisler-kapat   yalnız panel ve yerel ortam servislerini kapatır (koşu sürer)
 #
@@ -82,6 +85,76 @@ calisiyor_mu() {
 }
 kosucu_pid() { cat workspace/.lock 2>/dev/null; }
 
+web_panel_saglikli_mi() {
+  local host="${1:-${STUDIO_WEB_HOST:-127.0.0.1}}"
+  local port="${2:-${STUDIO_WEB_PORT:-8090}}"
+  lsof -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1 || return 1
+  $PY -c "
+import urllib.request, sys
+try:
+    with urllib.request.urlopen(f'http://{sys.argv[1]}:{sys.argv[2]}/api/ozet', timeout=2) as r:
+        sys.exit(0 if r.status == 200 else 1)
+except Exception:
+    sys.exit(1)
+" "$host" "$port" >/dev/null 2>&1
+}
+
+web_panel_durdur() {
+  local port="${STUDIO_WEB_PORT:-8090}"
+  local pids
+  pids=$(lsof -tiTCP:"$port" 2>/dev/null || true)
+  if [ -n "$pids" ]; then
+    echo "$pids" | xargs kill -9 2>/dev/null || true
+  fi
+  if [ -f "workspace/.web.pid" ]; then
+    local fpid
+    fpid=$(cat "workspace/.web.pid" 2>/dev/null || true)
+    [ -n "$fpid" ] && kill -9 "$fpid" 2>/dev/null || true
+    rm -f "workspace/.web.pid"
+  fi
+}
+
+web_panel_baslat() {
+  [ ! -f studio_web.py ] && return 0
+  local port="${STUDIO_WEB_PORT:-8090}"
+  local host="${STUDIO_WEB_HOST:-127.0.0.1}"
+
+  if web_panel_saglikli_mi "$host" "$port"; then
+    dim "Web paneli aktif: http://$host:$port/panel"
+    return 0
+  fi
+
+  if lsof -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+    ylw "! Web paneli portunda ($port) asılı/yanıtsız süreç var, temizleniyor..."
+    web_panel_durdur
+    sleep 1
+  fi
+
+  mkdir -p workspace/logs
+  nohup $PY studio_web.py > workspace/logs/web.log 2>&1 &
+  local new_pid=$!
+  echo $new_pid > workspace/.web.pid
+
+  local hazir=0
+  for i in 1 2 3 4 5; do
+    sleep 1
+    if web_panel_saglikli_mi "$host" "$port"; then
+      hazir=1
+      break
+    fi
+  done
+
+  if [ "$hazir" = "1" ]; then
+    grn "✓ Web paneli: http://$host:$port/panel"
+  else
+    if kill -0 $new_pid 2>/dev/null; then
+      ylw "Web paneli başlatıldı (ısınma sürüyor): http://$host:$port/panel"
+    else
+      red "✗ Web paneli başlatılamadı — log: workspace/logs/web.log"
+    fi
+  fi
+}
+
 # ---------------------------------------------------------------- alt komutlar
 case "${1:-}" in
   --usage|--kullanim)
@@ -128,6 +201,28 @@ case "${1:-}" in
   --izle)   exec $PY studio_ctl.py ;;
   --web|--panel|--arayuz)
       exec $PY studio_web.py "${@:2}" ;;
+  --web-restart|--panel-restart)
+      echo "Web paneli yeniden başlatılıyor..."
+      web_panel_durdur
+      sleep 1
+      web_panel_baslat
+      exit $? ;;
+  --web-kill|--panel-kill|--web-durdur)
+      echo "Web paneli durduruluyor..."
+      web_panel_durdur
+      grn "✓ Web paneli durduruldu."
+      exit 0 ;;
+  --restart)
+      echo "Yeniden başlatılıyor..."
+      web_panel_durdur
+      sleep 1
+      web_panel_baslat
+      if calisiyor_mu; then
+        echo "Koşucu durdurulup yeniden başlatılıyor..."
+        $PY -c "import studio_board as B; B.hard_stop()" 2>/dev/null || true
+        sleep 1
+      fi
+      exec "$0" "${@:2}" ;;
   --surdur|--devam|--duraklat)
       # Devre kesici/duraklatma bayrağını yönetir: --surdur/--devam kaldırır, --duraklat koyar. Koşucu açıksa kendisi devam eder.
       EYLEM="${1}"
@@ -682,6 +777,7 @@ fi
 
 if calisiyor_mu; then
   PIDS=$(kosucu_pid)
+  web_panel_baslat
   if [ "$SADECE_KONTROL" = "1" ]; then
     # Denetim modunda çalışan koşu sorun değil, bilgi.
     grn "✓ Koşu hâlihazırda çalışıyor (pid: $PIDS)"
@@ -746,27 +842,6 @@ $PY studio_engine.py --dry-run 2>&1 | grep -E "^\[i\] (Motor|[0-9]+ rol)" | sed 
 echo
 dim "Log: $LOG    Durdurmak için kontrol ekranında 's'"
 echo
-
-web_panel_baslat() {
-  # Web arayüzü: port doluysa ya da dosya yoksa atla. Koşucu düşse bile panel açık kalmalı (log/durum oradan görülür).
-  WEB_PORT="${STUDIO_WEB_PORT:-8090}"
-  WEB_HOST="${STUDIO_WEB_HOST:-127.0.0.1}"
-  if [ ! -f studio_web.py ]; then
-    dim "studio_web.py yok — web paneli atlandı"
-  elif lsof -iTCP:"$WEB_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
-    dim "Web paneli zaten açık: http://$WEB_HOST:$WEB_PORT/panel"
-  else
-    mkdir -p workspace/logs
-    nohup $PY studio_web.py > workspace/logs/web.log 2>&1 &
-    echo $! > workspace/.web.pid
-    sleep 1
-    if kill -0 $! 2>/dev/null; then
-      grn "✓ Web paneli: http://$WEB_HOST:$WEB_PORT/panel"
-    else
-      ylw "Web paneli başlatılamadı — log: workspace/logs/web.log"
-    fi
-  fi
-}
 
 web_panel_baslat
 
