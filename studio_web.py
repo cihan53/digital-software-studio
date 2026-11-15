@@ -20,10 +20,13 @@ Ortam değişkenleri:
 """
 
 import argparse
+import base64
 import json
+import os
 import re
 import sys
 import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -1010,7 +1013,42 @@ class Handler(BaseHTTPRequestHandler):
                 if sub == "mesaj":
                     return self._json({"ok": True,
                                        **MTC.mesaj_gonder(body.get("oturum"),
-                                                          body.get("icerik", ""))})
+                                                          body.get("icerik", ""),
+                                                          gorsel_yolu=body.get("gorsel_yolu"))})
+                if sub == "gorsel_yukle":
+                    gorsel_raw = body.get("gorsel", "")
+                    if not gorsel_raw:
+                        return self._json({"ok": False, "mesaj": "Görsel verisi boş."}, 400)
+                    uzanti = "png"
+                    if "," in gorsel_raw and "data:" in gorsel_raw:
+                        header, b64_veri = gorsel_raw.split(",", 1)
+                        if "image/jpeg" in header or "image/jpg" in header:
+                            uzanti = "jpg"
+                        elif "image/webp" in header:
+                            uzanti = "webp"
+                        elif "image/gif" in header:
+                            uzanti = "gif"
+                    else:
+                        b64_veri = gorsel_raw
+                    try:
+                        baytlar = base64.b64decode(b64_veri)
+                    except Exception as e:
+                        return self._json({"ok": False, "mesaj": f"Base64 çözülemedi: {e}"}, 400)
+                    if len(baytlar) > 10 * 1024 * 1024:
+                        return self._json({"ok": False, "mesaj": "Görsel boyutu 10MB sınırını aşıyor."}, 400)
+
+                    oturum = re.sub(r'[^a-zA-Z0-9_-]', '', str(body.get("oturum") or "genel"))[:16]
+                    hedef_dizin = ROOT / "workspace" / "docs" / "sohbet_gorselleri"
+                    hedef_dizin.mkdir(parents=True, exist_ok=True)
+                    dosya_adi = f"sohbet_{oturum}_{int(time.time())}_{uuid.uuid4().hex[:6]}.{uzanti}"
+                    (hedef_dizin / dosya_adi).write_bytes(baytlar)
+                    rel_yol = f"workspace/docs/sohbet_gorselleri/{dosya_adi}"
+                    return self._json({
+                        "ok": True,
+                        "yol": rel_yol,
+                        "url": f"/api/gorsel?yol={rel_yol}",
+                        "dosya_adi": dosya_adi
+                    })
                 if sub == "onay":
                     return self._json({"ok": True,
                                        **MTC.taslak_onayla(body.get("oturum"),

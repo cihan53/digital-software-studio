@@ -65,6 +65,16 @@
   .durum-revize { color: var(--sari,#d29922); font-weight: 600; }
   .durum-bekle { color: var(--soluk); }
   .gizli { display: none !important; }
+  .girdi-kapsayici { border-top: 1px solid var(--sinir); display: flex; flex-direction: column; background: var(--panel); }
+  .gorsel-onizleme-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: rgba(88,166,255,0.06); border-bottom: 1px dashed var(--sinir); }
+  .gorsel-onizleme-img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; border: 1px solid var(--sinir); }
+  .gorsel-onizleme-bilgi { flex: 1; font-size: 12px; color: var(--metin); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gorsel-onizleme-sil { background: transparent; border: none; color: var(--kirmizi, #f85149); font-size: 16px; cursor: pointer; padding: 2px 6px; }
+  .mesaj-gorsel { margin-top: 8px; border-radius: 8px; overflow: hidden; max-width: 340px; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); }
+  .mesaj-gorsel img { width: 100%; height: auto; max-height: 240px; object-fit: cover; display: block; transition: transform 0.15s ease; }
+  .mesaj-gorsel img:hover { transform: scale(1.02); }
+  .ek-buton { background: transparent; border: 1px solid var(--sinir); color: var(--soluk); border-radius: 6px; padding: 9px 12px; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; }
+  .ek-buton:hover { border-color: var(--vurgu); color: var(--metin); }
 </style>
 </head>
 <body>
@@ -89,10 +99,19 @@
     <div class="sohbet">
       <div class="mesajlar" id="mesajlar"></div>
       <div class="yaziyor gizli" id="yaziyor">Temsilci yazıyor…</div>
-      <div class="girdi">
-        <textarea id="girdi" rows="1"
-          placeholder="Mesajınızı yazın… (Enter: gönder, Shift+Enter: yeni satır)"></textarea>
-        <button class="birincil" id="gonder" onclick="gonder()">Gönder</button>
+      <div class="girdi-kapsayici">
+        <div id="gorsel-onizleme" class="gorsel-onizleme-bar gizli">
+          <img id="gorsel-onizleme-thumb" class="gorsel-onizleme-img" src="" alt="Önizleme">
+          <div class="gorsel-onizleme-bilgi" id="gorsel-onizleme-yazi">Ekran görüntüsü eklendi</div>
+          <button class="gorsel-onizleme-sil" onclick="gorselTemizle()" title="Görseli kaldır">✕</button>
+        </div>
+        <div class="girdi" style="border-top: none;">
+          <input type="file" id="dosya-secici" accept="image/png,image/jpeg,image/webp,image/gif" class="gizli" onchange="dosyadanGorselSec(event)">
+          <button type="button" class="ek-buton" onclick="$('dosya-secici').click()" title="Görsel yükle (veya panodan Ctrl+V / Cmd+V ile yapıştır)">📎</button>
+          <textarea id="girdi" rows="1"
+            placeholder="Mesajınızı yazın veya ekran görüntüsü yapıştırın… (Enter: gönder, Shift+Enter: yeni satır)"></textarea>
+          <button class="birincil" id="gonder" onclick="gonder()">Gönder</button>
+        </div>
       </div>
     </div>
     <div class="yan-panel">
@@ -174,6 +193,14 @@
     </div>
   </div>
 </div>
+<div id="gorsel-modal-arka" class="modal-arka gizli" onclick="if(event.target===this)gorselModalKapat()">
+  <div class="modal" style="max-width: 90vw; max-height: 90vh; padding: 12px; display: flex; flex-direction: column; align-items: center; background: rgba(13,17,23,0.95);">
+    <div style="width: 100%; display: flex; justify-content: flex-end; margin-bottom: 8px;">
+      <button onclick="gorselModalKapat()" style="padding: 4px 10px; font-size: 14px;">✕</button>
+    </div>
+    <img id="gorsel-modal-img" src="" style="max-width: 100%; max-height: 80vh; object-fit: contain; border-radius: 6px;" alt="Büyük Görsel">
+  </div>
+</div>
 <div id="toast" class="bildirim gizli"></div>
 <script>
 let oturum = localStorage.getItem('sohbet_oturum') || '';
@@ -200,6 +227,12 @@ function mesajCiz(m){
   if(m.gonderen==='sistem'){ d.className='mesaj m-sistem'; d.textContent=m.icerik; return d; }
   d.className='mesaj '+(m.gonderen==='musteri'?'m-musteri':'m-asistan');
   d.textContent=m.icerik;
+  if(m.gorsel_yolu){
+    const g=document.createElement('div');
+    g.className='mesaj-gorsel';
+    g.innerHTML=`<img src="/api/gorsel?yol=${encodeURIComponent(m.gorsel_yolu)}" alt="Ekran Görüntüsü" onclick="gorselBuyut(this.src)" title="Büyütmek için tıklayın">`;
+    d.appendChild(g);
+  }
   if(m.taslak){
     const t=m.taslak;
     const k=document.createElement('div'); k.className='taslak';
@@ -299,21 +332,111 @@ function sekmeSec(s){
     .forEach(x=>x.classList.toggle('aktif',x.dataset.s===s));
   yukle(true);
 }
+let aktifGorsel = null;
+
+function gorselTemizle(){
+  aktifGorsel = null;
+  $('gorsel-onizleme').classList.add('gizli');
+  $('gorsel-onizleme-thumb').src = '';
+  $('gorsel-onizleme-yazi').textContent = 'Ekran görüntüsü eklendi';
+  $('dosya-secici').value = '';
+}
+
+function gorselBuyut(url){
+  $('gorsel-modal-img').src = url;
+  $('gorsel-modal-arka').classList.remove('gizli');
+}
+
+function gorselModalKapat(){
+  $('gorsel-modal-arka').classList.add('gizli');
+  $('gorsel-modal-img').src = '';
+}
+
+async function gorselYukleDataUrl(dataUrl, dosyaAdi){
+  $('gorsel-onizleme-yazi').textContent = '⏳ Görsel yükleniyor…';
+  $('gorsel-onizleme-thumb').src = dataUrl;
+  $('gorsel-onizleme').classList.remove('gizli');
+  try{
+    await oturumGerek();
+    const res = await fetch('/api/sohbet/gorsel_yukle', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        oturum: oturum,
+        gorsel: dataUrl,
+        dosya_adi: dosyaAdi || 'ekran_goruntusu.png'
+      })
+    });
+    const d = await res.json();
+    if(d.ok){
+      aktifGorsel = { yol: d.yol, url: d.url, adi: d.dosya_adi };
+      $('gorsel-onizleme-yazi').textContent = '📎 ' + (dosyaAdi || d.dosya_adi) + ' hazır';
+      toast('Görsel eklendi (Enter ile gönderebilirsiniz).');
+    } else {
+      toast('Görsel yüklenemedi: ' + (d.mesaj || 'Hata'));
+      gorselTemizle();
+    }
+  }catch(e){
+    toast('Görsel yükleme hatası: ' + e);
+    gorselTemizle();
+  }
+}
+
+function dosyadanGorselSec(e){
+  const file = e.target.files && e.target.files[0];
+  if(!file) return;
+  if(!file.type.startsWith('image/')){
+    toast('Lütfen geçerli bir resim dosyası seçin.');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    gorselYukleDataUrl(ev.target.result, file.name);
+  };
+  reader.readAsDataURL(file);
+}
+
+document.addEventListener('paste', (e) => {
+  const cd = e.clipboardData || (e.originalEvent && e.originalEvent.clipboardData);
+  if(!cd || !cd.items) return;
+  for(let i = 0; i < cd.items.length; i++){
+    if(cd.items[i].type && cd.items[i].type.indexOf('image') !== -1){
+      e.preventDefault();
+      const file = cd.items[i].getAsFile();
+      if(!file) continue;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        gorselYukleDataUrl(ev.target.result, 'pano_goruntusu.png');
+      };
+      reader.readAsDataURL(file);
+      break;
+    }
+  }
+});
+
 async function gonder(){
   const inp=$('girdi'); const metin=inp.value.trim();
-  if(!metin)return;
+  if(!metin && !aktifGorsel) return;
+  const gorselData = aktifGorsel;
+  gorselTemizle();
   inp.value=''; inp.disabled=true; $('gonder').disabled=true;
   yaziyorBasla=Date.now();
   $('yaziyor').textContent='Temsilci yazıyor…';
   $('yaziyor').classList.remove('gizli');
   // Optimistik ekleme
   const kutu=$('mesajlar');
-  const ge=document.createElement('div'); ge.className='mesaj m-musteri'; ge.textContent=metin;
+  const ge=document.createElement('div'); ge.className='mesaj m-musteri';
+  if(metin) ge.textContent=metin;
+  if(gorselData){
+    const g=document.createElement('div'); g.className='mesaj-gorsel';
+    g.innerHTML=`<img src="${gorselData.url}" alt="Ekran Görüntüsü" onclick="gorselBuyut(this.src)">`;
+    ge.appendChild(g);
+  }
   kutu.appendChild(ge); kutu.scrollTop=kutu.scrollHeight;
   try{
     const d=await(await fetch('/api/sohbet/mesaj',{method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({oturum:oturum,icerik:metin})})).json();
+      body:JSON.stringify({oturum:oturum,icerik:metin,gorsel_yolu:gorselData?gorselData.yol:null})})).json();
     if(d.oturum_id&&!oturum){oturum=d.oturum_id;localStorage.setItem('sohbet_oturum',oturum);}
     if(!d.ok) toast(d.mesaj||'Gönderilemedi');
   }catch(e){ toast('Gönderilemedi: '+e); }

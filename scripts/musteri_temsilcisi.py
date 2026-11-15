@@ -105,7 +105,7 @@ def mesajlar(oid: str) -> list[dict]:
     conn = B.db_conn()
     try:
         rows = conn.execute(
-            "SELECT id, zaman, gonderen, icerik, taslak, talep_id "
+            "SELECT id, zaman, gonderen, icerik, taslak, talep_id, gorsel_yolu "
             "FROM sohbet_mesajlari WHERE oturum_id = ? ORDER BY id",
             (oid,)).fetchall()
         out = []
@@ -123,17 +123,18 @@ def mesajlar(oid: str) -> list[dict]:
 
 
 def _mesaj_ekle(oid: str, gonderen: str, icerik: str,
-                taslak: dict | None = None, talep_id: str = None) -> int:
+                taslak: dict | None = None, talep_id: str = None,
+                gorsel_yolu: str | None = None) -> int:
     conn = B.db_conn()
     try:
         cur = conn.cursor()
         cur.execute(
             "INSERT INTO sohbet_mesajlari "
-            "(oturum_id, zaman, gonderen, icerik, taslak, talep_id) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "(oturum_id, zaman, gonderen, icerik, taslak, talep_id, gorsel_yolu) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (oid, _simdi(), gonderen, icerik,
              json.dumps(taslak, ensure_ascii=False) if taslak else None,
-             talep_id))
+             talep_id, gorsel_yolu))
         conn.execute(
             "UPDATE sohbet_oturumlari SET son_aktivite = ? WHERE id = ?",
             (_simdi(), oid))
@@ -149,7 +150,8 @@ def _gecmis_promptu(oid: str, sinir: int = 24) -> str:
     satirlar = []
     for m in mesajlar(oid)[-sinir:]:
         kim = "Müşteri" if m["gonderen"] == "musteri" else "Temsilci"
-        satirlar.append(f"{kim}: {m['icerik']}")
+        ek = f" [Ekli Görsel: {m['gorsel_yolu']}]" if m.get("gorsel_yolu") else ""
+        satirlar.append(f"{kim}: {m['icerik']}{ek}")
         if m.get("taslak"):
             satirlar.append(f"[Taslak gösterildi: {json.dumps(m['taslak'], ensure_ascii=False)}]")
     return "\n".join(satirlar)
@@ -242,15 +244,17 @@ def _ajan_cagri(oid: str) -> dict:
             "taslak": taslak}
 
 
-def mesaj_gonder(oid: str, icerik: str) -> dict:
+def mesaj_gonder(oid: str, icerik: str, gorsel_yolu: str | None = None) -> dict:
     """Müşteri mesajını işler, temsilci yanıtını üretir ve saklar."""
     if not oid or not _oturum_var(oid):
         oid = oturum_ac()
     icerik = (icerik or "").strip()
-    if not icerik:
+    if not icerik and not gorsel_yolu:
         raise ValueError("Boş mesaj.")
+    if not icerik and gorsel_yolu:
+        icerik = "(Ekran görüntüsü eklendi)"
 
-    _mesaj_ekle(oid, "musteri", icerik)
+    _mesaj_ekle(oid, "musteri", icerik, gorsel_yolu=gorsel_yolu)
 
     if SOHBET_AGENT:
         try:
@@ -272,6 +276,13 @@ def mesaj_gonder(oid: str, icerik: str) -> dict:
                        "aciklama": icerik},
         }
 
+    # Eğer kullanıcı görsel eklediyse ve taslak oluştuysa, açıklamaya referans iliştir
+    if gorsel_yolu and sonuc.get("taslak"):
+        t = sonuc["taslak"]
+        aciklama = t.get("aciklama", "")
+        if gorsel_yolu not in aciklama:
+            t["aciklama"] = f"{aciklama}\n\n![Ekran Görüntüsü](/api/gorsel?yol={gorsel_yolu})"
+
     yanit_metni = sonuc["yanit"]
     if sonuc.get("taslak"):
         t = sonuc["taslak"]
@@ -282,7 +293,7 @@ def mesaj_gonder(oid: str, icerik: str) -> dict:
             "\nOnaylıyor musunuz? (Onayla / düzeltme isteği yazın)"
         )
     mid = _mesaj_ekle(oid, "asistan", yanit_metni, taslak=sonuc.get("taslak"))
-    B.audit("sohbet", "mesaj", detay={"oturum": oid, "taslak": bool(sonuc.get("taslak"))})
+    B.audit("sohbet", "mesaj", detay={"oturum": oid, "taslak": bool(sonuc.get("taslak")), "gorsel": bool(gorsel_yolu)})
     return {"oturum_id": oid, "mesaj_id": mid, **sonuc}
 
 

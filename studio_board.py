@@ -157,7 +157,8 @@ CREATE TABLE IF NOT EXISTS sohbet_mesajlari (
     gonderen    TEXT,
     icerik      TEXT,
     taslak      TEXT,
-    talep_id    TEXT
+    talep_id    TEXT,
+    gorsel_yolu TEXT
 );
 
 CREATE TABLE IF NOT EXISTS cozum_kanitlari (
@@ -247,6 +248,13 @@ def _db_migrate(conn: sqlite3.Connection):
                     "telafi_zincir", "kaynak_gorev"):
             if col not in mevcut:
                 cur.execute(f"ALTER TABLE talepler ADD COLUMN {col} TEXT")
+    except Exception:
+        pass
+    try:
+        cur.execute("PRAGMA table_info(sohbet_mesajlari)")
+        mevcut = {r["name"] for r in cur.fetchall()}
+        if "gorsel_yolu" not in mevcut:
+            cur.execute("ALTER TABLE sohbet_mesajlari ADD COLUMN gorsel_yolu TEXT")
     except Exception:
         pass
     try:
