@@ -2791,38 +2791,67 @@ def verify_task_execution(task: dict, sprint: dict, interactive: bool = False) -
 
 def is_mobile_task(task: dict) -> bool:
     """Görevin veya bağlı talebin mobil (Flutter/Android/iOS) kapsamda olup olmadığını tespit eder."""
-    title = task.get("title", "")
-    desc = task.get("description", "")
-    role = task.get("role", "")
+    title = task.get("title", "") or task.get("baslik", "")
+    desc = task.get("description", "") or task.get("aciklama", "")
+    role = task.get("role", "") or task.get("rol", "")
     full_text = f"{title} {desc} {role}".lower()
 
     if role in ("mobile_developer", "mobile_engineer"):
         return True
 
+    # 1. Çıktılarda veya kaynaklarda mobil dizini var mı?
+    outputs = task.get("outputs") or task.get("ciktilar") or []
+    if isinstance(outputs, str):
+        try:
+            outputs = json.loads(outputs)
+        except Exception:
+            outputs = [outputs]
+    if any("src/mobile" in str(o) or "mobile" in str(o) for o in outputs):
+        return True
+
+    # 2. Bağlı talep analizi
     tid = task.get("talep_id")
     if tid:
         try:
-            import musteri_talepleri as MT
+            try:
+                import musteri_talepleri as MT
+            except ImportError:
+                from scripts import musteri_talepleri as MT
             talep = MT.getir(tid) or {}
-            full_text += " " + (talep.get("baslik", "") + " " + talep.get("aciklama", "")).lower()
+            talep_metin = (talep.get("baslik", "") + " " + talep.get("aciklama", "")).lower()
+            full_text += " " + talep_metin
             if talep.get("gorevli_rol") in ("mobile_developer", "mobile_engineer"):
+                return True
+            if any(w in talep_metin for w in ("mobil", "mobile", "flutter", "android", "ios", "apk")):
                 return True
         except Exception:
             pass
 
-    for dep_id in task.get("depends_on", []):
+    # 3. Bağımlı görevler analizi
+    deps = task.get("depends_on") or task.get("bagimlilik") or []
+    if isinstance(deps, str):
+        try:
+            deps = json.loads(deps)
+        except Exception:
+            deps = [deps]
+    for dep_id in deps:
         try:
             dep_task = B.task_get(dep_id) if hasattr(B, "task_get") else None
+            if not dep_task and hasattr(B, "task_summary"):
+                dep_task = B.task_summary(dep_id)
             if dep_task:
-                dep_role = dep_task.get("role", "")
+                dep_role = dep_task.get("role", "") or dep_task.get("rol", "")
                 if dep_role in ("mobile_developer", "mobile_engineer"):
                     return True
-                full_text += " " + (dep_task.get("title", "") + " " + dep_task.get("description", "")).lower()
+                dep_title = dep_task.get("title", "") or dep_task.get("baslik", "")
+                dep_desc = dep_task.get("description", "") or dep_task.get("aciklama", "")
+                full_text += f" {dep_title} {dep_desc}".lower()
         except Exception:
             pass
 
+    # 4. Git diff analizi (son commit'lerde mobil dizin değişti mi?)
     try:
-        diff_files = subprocess.run(["git", "diff", "--name-only", "HEAD~1"], capture_output=True, text=True, timeout=5).stdout
+        diff_files = subprocess.run(["git", "diff", "--name-only", "HEAD~2"], capture_output=True, text=True, timeout=5).stdout
         if any("src/mobile" in ln for ln in diff_files.splitlines()):
             return True
     except Exception:
