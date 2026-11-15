@@ -2664,6 +2664,31 @@ def _auto_talep_uat(task: dict, uat_cikti: str, kaynak: str = "UAT",
                 kok_tid = k_talep["kok_talep_id"]
                 k_talep = MT.getir(kok_tid) or {}
 
+        # Bu görev zaten bir müşteri talebine aitse, yeni bir yavru talep açarak kaskad oluşturma;
+        # mevcut talebi güncelle ve zincir sınırına ulaşıldıysa devre kesiciyi devreye al.
+        if kok_tid:
+            k_talep = MT.getir(kok_tid) or {}
+            zincir = int(k_talep.get("telafi_zincir") or 0) + 1
+            if zincir >= (RENDER_MAX_REMEDIATION if kaynak in ("RENDER", "HİJYEN") else UAT_MAX_REMEDIATION):
+                not_metni = (
+                    f"Otomatik {kaynak} telafi sınırı aşıldı ({zincir}/{UAT_MAX_REMEDIATION}). "
+                    f"'{task['id']}' görevi yine başarısız oldu; Devre Kesici panoyu duraklattı."
+                )
+                MT.guncelle(kok_tid, durum="INSAN_GEREKLI", studio_notu=not_metni, telafi_zincir=zincir)
+                if task.get("talep_id") and task["talep_id"] != kok_tid:
+                    MT.guncelle(task["talep_id"], durum="INSAN_GEREKLI", studio_notu=not_metni)
+                B.request("pause", f"devre_kesici:{kok_tid}", kaynak="kalite")
+                B.audit("kalite", "devre_kesici_tetiklendi", talep_id=kok_tid,
+                        detay={"zincir": zincir, "gorev": task["id"], "kaynak": kaynak, "neden": neden})
+                print(f"\n   ⛔ [DEVRE KESİCİ DEVREYE GİRDİ] {kok_tid} için telafi sınırı aşıldı ({zincir} deneme).")
+                print(f"      Pano otomatik DURAKLATILDI. Sonsuz hata/talep döngüsü engellendi.\n")
+                return None
+
+            MT.guncelle(kok_tid, durum="BEKLEMEDE", telafi_zincir=zincir,
+                        studio_notu=f"UAT/smoke başarısız ({neden}): {task['id']} (deneme {zincir}).")
+            print(f"   [i] Mevcut talep {kok_tid} UAT başarısızlığı nedeniyle güncellendi ({zincir}. deneme); yavru talep açılmadı.")
+            return kok_tid
+
         data = MT.load_data()
         acik_talepler = [t for t in data.get("talepler", []) if t.get("durum") not in ("COZULDU", "IPTAL")]
 

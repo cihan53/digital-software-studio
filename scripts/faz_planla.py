@@ -225,6 +225,14 @@ def plani_uygula(board: dict, faz_id: str, plan: dict, org: dict | None = None, 
     """Plan sprintlerini panoya EKLER (yeniden numaralar, bağımlılıkları eşler). Eklenen sprint sayısını döndürür."""
     if uygulandi_yolu(faz_id, kok).exists():
         return 0
+
+    # Mükerrer planlama koruması: bu faza ait görevler zaten panoda varsa tekrar ekleme
+    mevcut_gorev_basliklari = {t.get("title") for _, t in B.all_tasks(board) if t.get("title")}
+    plan_gorev_basliklari = {t.get("title") for s in plan.get("sprints", []) for t in s.get("tasks", []) if t.get("title")}
+    if plan_gorev_basliklari and plan_gorev_basliklari.issubset(mevcut_gorev_basliklari):
+        uygulandi_yolu(faz_id, kok).write_text(datetime.now().isoformat(timespec="seconds"), encoding="utf-8")
+        return 0
+
     n0 = len(board.get("sprints", []))
     mevcut = {t["id"] for _, t in B.all_tasks(board)}
     eslem: dict[str, str] = {}
