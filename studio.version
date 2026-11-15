@@ -1,5 +1,5 @@
 {
-  "version": "1.10.129",
+  "version": "1.10.130",
   "released": "2026-11-15",
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
@@ -67,6 +67,13 @@
   ],
   "protected_files": [],
   "changelog": [
+    {
+      "version": "1.10.130",
+      "date": "2026-11-15",
+      "changes": [
+        "fix(updater): canli_dagitim.py tracked_files listesine eklendi (#349) (#350)"
+      ]
+    },
     {
       "version": "1.10.129",
       "date": "2026-11-15",
