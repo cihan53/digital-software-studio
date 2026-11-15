@@ -109,7 +109,9 @@ def canliya_dagit_hepsi(cwd: Path | None = None) -> dict:
     """studio/calisma dalındaki tüm onaylı işleri ana dala merge edip push eder."""
     work_dir = cwd or ROOT
     ana_dal = ana_dal_bul(work_dir)
-    calisma_dali = mevcut_dal_bul(work_dir)
+    calisma_dali = os.getenv("STUDIO_GIT_BRANCH", "studio/calisma")
+    if calisma_dali == ana_dal:
+        calisma_dali = "studio/calisma"
 
     stashed = _calisma_dizinini_guvenceye_al(work_dir)
 
@@ -162,7 +164,9 @@ def canliya_dagit_tekil(talep_id: str, cwd: Path | None = None) -> dict:
 
     work_dir = cwd or ROOT
     ana_dal = ana_dal_bul(work_dir)
-    calisma_dali = mevcut_dal_bul(work_dir)
+    calisma_dali = os.getenv("STUDIO_GIT_BRANCH", "studio/calisma")
+    if calisma_dali == ana_dal:
+        calisma_dali = "studio/calisma"
 
     tid = talep_id.strip().upper()
     num_match = re.search(r"\d+", tid)
@@ -283,7 +287,7 @@ def issuelari_kapat(cwd: Path | None = None) -> dict:
 
     # DB'den çözülmüş talepleri çek
     cozulen_talepler = [
-        t for t in MT.db_tum_talepler(cwd=work_dir)
+        t for t in MT.db_tum_talepler()
         if t.get("durum") == "COZULDU" and t.get("github_issue_number")
     ]
 
