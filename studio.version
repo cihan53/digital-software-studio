@@ -1,5 +1,5 @@
 {
-  "version": "1.10.128",
+  "version": "1.10.129",
   "released": "2026-11-15",
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
@@ -66,6 +66,13 @@
   ],
   "protected_files": [],
   "changelog": [
+    {
+      "version": "1.10.129",
+      "date": "2026-11-15",
+      "changes": [
+        "fix(canli_dagitim): merge oncesi ana dalda clean yapilmasi"
+      ]
+    },
     {
       "version": "1.10.128",
       "date": "2026-11-15",
