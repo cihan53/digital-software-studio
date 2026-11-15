@@ -305,16 +305,30 @@ def _rel_veya_tam(p: Path) -> str:
 
 
 def _uygulama_koku() -> Path | None:
-    """Nuxt uygulama dizini (planlama.dizinler.uygulama, varsayılan workspace/src/web); nuxt.config.* yoksa None (alias denetimi yapılmaz)."""
+    """Nuxt uygulama dizini (planlama.dizinler.uygulama, veya nuxt.config barındıran src alt dizini)."""
     try:
         sys.path.insert(0, str(ROOT / "scripts"))
         import studio_config as SC
         import uygulama_dizini as UD
         d = UD.dizin(SC.load_config(ROOT / "workspace" / "studio.config.json"))
+        kok = ROOT / d
+        if kok.is_dir() and any(kok.glob("nuxt.config.*")):
+            return kok
     except Exception:
-        d = "workspace/src/web"
-    kok = ROOT / d
-    return kok if kok.is_dir() and any(kok.glob("nuxt.config.*")) else None
+        pass
+
+    # Otomatik keşif: workspace/src altında nuxt.config.* barındıran ilk dizin
+    src_dir = ROOT / "workspace" / "src"
+    if src_dir.is_dir():
+        for aday in ("frontend", "web", "app", "ui", "client"):
+            d = src_dir / aday
+            if d.is_dir() and any(d.glob("nuxt.config.*")):
+                return d
+        for conf in src_dir.glob("*/nuxt.config.*"):
+            return conf.parent
+
+    kok_web = ROOT / "workspace" / "src" / "web"
+    return kok_web if kok_web.is_dir() and any(kok_web.glob("nuxt.config.*")) else None
 
 
 def _alias_adaylari(kok: Path, spec: str) -> list[Path]:
