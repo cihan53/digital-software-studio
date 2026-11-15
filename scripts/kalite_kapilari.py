@@ -619,10 +619,10 @@ SIZINTI_ISIM_RE = re.compile(
     r"Gemfile(\.lock)?|go\.(mod|sum)|Cargo\.(toml|lock)|_CIKTI.*\.md|"
     r"test-results|playwright-report)$")
 
-# workspace/src/ altında kaynak dosya sayılmayan üretim artefaktları
+# workspace/src/ altında kaynak dosya sayılmayan üretim artefaktları ve çift uzantılı hatalı dosyalar
 TEST_CIKTI_DIZINLERI = {"playwright-report", "test-results"}
 SRC_ARTEFAKT_RE = re.compile(
-    r"(?i)(^|/)_CIKTI[^/]*\.md$|(^|/)(test-results|playwright-report)(/|$)")
+    r"(?i)(^|/)_CIKTI[^/]*\.md$|(^|/)(test-results|playwright-report)(/|$)|.*\.(?:js|ts|vue|mjs|cjs)\.(?:ts|js|vue|mjs|cjs)$")
 
 # Hijyen taramasında içine girilmeyen ağır/üretim dizinleri
 _HIJYEN_SKIP = {"node_modules", ".git", ".nuxt", ".output", "dist", "build",

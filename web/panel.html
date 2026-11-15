@@ -206,8 +206,12 @@
     <div class="durum-hat" style="margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span class="soluk">Müşteri ve saha talepleri havuzu. Çözülmüş işleri tek tıkla canlıya dağıtabilir veya GitHub Issue'larını kapatabilirsiniz.</span>
       <span class="bosluk"></span>
-      <button class="birincil" onclick="canliyaDagitHepsi()" title="Onaylanmış tüm işleri ana dala (master/main) birleştirir ve canlı dağıtımı başlatır">🚀 Canlıya Dağıt (Tümü)</button>
-      <button onclick="issuelariKapat()" title="Çözülmüş taleplerin GitHub üzerindeki açık Issue'larını tarayıp kapatır">🔄 Issue'ları Kapat</button>
+      <div style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <button class="birincil" onclick="canliyaDagitHepsi()" title="Onaylanmış tüm işleri ana dala (master/main) birleştirir ve canlı dağıtımı başlatır">🚀 Canlıya Dağıt (Tümü)</button>
+        <button onclick="dagitimTetikle('web')" title="Yalnızca Web & Backend canlı dağıtımını tetikler">🌐 Web / API Dağıt</button>
+        <button onclick="dagitimTetikle('mobil')" title="Yalnızca Mobil Uygulama dağıtımını tetikler">📱 Mobil Dağıt</button>
+        <button onclick="issuelariKapat()" title="Çözülmüş taleplerin GitHub üzerindeki açık Issue'larını tarayıp kapatır">🔄 Issue'ları Kapat</button>
+      </div>
     </div>
     <table class="tablo"><thead><tr>
       <th>ID</th><th>Tür</th><th>Öncelik</th><th>Durum</th><th>Başlık</th><th>Sayfa</th><th>Faz</th><th>Issue</th><th></th>
@@ -699,7 +703,7 @@ async function talepCozum(tid,onay){
   toast(d.mesaj); talepYukle();
 }
 async function canliyaDagitHepsi(){
-  if(!confirm("Onaylanmış tüm işler ana dala (master/main) birleştirilip canlıya gönderilsin mi?\n\nBu işlem canlı CI/CD dağıtımını (cPanel / Mağaza vb.) başlatacaktır."))return;
+  if(!confirm("Onaylanmış tüm işler ana dala (master/main) birleştirilip canlıya gönderilsin mi?\n\nBu işlem canlı CI/CD dağıtımını (Sunucu / Mağaza vb.) başlatacaktır."))return;
   toast("Canlıya dağıtım başlatılıyor…");
   try{
     const d=await(await fetch('/api/kontrol',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -708,13 +712,23 @@ async function canliyaDagitHepsi(){
   }catch(e){toast("Dağıtım hatası: "+e);}
 }
 async function canliyaDagitTekil(tid){
-  if(!confirm(`Yalnızca ${tid} talebine ait geliştirmeler seçici olarak (cherry-pick) ana dala aktarılıp canlıya gönderilsin mi?`))return;
+  if(!confirm(`Yalnızca ${tid} talebine ait geliştirmeler seçici olarak (cherry-pick veya izole dal) ana dala aktarılıp canlıya gönderilsin mi?`))return;
   toast(`${tid} canlıya aktarılıyor…`);
   try{
     const d=await(await fetch('/api/kontrol',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({aksiyon:'canliya_gonder',mod:'tekil',talep_id:tid})})).json();
     toast(d.mesaj); talepYukle();
   }catch(e){toast("Tekil dağıtım hatası: "+e);}
+}
+async function dagitimTetikle(hedef){
+  const ad = hedef === 'web' ? 'Web & API' : (hedef === 'mobil' ? 'Mobil Uygulama' : 'Tüm Sistemler');
+  if(!confirm(`${ad} için canlı dağıtım (CI/CD) tetiklensin mi?`)) return;
+  toast(`${ad} dağıtımı başlatılıyor…`);
+  try{
+    const d=await(await fetch('/api/kontrol',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({aksiyon:'dagitim_tetikle',hedef:hedef})})).json();
+    toast(d.mesaj);
+  }catch(e){toast("Dağıtım tetikleme hatası: "+e);}
 }
 async function issuelariKapat(){
   toast("GitHub Issue'ları senkronize ediliyor…");
