@@ -72,17 +72,25 @@ class TestMobilKanit(unittest.TestCase):
         self.assertGreaterEqual(vc, 1)
 
     def test_is_mobile_task_ayrimi(self):
-        """studio_engine.is_mobile_task web ve mobil ayrımını doğru yapmalıdır (Issue #345)."""
+        """studio_engine.is_mobile_task web ve mobil ayrımını doğru yapmalıdır (Issue #345 & #353)."""
         import studio_engine as SE
 
         # Mobil görevler
         self.assertTrue(SE.is_mobile_task({"role": "mobile_developer", "title": "Ekran yapımı"}))
         self.assertTrue(SE.is_mobile_task({"role": "uat_auditor", "title": "Mobil Trafik Paneli Doğrulama", "description": ""}))
         self.assertTrue(SE.is_mobile_task({"role": "uat_auditor", "title": "UAT Doğrulama", "description": "Flutter widget testleri"}))
+        self.assertTrue(SE.is_mobile_task({"role": "uat_auditor", "title": "Doğrulama", "outputs": ["workspace/src/mobile/lib/views/"]}))
+        self.assertTrue(SE.is_mobile_task({"rol": "uat_auditor", "baslik": "UAT", "ciktilar": '["workspace/src/mobile/"]'}))
 
         # Web görevler
         self.assertFalse(SE.is_mobile_task({"role": "web_engineer", "title": "İstasyon arama", "description": "Nuxt 3 API rotası"}))
         self.assertFalse(SE.is_mobile_task({"role": "uat_auditor", "title": "Web Harita Kümeleme Kabulü", "description": "curl ve web testleri"}))
+
+    def test_task_get(self):
+        """studio_board.task_get görevin tüm detaylarını döndürmelidir (#353)."""
+        self.assertTrue(hasattr(B, "task_get"))
+        # Boş panoda None dönmeli
+        self.assertIsNone(B.task_get("YOK-T99"))
 
 
 if __name__ == "__main__":

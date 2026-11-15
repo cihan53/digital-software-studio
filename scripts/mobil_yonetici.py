@@ -392,14 +392,35 @@ def mobil_uygulama_derle_ve_yukle(cihaz_id: str = None, zorla: bool = False) -> 
         return False, "Derleme sonrası APK dosyası bulunamadı."
 
     print(f"   📲 [MOBİL YÜKLEME] APK emülatöre yükleniyor: {apk_path.name} -> {hedef_id}...", flush=True)
+    # Önleyici temizlik: /data/local/tmp altındaki geçici dosyaları temizle
+    try:
+        subprocess.run([adb, "-s", hedef_id, "shell", "rm -rf /data/local/tmp/*"],
+                       capture_output=True, timeout=10)
+    except Exception:
+        pass
+
     try:
         install_proc = subprocess.run([adb, "-s", hedef_id, "install", "-r", str(apk_path)],
                                       capture_output=True, text=True, timeout=90)
-        if install_proc.returncode == 0 or "Success" in install_proc.stdout:
+        output_txt = (install_proc.stdout or "") + " " + (install_proc.stderr or "")
+
+        # Yetersiz depolama alanı hatası durumunda otomatik kurtarma
+        if "INSTALL_FAILED_INSUFFICIENT_STORAGE" in output_txt:
+            print("   ⚠️  [MOBİL DEPOLAMA UYARISI] Emülatör depolama alanı yetersiz; eski paket kaldırılarak alan açılıyor...", flush=True)
+            pkg = mobil_uygulama_paket_bul()
+            if pkg:
+                subprocess.run([adb, "-s", hedef_id, "uninstall", pkg], capture_output=True, timeout=30)
+            subprocess.run([adb, "-s", hedef_id, "shell", "rm -rf /data/local/tmp/*"], capture_output=True, timeout=10)
+            # İkinci deneme
+            install_proc = subprocess.run([adb, "-s", hedef_id, "install", "-r", str(apk_path)],
+                                          capture_output=True, text=True, timeout=90)
+            output_txt = (install_proc.stdout or "") + " " + (install_proc.stderr or "")
+
+        if install_proc.returncode == 0 or "Success" in output_txt:
             info = cihazdaki_paket_bilgisi(hedef_id)
             return True, f"APK başarıyla yüklendi: v{info.get('versionName', '?')}+{info.get('versionCode', '?')}"
         else:
-            return False, f"ADB yükleme hatası: {install_proc.stdout.strip() or install_proc.stderr.strip()}"
+            return False, f"ADB yükleme hatası: {output_txt.strip()}"
     except Exception as e:
         return False, f"ADB yükleme çalıştırılamadı: {e}"
 

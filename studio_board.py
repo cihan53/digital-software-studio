@@ -1175,6 +1175,16 @@ def task_summary(task_id: str) -> dict | None:
             "order": t.get("order", 0)}
 
 
+def task_get(task_id: str) -> dict | None:
+    """Tek bir görevin tüm alanlarını döndürür."""
+    try:
+        board = load()
+    except Exception:
+        return None
+    _, t = find_task(board, task_id)
+    return t
+
+
 def mark(board: dict, task_id: str, status: str, note: str = ""):
     s, t = find_task(board, task_id)
     if t is None:
