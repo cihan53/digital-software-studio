@@ -259,7 +259,12 @@ async function yukle(zorla){
     });
     const bos={acik:'Henüz onaylanmış talep yok.',onay:'Onay bekleyen talep yok.',
       kapali:'Kapanan talep yok.'}[aktifSekme];
-    $('talepler').innerHTML=gruplar[aktifSekme].map(t=>
+    const canliDugmesi = (kapali.length || onay.length) ?
+      `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding:8px 10px;background:var(--kart);border:1px solid var(--kenar);border-radius:6px">
+         <span style="font-size:12px;color:var(--soluk)">Tamamlanan işleri tek tıkla canlıya alabilirsiniz:</span>
+         <button class="birincil kucuk" onclick="musteriCanliyaDagitHepsi()">🚀 Tümünü Canlıya Dağıt</button>
+       </div>` : '';
+    $('talepler').innerHTML=canliDugmesi + (gruplar[aktifSekme].map(t=>
       `<div class="kart talep-kart" style="margin-bottom:8px${t.durum==='ONAY_BEKLIYOR'?';border-color:var(--sari)':''}">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
           <span class="tid">${esc(t.id)}</span>
@@ -273,9 +278,12 @@ async function yukle(zorla){
             <button class="birincil kucuk" onclick="cozumOnay('${esc(t.id)}',true)">✔ Çözüldü, kapat</button>
             <button class="kucuk" onclick="cozumOnay('${esc(t.id)}',false)">✕ Sorun devam ediyor</button>
           `:''}
+          ${t.durum==='COZULDU'?`
+            <button class="kucuk" style="color:var(--yesil)" onclick="musteriCanliyaAlTekil('${esc(t.id)}')">🚀 Bu İşi Canlıya Al</button>
+          `:''}
         </div>
       </div>`
-    ).join('')||`<span class="soluk">${bos}</span>`;
+    ).join('')||`<span class="soluk">${bos}</span>`);
     if(aktifSekme==='kapali'&&kapali.length>KAPALI_LIMIT)
       $('talepler').innerHTML+=`<div class="soluk" style="font-size:11px;margin-top:6px">
         …önceki ${kapali.length-KAPALI_LIMIT} kayıt gösterilmiyor</div>`;
@@ -337,14 +345,37 @@ async function reddet(mid,btn){
   sonMesajSayisi=-1; yukle(true);
 }
 async function cozumOnay(tid,onay){
+  let not = "";
+  if(!onay){
+    not = prompt(`${tid} için sorunun devam etme gerekçesini veya eksik kalan noktayı kısaca yazın (isteğe bağlı):`, "");
+    if(not === null) return;
+  }
   try{
     const d=await(await fetch('/api/kontrol',{method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({aksiyon:'talep_cozum',talep_id:tid,
-        sonuc:onay?'onayla':'reddet'})})).json();
+        sonuc:onay?'onayla':'reddet',not:not})})).json();
     toast(d.mesaj||(d.ok?'İşlendi':'İşlenemedi'));
   }catch(e){toast('İstek gönderilemedi: '+e);}
   yukle(true);
+}
+async function musteriCanliyaDagitHepsi(){
+  if(!confirm("Onaylanmış tüm işler ana dala (master/main) birleştirilip canlı ortama gönderilsin mi?"))return;
+  toast("Canlıya dağıtım başlatılıyor…");
+  try{
+    const d=await(await fetch('/api/kontrol',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({aksiyon:'canliya_gonder',mod:'hepsi'})})).json();
+    toast(d.mesaj); yukle(true);
+  }catch(e){toast('Dağıtım hatası: '+e);}
+}
+async function musteriCanliyaAlTekil(tid){
+  if(!confirm(`Yalnızca ${tid} talebine ait geliştirmeler seçici olarak (cherry-pick) ana dala aktarılıp canlıya gönderilsin mi?`))return;
+  toast(`${tid} canlıya aktarılıyor…`);
+  try{
+    const d=await(await fetch('/api/kontrol',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({aksiyon:'canliya_gonder',mod:'tekil',talep_id:tid})})).json();
+    toast(d.mesaj); yukle(true);
+  }catch(e){toast('Tekil dağıtım hatası: '+e);}
 }
 let motorKuruldu=false;
 // Bilinen model listeleri — panel.html motorModal ile aynı kaynak.
