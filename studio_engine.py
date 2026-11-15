@@ -212,7 +212,14 @@ def git_auto_commit(mesaj: str):
                               capture_output=True, text=True, timeout=120)
     try:
         dal = _git("branch", "--show-current").stdout.strip()
-        if not dal or dal in ("main", "master"):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        try:
+            import canli_dagitim as CD
+            ana_dal = CD.ana_dal_bul(ROOT)
+        except Exception:
+            ana_dal = "main"
+
+        if not dal or dal in (ana_dal, "main", "master"):
             hedef = GIT_BRANCH
             if _git("rev-parse", "--verify", "--quiet", hedef).returncode != 0:
                 if _git("branch", hedef).returncode != 0:
@@ -3512,6 +3519,14 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
     else:
         B.mark(board, task["id"], B.DONE, note=note)
         git_auto_commit(f"studio: görev DONE — {task['id']}")
+        if not task.get("talep_id") and not uat_devri and GIT_AUTO and (ROOT / ".git").exists():
+            try:
+                sys.path.insert(0, str(ROOT / "scripts"))
+                import canli_dagitim as CD
+                dal_adi = CD.gorev_dali_adi(task, cwd=ROOT)
+                CD.gorev_dali_birlestir(dal_adi, mesaj=f"feat({task['id'].lower()}): {task.get('title', '')}", cwd=ROOT)
+            except Exception:
+                pass
 
     # Müşteri talebi görevi ise durumu otomatik güncelle.
     # UAT telafiye devredildiyse (uat_devri) talep çözülmüş sayılmaz.
@@ -4200,6 +4215,17 @@ def run_board(org: dict, brief: str, once: bool = False,
         run_board._live_warn = 0
         if "_canli_oto" in run_board.__dict__:
             run_board._canli_oto["deneme"] = 0
+
+        # Görev için master tabanlı izole dal (bug/<N> veya feature/<N>) hazırla
+        if GIT_AUTO and (ROOT / ".git").exists():
+            try:
+                sys.path.insert(0, str(ROOT / "scripts"))
+                import canli_dagitim as CD
+                dal_res = CD.gorev_dali_hazirla(task, cwd=ROOT)
+                if dal_res.get("ok"):
+                    print(f"     [git] İzole dal aktif: {dal_res.get('dal')} (taban: {dal_res.get('ana_dal')})")
+            except Exception as e:
+                print(f"     [uyarı] İzole dal hazırlanamadı: {e}")
 
         B.mark(board, task["id"], B.RUNNING)
         B.save(board)

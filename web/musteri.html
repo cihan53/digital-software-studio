@@ -293,9 +293,13 @@ async function yukle(zorla){
     const bos={acik:'Henüz onaylanmış talep yok.',onay:'Onay bekleyen talep yok.',
       kapali:'Kapanan talep yok.'}[aktifSekme];
     const canliDugmesi = (kapali.length || onay.length) ?
-      `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding:8px 10px;background:var(--kart);border:1px solid var(--kenar);border-radius:6px">
+      `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding:8px 10px;background:var(--kart);border:1px solid var(--kenar);border-radius:6px;flex-wrap:wrap;gap:6px">
          <span style="font-size:12px;color:var(--soluk)">Tamamlanan işleri tek tıkla canlıya alabilirsiniz:</span>
-         <button class="birincil kucuk" onclick="musteriCanliyaDagitHepsi()">🚀 Tümünü Canlıya Dağıt</button>
+         <div style="display:flex;gap:4px;flex-wrap:wrap">
+           <button class="birincil kucuk" onclick="musteriCanliyaDagitHepsi()">🚀 Tümünü Canlıya Dağıt</button>
+           <button class="kucuk" onclick="musteriDagitimTetikle('web')">🌐 Web</button>
+           <button class="kucuk" onclick="musteriDagitimTetikle('mobil')">📱 Mobil</button>
+         </div>
        </div>` : '';
     $('talepler').innerHTML=canliDugmesi + (gruplar[aktifSekme].map(t=>
       `<div class="kart talep-kart" style="margin-bottom:8px${t.durum==='ONAY_BEKLIYOR'?';border-color:var(--sari)':''}">
@@ -489,6 +493,16 @@ async function musteriCanliyaDagitHepsi(){
     const d=await(await fetch('/api/kontrol',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({aksiyon:'canliya_gonder',mod:'hepsi'})})).json();
     toast(d.mesaj); yukle(true);
+  }catch(e){toast('Dağıtım hatası: '+e);}
+}
+async function musteriDagitimTetikle(hedef){
+  const ad = hedef === 'web' ? 'Web & API' : (hedef === 'mobil' ? 'Mobil Uygulama' : 'Tüm Sistemler');
+  if(!confirm(`${ad} için canlı dağıtım (CI/CD) tetiklensin mi?`)) return;
+  toast(`${ad} dağıtımı başlatılıyor…`);
+  try{
+    const d=await(await fetch('/api/kontrol',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({aksiyon:'dagitim_tetikle',hedef:hedef})})).json();
+    toast(d.mesaj);
   }catch(e){toast('Dağıtım hatası: '+e);}
 }
 async function musteriCanliyaAlTekil(tid){

@@ -688,7 +688,13 @@ def kontrol(body: dict) -> dict:
         try:
             sys.path.insert(0, str(ROOT / "scripts"))
             import canli_dagitim as CD
-            if mod == "tekil":
+            if mod == "birlestir":
+                if not tid:
+                    return {"ok": False, "mesaj": "Birleştirme için dal adı veya talep_id belirtilmeli."}
+                res = CD.gorev_dali_birlestir(tid, cwd=ROOT)
+                B.audit("web", "gorev_dali_birlestir", talep_id=tid, detay=res)
+                return res
+            elif mod == "tekil":
                 if not tid:
                     return {"ok": False, "mesaj": "Tekil dağıtım için talep_id belirtilmeli."}
                 res = CD.canliya_dagit_tekil(tid, cwd=ROOT)
@@ -700,6 +706,17 @@ def kontrol(body: dict) -> dict:
                 return res
         except Exception as e:
             return {"ok": False, "mesaj": f"Canlı dağıtım hatası: {e}"}
+    if aks == "dagitim_tetikle":
+        hedef = (body.get("hedef") or "hepsi").strip().lower()
+        kanal = (body.get("kanal") or "production").strip().lower()
+        try:
+            sys.path.insert(0, str(ROOT / "scripts"))
+            import canli_dagitim as CD
+            res = CD.canliya_dagit_tetikle(hedef=hedef, kanal=kanal, cwd=ROOT)
+            B.audit("web", "dagitim_tetikle", detay={"hedef": hedef, "kanal": kanal, "sonuc": res})
+            return res
+        except Exception as e:
+            return {"ok": False, "mesaj": f"Dağıtım tetikleme hatası: {e}"}
     if aks == "issuelari_kapat":
         try:
             sys.path.insert(0, str(ROOT / "scripts"))

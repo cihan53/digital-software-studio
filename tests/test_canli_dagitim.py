@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tests/test_canli_dagitim.py
-Canlıya dağıtım (toplu merge & tekil cherry-pick) ve GitHub issue kapatma birim testleri.
+İzole Dal (bug/feature) Yaşam Döngüsü, Canlıya Dağıtım ve GitHub Issue Yönetimi Birim Testleri.
 """
 
 import unittest
@@ -20,7 +20,6 @@ class TestCanliDagitim(unittest.TestCase):
 
     @patch("subprocess.run")
     def test_ana_dal_bul_master_varsa(self, mock_run):
-        # master dalı varsa
         def side_effect(cmd, **kwargs):
             m = MagicMock()
             if "refs/heads/master" in cmd:
@@ -35,7 +34,6 @@ class TestCanliDagitim(unittest.TestCase):
 
     @patch("subprocess.run")
     def test_ana_dal_bul_main_varsayilan(self, mock_run):
-        # master yoksa main'e düşmeli
         def side_effect(cmd, **kwargs):
             m = MagicMock()
             if "refs/heads/master" in cmd or "refs/remotes/origin/master" in cmd:
@@ -46,6 +44,42 @@ class TestCanliDagitim(unittest.TestCase):
         mock_run.side_effect = side_effect
         self.assertEqual(CD.ana_dal_bul(ROOT), "main")
 
+    def test_gorev_dali_adi_tipleri(self):
+        # 1. Hata ve issue numaralı
+        self.assertEqual(CD.gorev_dali_adi({"tur": "HATA", "github_issue_number": 261}), "bug/261")
+        # 2. Geliştirme ve issue numaralı
+        self.assertEqual(CD.gorev_dali_adi({"tur": "GELISTIRME", "github_issue_number": 262}), "feature/262")
+        # 3. Metinden #issue yakalama
+        self.assertEqual(CD.gorev_dali_adi({"title": "fix: bellek sizintisi (#263)", "tur": "HATA"}), "bug/263")
+        # 4. Talep numarası
+        self.assertEqual(CD.gorev_dali_adi({"id": "TALEP-018", "tur": "HATA"}), "bug/18")
+        # 5. Sprint görevi
+        self.assertEqual(CD.gorev_dali_adi({"id": "S16-T2", "title": "BBox Harita API"}), "feature/s16-t2")
+
+    @patch("canli_dagitim.ana_dal_bul", return_value="master")
+    @patch("subprocess.run")
+    def test_gorev_dali_hazirla(self, mock_run, mock_ana):
+        m = MagicMock()
+        m.returncode = 0
+        mock_run.return_value = m
+
+        res = CD.gorev_dali_hazirla({"tur": "HATA", "github_issue_number": 261}, ROOT)
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["dal"], "bug/261")
+        self.assertEqual(res["ana_dal"], "master")
+
+    @patch("canli_dagitim.ana_dal_bul", return_value="master")
+    @patch("subprocess.run")
+    def test_gorev_dali_birlestir_basarili(self, mock_run, mock_ana):
+        m = MagicMock()
+        m.returncode = 0
+        mock_run.return_value = m
+
+        with patch("github_issue_bridge.github_issue_kapat", return_value=True):
+            res = CD.gorev_dali_birlestir("bug/261", issue_number=261, cwd=ROOT)
+            self.assertTrue(res["ok"])
+            self.assertIn("başarıyla 'master' dalına birleştirildi", res["mesaj"])
+
     @patch("canli_dagitim.issuelari_kapat")
     @patch("canli_dagitim.mevcut_dal_bul", return_value="studio/calisma")
     @patch("canli_dagitim.ana_dal_bul", return_value="master")
@@ -54,6 +88,7 @@ class TestCanliDagitim(unittest.TestCase):
         mock_issues.return_value = {"ok": True, "kapatilanlar": [101]}
         m = MagicMock()
         m.returncode = 0
+        m.stdout = ""
         mock_run.return_value = m
 
         res = CD.canliya_dagit_hepsi(ROOT)
@@ -64,10 +99,18 @@ class TestCanliDagitim(unittest.TestCase):
     @patch("canli_dagitim.ana_dal_bul", return_value="master")
     @patch("subprocess.run")
     def test_canliya_dagit_tekil_commit_bulunamazsa(self, mock_run, mock_ana, mock_mevcut):
-        m = MagicMock()
-        m.returncode = 0
-        m.stdout = ""
-        mock_run.return_value = m
+        def side_effect(cmd, **kwargs):
+            m = MagicMock()
+            if "show-ref" in cmd:
+                m.returncode = 1  # İzole dal yok, fallback'e gir
+            elif "git" in cmd and "log" in cmd:
+                m.returncode = 0
+                m.stdout = ""   # Commit bulunamadı
+            else:
+                m.returncode = 0
+                m.stdout = ""
+            return m
+        mock_run.side_effect = side_effect
 
         res = CD.canliya_dagit_tekil("TALEP-999", ROOT)
         self.assertFalse(res["ok"])
@@ -80,7 +123,9 @@ class TestCanliDagitim(unittest.TestCase):
         def side_effect(cmd, **kwargs):
             m = MagicMock()
             m.returncode = 0
-            if "git" in cmd and "log" in cmd:
+            if "show-ref" in cmd:
+                m.returncode = 1  # Fallback
+            elif "git" in cmd and "log" in cmd:
                 m.stdout = "a1b2c3d4e5f6\n"
             else:
                 m.stdout = ""
@@ -90,6 +135,21 @@ class TestCanliDagitim(unittest.TestCase):
         res = CD.canliya_dagit_tekil("TALEP-014", ROOT)
         self.assertTrue(res["ok"])
         self.assertIn("başarıyla 'master' dalına aktarıldı", res["mesaj"])
+
+    @patch("canli_dagitim.ana_dal_bul", return_value="master")
+    @patch("subprocess.run")
+    def test_canliya_dagit_tetikle(self, mock_run, mock_ana):
+        m = MagicMock()
+        m.returncode = 0
+        mock_run.return_value = m
+
+        res_web = CD.canliya_dagit_tetikle("web", cwd=ROOT)
+        self.assertTrue(res_web["ok"])
+        self.assertIn("Web & Backend", res_web["mesaj"])
+
+        res_mob = CD.canliya_dagit_tetikle("mobil", kanal="beta", cwd=ROOT)
+        self.assertTrue(res_mob["ok"])
+        self.assertIn("Mobil Uygulama", res_mob["mesaj"])
 
     @patch("github_issue_bridge.gh_mevcut_mu", return_value=True)
     @patch("musteri_talepleri.db_tum_talepler")
