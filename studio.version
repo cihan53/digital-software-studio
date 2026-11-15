@@ -1,5 +1,5 @@
 {
-  "version": "1.10.133",
+  "version": "1.10.134",
   "released": "2026-11-15",
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
@@ -67,6 +67,13 @@
   ],
   "protected_files": [],
   "changelog": [
+    {
+      "version": "1.10.134",
+      "date": "2026-11-15",
+      "changes": [
+        "fix: mukerrer sprint ve gorev tekrarini onleyen dongu kilitleri (#355) (#357)"
+      ]
+    },
     {
       "version": "1.10.133",
       "date": "2026-11-15",
