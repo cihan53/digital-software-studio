@@ -589,10 +589,12 @@ def kontrol(body: dict) -> dict:
                 B.audit("web", "talep_cozum_onay", talep_id=tid)
                 return {"ok": True, "mesaj": f"{tid} çözüldü olarak kapatıldı."}
             if sonuc == "reddet":
+                red_notu = (body.get("not") or "").strip()
+                not_metni = f"Müşteri: sorun devam ediyor — {red_notu}" if red_notu else "Müşteri: sorun devam ediyor — talep kuyruğa geri alındı."
                 MT.guncelle(tid, durum="BEKLEMEDE",
-                            studio_notu="Müşteri: sorun devam ediyor — talep kuyruğa geri alındı.")
+                            studio_notu=not_metni)
                 B.request("reload", kaynak="web")
-                B.audit("web", "talep_cozum_red", talep_id=tid)
+                B.audit("web", "talep_cozum_red", talep_id=tid, detay={"not": red_notu})
                 return {"ok": True, "mesaj": f"{tid} tekrar kuyruğa alındı."}
             return {"ok": False, "mesaj": "sonuc 'onayla' veya 'reddet' olmalı."}
         except Exception as e:
@@ -677,6 +679,33 @@ def kontrol(body: dict) -> dict:
         B.clear("onay_bekliyor")
         return {"ok": True,
                 "mesaj": f"Ek kota tanındı: {d['gorev']} görev, ${d['maliyet']:.2f} harcandı."}
+    if aks == "canliya_gonder":
+        mod = (body.get("mod") or "hepsi").strip()
+        tid = (body.get("talep_id") or "").strip()
+        try:
+            sys.path.insert(0, str(ROOT / "scripts"))
+            import canli_dagitim as CD
+            if mod == "tekil":
+                if not tid:
+                    return {"ok": False, "mesaj": "Tekil dağıtım için talep_id belirtilmeli."}
+                res = CD.canliya_dagit_tekil(tid, cwd=ROOT)
+                B.audit("web", "canliya_dagit_tekil", talep_id=tid, detay=res)
+                return res
+            else:
+                res = CD.canliya_dagit_hepsi(cwd=ROOT)
+                B.audit("web", "canliya_dagit_hepsi", detay=res)
+                return res
+        except Exception as e:
+            return {"ok": False, "mesaj": f"Canlı dağıtım hatası: {e}"}
+    if aks == "issuelari_kapat":
+        try:
+            sys.path.insert(0, str(ROOT / "scripts"))
+            import canli_dagitim as CD
+            res = CD.issuelari_kapat(cwd=ROOT)
+            B.audit("web", "issuelari_kapat", detay=res)
+            return res
+        except Exception as e:
+            return {"ok": False, "mesaj": f"Issue kapatma hatası: {e}"}
     return {"ok": False, "mesaj": f"Bilinmeyen aksiyon: {aks}"}
 
 

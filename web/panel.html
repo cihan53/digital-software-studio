@@ -203,6 +203,12 @@
   </section>
 
   <section id="s-talep" class="gizli">
+    <div class="durum-hat" style="margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span class="soluk">Müşteri ve saha talepleri havuzu. Çözülmüş işleri tek tıkla canlıya dağıtabilir veya GitHub Issue'larını kapatabilirsiniz.</span>
+      <span class="bosluk"></span>
+      <button class="birincil" onclick="canliyaDagitHepsi()" title="Onaylanmış tüm işleri ana dala (master/main) birleştirir ve canlı dağıtımı başlatır">🚀 Canlıya Dağıt (Tümü)</button>
+      <button onclick="issuelariKapat()" title="Çözülmüş taleplerin GitHub üzerindeki açık Issue'larını tarayıp kapatır">🔄 Issue'ları Kapat</button>
+    </div>
     <table class="tablo"><thead><tr>
       <th>ID</th><th>Tür</th><th>Öncelik</th><th>Durum</th><th>Başlık</th><th>Sayfa</th><th>Faz</th><th>Issue</th><th></th>
     </tr></thead><tbody id="talep"></tbody></table>
@@ -657,6 +663,8 @@ async function talepYukle(){
      <td class="soluk">${esc(t.sayfa_url||'')}</td><td>${fazSecim(t)}</td>
      <td>${t.github_issue_url?`<a href="${esc(t.github_issue_url)}" target="_blank">#${t.github_issue_number}</a>`:'—'}</td>
      <td><button class="kucuk" title="Çözüm ve UAT Kanıtı" onclick="kanitModalAc('${t.id}')">🔍 Kanıt</button>
+       ${t.durum==='COZULDU'?
+       `<button class="kucuk" style="color:var(--yesil)" title="Yalnızca bu talebi ana dala aktar ve canlıya gönder" onclick="canliyaDagitTekil('${t.id}')">🚀 Canlıya Al</button>`:''}
        ${t.durum==='IPTAL'?
        `<button class="kucuk" title="Talebi yeniden devreye al" onclick="talepDevreyeAl('${t.id}')">↺ Devreye Al</button>`:''}
        ${['DEGERLENDIRMEDE','FAZ_BEKLIYOR','BEKLEMEDE'].includes(t.durum)?
@@ -681,9 +689,40 @@ async function talepOnayla(tid){
   toast(d.mesaj); talepYukle();
 }
 async function talepCozum(tid,onay){
+  let not = "";
+  if(!onay){
+    not = prompt(`${tid} için sorunun devam etme gerekçesini veya eksik olan kısmı kısaca yazın (isteğe bağlı):`, "");
+    if(not === null) return;
+  }
   const d=await(await fetch('/api/kontrol',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({aksiyon:'talep_cozum',talep_id:tid,sonuc:onay?'onayla':'reddet'})})).json();
+    body:JSON.stringify({aksiyon:'talep_cozum',talep_id:tid,sonuc:onay?'onayla':'reddet',not:not})})).json();
   toast(d.mesaj); talepYukle();
+}
+async function canliyaDagitHepsi(){
+  if(!confirm("Onaylanmış tüm işler ana dala (master/main) birleştirilip canlıya gönderilsin mi?\n\nBu işlem canlı CI/CD dağıtımını (cPanel / Mağaza vb.) başlatacaktır."))return;
+  toast("Canlıya dağıtım başlatılıyor…");
+  try{
+    const d=await(await fetch('/api/kontrol',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({aksiyon:'canliya_gonder',mod:'hepsi'})})).json();
+    toast(d.mesaj); talepYukle();
+  }catch(e){toast("Dağıtım hatası: "+e);}
+}
+async function canliyaDagitTekil(tid){
+  if(!confirm(`Yalnızca ${tid} talebine ait geliştirmeler seçici olarak (cherry-pick) ana dala aktarılıp canlıya gönderilsin mi?`))return;
+  toast(`${tid} canlıya aktarılıyor…`);
+  try{
+    const d=await(await fetch('/api/kontrol',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({aksiyon:'canliya_gonder',mod:'tekil',talep_id:tid})})).json();
+    toast(d.mesaj); talepYukle();
+  }catch(e){toast("Tekil dağıtım hatası: "+e);}
+}
+async function issuelariKapat(){
+  toast("GitHub Issue'ları senkronize ediliyor…");
+  try{
+    const d=await(await fetch('/api/kontrol',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({aksiyon:'issuelari_kapat'})})).json();
+    toast(d.mesaj); talepYukle();
+  }catch(e){toast("Issue senkronizasyon hatası: "+e);}
 }
 async function talepIptal(tid){
   const sebep=prompt(`${tid} iptal edilsin mi? İsteğe bağlı sebep:`,'');
