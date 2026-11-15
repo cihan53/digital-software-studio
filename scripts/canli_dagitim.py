@@ -123,6 +123,7 @@ def canliya_dagit_hepsi(cwd: Path | None = None) -> dict:
 
         # 2. Remote'dan son hali çek
         subprocess.run(["git", "pull", "--ff-only", "origin", ana_dal], capture_output=True, text=True, cwd=str(work_dir))
+        subprocess.run(["git", "clean", "-fd"], capture_output=True, text=True, cwd=str(work_dir))
 
         # 3. Çalışma dalını merge et
         merge_msg = f"merge: {calisma_dali} canlıya dağıtıldı (onaylandı)"
