@@ -526,19 +526,25 @@ def guncelle(talep_id: str, durum: str = None, gorevli_rol: str = None,
                             if status_res.stdout.strip():
                                 subprocess.run(["git", "commit", "-m", commit_msg], cwd=ROOT, check=True)
                                 print(f"  ✓ Değişiklikler commit edildi: '{commit_msg}'")
-                                push_res = subprocess.run(["git", "push", "origin", "master"], cwd=ROOT, capture_output=True, text=True)
-                                if push_res.returncode == 0:
-                                    print("  ✓ origin/master dalına başarıyla pushlandı. GitHub Actions CI/CD otomatik dağıtımı başlattı!")
-                                    try:
-                                        sys.path.insert(0, str(ROOT / "scripts"))
-                                        import recovery_sentinel as RS
-                                        RS.RecoverySentinelAgent(verbose=False).denetle_ci_cd_deploy()
-                                    except Exception:
-                                        pass
+
+                            # Çalışma dalındaki bu talebe ait commit'leri ana dala (master/main) aktar ve pushla
+                            try:
+                                sys.path.insert(0, str(ROOT / "scripts"))
+                                import canli_dagitim as CD
+                                res_dagit = CD.canliya_dagit_tekil(talep_id, cwd=ROOT)
+                                if res_dagit.get("ok"):
+                                    print(f"  ✓ {res_dagit.get('mesaj')}")
                                 else:
-                                    print(f"  ⚠️ Push uyarısı: {push_res.stderr.strip()[:200]}")
-                            else:
-                                print("  ℹ️ Commit edilecek dosya değişikliği bulunamadı.")
+                                    print(f"  ⚠️ Canlıya aktarma notu: {res_dagit.get('mesaj')}")
+                            except Exception as e_cd:
+                                print(f"  ⚠️ Canlı dağıtım modülü: {e_cd}")
+
+                            try:
+                                sys.path.insert(0, str(ROOT / "scripts"))
+                                import recovery_sentinel as RS
+                                RS.RecoverySentinelAgent(verbose=False).denetle_ci_cd_deploy()
+                            except Exception:
+                                pass
                         except Exception as e:
                             print(f"  ⚠️ Otomatik commit/push sırasında hata: {e}")
 
