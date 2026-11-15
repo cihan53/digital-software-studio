@@ -4,6 +4,7 @@
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
     "scripts/cozum_kaniti.py",
+    "scripts/canli_dagitim.py",
     "scripts/mobil_yonetici.py",
     "scripts/musteri_talepleri.py",
     "scripts/musteri_temsilcisi.py",
