@@ -64,6 +64,26 @@ class TestMobilKanit(unittest.TestCase):
         self.assertIn("cozum", s)
         self.assertIn("musteri_ozeti", s)
 
+    def test_flutter_ve_versiyon_araclari(self):
+        """Flutter tespiti ve pubspec sürüm okuma testi."""
+        vn, vc = MY.pubspec_versiyon_bilgisi()
+        self.assertIsInstance(vn, str)
+        self.assertIsInstance(vc, int)
+        self.assertGreaterEqual(vc, 1)
+
+    def test_is_mobile_task_ayrimi(self):
+        """studio_engine.is_mobile_task web ve mobil ayrımını doğru yapmalıdır (Issue #345)."""
+        import studio_engine as SE
+
+        # Mobil görevler
+        self.assertTrue(SE.is_mobile_task({"role": "mobile_developer", "title": "Ekran yapımı"}))
+        self.assertTrue(SE.is_mobile_task({"role": "uat_auditor", "title": "Mobil Trafik Paneli Doğrulama", "description": ""}))
+        self.assertTrue(SE.is_mobile_task({"role": "uat_auditor", "title": "UAT Doğrulama", "description": "Flutter widget testleri"}))
+
+        # Web görevler
+        self.assertFalse(SE.is_mobile_task({"role": "web_engineer", "title": "İstasyon arama", "description": "Nuxt 3 API rotası"}))
+        self.assertFalse(SE.is_mobile_task({"role": "uat_auditor", "title": "Web Harita Kümeleme Kabulü", "description": "curl ve web testleri"}))
+
 
 if __name__ == "__main__":
     unittest.main()

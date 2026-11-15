@@ -2789,6 +2789,48 @@ def verify_task_execution(task: dict, sprint: dict, interactive: bool = False) -
     return "; ".join(x for x in (render, diger) if x)
 
 
+def is_mobile_task(task: dict) -> bool:
+    """Görevin veya bağlı talebin mobil (Flutter/Android/iOS) kapsamda olup olmadığını tespit eder."""
+    title = task.get("title", "")
+    desc = task.get("description", "")
+    role = task.get("role", "")
+    full_text = f"{title} {desc} {role}".lower()
+
+    if role in ("mobile_developer", "mobile_engineer"):
+        return True
+
+    tid = task.get("talep_id")
+    if tid:
+        try:
+            import musteri_talepleri as MT
+            talep = MT.getir(tid) or {}
+            full_text += " " + (talep.get("baslik", "") + " " + talep.get("aciklama", "")).lower()
+            if talep.get("gorevli_rol") in ("mobile_developer", "mobile_engineer"):
+                return True
+        except Exception:
+            pass
+
+    for dep_id in task.get("depends_on", []):
+        try:
+            dep_task = B.task_get(dep_id) if hasattr(B, "task_get") else None
+            if dep_task:
+                dep_role = dep_task.get("role", "")
+                if dep_role in ("mobile_developer", "mobile_engineer"):
+                    return True
+                full_text += " " + (dep_task.get("title", "") + " " + dep_task.get("description", "")).lower()
+        except Exception:
+            pass
+
+    try:
+        diff_files = subprocess.run(["git", "diff", "--name-only", "HEAD~1"], capture_output=True, text=True, timeout=5).stdout
+        if any("src/mobile" in ln for ln in diff_files.splitlines()):
+            return True
+    except Exception:
+        pass
+
+    return any(w in full_text for w in ("mobil", "mobile", "flutter", "android", "ios", "apk"))
+
+
 def _verify_task_execution_core(task: dict, sprint: dict, interactive: bool = False) -> str:
     """QA veya DevOps görevlerinde gerçek yerel ortam doğrulaması yapar veya talimat verir."""
     phase = task.get("phase", "")
@@ -2799,8 +2841,7 @@ def _verify_task_execution_core(task: dict, sprint: dict, interactive: bool = Fa
     # 1. UAT KABUL DENETİMİ (uat_auditor veya UAT görevleri)
     if role == "uat_auditor" or (B.needs_live(task) and "uat" in (title + " " + task.get("description", "")).lower()):
         print(f"\n   🎯 [UAT KABUL DENETİM KAPISI] {task['id']} · {title}")
-        desc_full = (title + " " + task.get("description", "")).lower()
-        is_mobile = any(w in desc_full for w in ("mobil", "mobile", "flutter", "android", "ios", "apk"))
+        is_mobile = is_mobile_task(task)
 
         # Mobil görevlerde Android emülatörünü aç ve canlı UAT ekran görüntüsü yakala
         if is_mobile:
@@ -2808,7 +2849,8 @@ def _verify_task_execution_core(task: dict, sprint: dict, interactive: bool = Fa
             try:
                 import mobil_yonetici as MY
                 MY.emulatore_baslat(basliksiz=False)
-                ok_ss, yol_ss, msg_ss = MY.ekran_goruntusu_al(talep_id=task.get("talep_id"), gorev_id=task.get("id"), otomatik_baslat=True)
+                ok_ss, yol_ss, msg_ss = MY.ekran_goruntusu_al(talep_id=task.get("talep_id"), gorev_id=task.get("id"),
+                                                             otomatik_baslat=True, otomatik_guncelle=True)
                 if ok_ss and yol_ss:
                     print(f"   📸 [MOBİL KANIT ALINDI] {yol_ss}")
                     note_parts.append(f"mobil UAT ekran görüntüsü alındı ({Path(yol_ss).name})")
@@ -2833,7 +2875,7 @@ def _verify_task_execution_core(task: dict, sprint: dict, interactive: bool = Fa
                                 sorun=task.get("description", "Mobil geliştirme görevi"),
                                 cozum="Mobil geliştirme ve UAT kabul denetimi tamamlandı.",
                                 sonuc="DOĞRULANDI",
-                                teknik_detay=f"Canlı Android emülatöründe doğrulandı: {yol_ss}",
+                                teknik_detay=f"Canlı Android emülatöründe doğrulandı: {yol_ss} ({msg_ss})",
                                 musteri_ozeti="Mobil uygulama geliştirildi ve canlı Android emülatöründe test edilerek doğrulandı.",
                                 ekran_goruntuleri=[yol_ss],
                                 kaynak="uat_auditor"
@@ -2843,25 +2885,29 @@ def _verify_task_execution_core(task: dict, sprint: dict, interactive: bool = Fa
             except Exception as e_mob:
                 print(f"   ⚠️  Mobil UAT denetim hatası: {e_mob}")
 
-        uat_script = resolve_script("uat_live_audit.mjs")
-        if uat_script.exists():
-            print(f"   🚀 Canlı UAT denetimi yürütülüyor ({uat_script.relative_to(ROOT)})...")
-            try:
-                res = subprocess.run(["node", str(uat_script)], cwd=ROOT, capture_output=True, text=True, timeout=30)
-                if res.returncode == 0:
-                    print("   ✅ [UAT BAŞARILI] Canlı sistem ve kullanıcı yolculukları %100 doğrulandı!")
-                    note_parts.append("canlı UAT kabul testleri geçti")
-                else:
-                    print(f"   ⚠️  [UAT BAŞARISIZ] Canlı sistemde kullanıcı kabul hatası tespit edildi!")
-                    if res.stdout:
-                        print("      " + "\n      ".join(res.stdout.strip().splitlines()[-8:]))
-                    note_parts.append("canlı UAT hata tespit edildi")
-                    telafi_tid = _auto_talep_uat(task, res.stdout)
-                    if telafi_tid:
-                        note_parts.append(f"telafi {telafi_tid} talebine devredildi")
-            except Exception as e:
-                print(f"   ⚠️  UAT çalıştırılamadı: {e}")
-                note_parts.append("uat çalıştırılamadı")
+        # Web UAT denetimini yalnızca mobil olmayan (web) görevlerde koştur
+        if not is_mobile:
+            uat_script = resolve_script("uat_live_audit.mjs")
+            if uat_script.exists():
+                print(f"   🚀 Canlı UAT denetimi yürütülüyor ({uat_script.relative_to(ROOT)})...")
+                try:
+                    res = subprocess.run(["node", str(uat_script)], cwd=ROOT, capture_output=True, text=True, timeout=30)
+                    if res.returncode == 0:
+                        print("   ✅ [UAT BAŞARILI] Canlı sistem ve kullanıcı yolculukları %100 doğrulandı!")
+                        note_parts.append("canlı UAT kabul testleri geçti")
+                    else:
+                        print(f"   ⚠️  [UAT BAŞARISIZ] Canlı sistemde kullanıcı kabul hatası tespit edildi!")
+                        if res.stdout:
+                            print("      " + "\n      ".join(res.stdout.strip().splitlines()[-8:]))
+                        note_parts.append("canlı UAT hata tespit edildi")
+                        telafi_tid = _auto_talep_uat(task, res.stdout)
+                        if telafi_tid:
+                            note_parts.append(f"telafi {telafi_tid} talebine devredildi")
+                except Exception as e:
+                    print(f"   ⚠️  UAT çalıştırılamadı: {e}")
+                    note_parts.append("uat çalıştırılamadı")
+        else:
+            print("   📱 [MOBİL UAT] Mobil görev tamamlandı; web UAT denetimi (uat_live_audit) atlandı.")
         return "; ".join(note_parts) if note_parts else ""
 
     # 2. TEST FAZI DOĞRULAMASI (3 Aşamalı Kalite Kapısı)
@@ -3276,6 +3322,23 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
     # Geliştirme görevlerinde geçmiş düzeltmelerin korunması zorunludur.
     if task.get("phase") == "develop":
         task_brief += REGRESSION_GUARD_RULE + ENV_HYGIENE_RULE
+
+    if task.get("role") == "uat_auditor":
+        if is_mobile_task(task):
+            task_brief += (
+                "\n\n===== MOBİL UAT KABUL DENETİMİ (ZORUNLU TALİMAT) =====\n"
+                "Bu görev bir MOBİL UYGULAMA (Flutter/Android/iOS) geliştirmesini doğrulamaktadır.\n"
+                "- ASLA web portlarını (3000/3001) test edip web raporu üretme!\n"
+                "- Doğrulama adımlarında `python3 scripts/mobil_yonetici.py screencap` veya `derle-yukle` araçlarını kullan.\n"
+                "- Emülatördeki güncel ekran görüntüsünü alıp (`workspace/docs/uat_kanitlari/*.png`) raporuna iliştir.\n"
+                "- Raporunu `workspace/docs/uat_kabul_raporu_*.md` dosyasına MOBİL kabul kriterleri ve ekran kanıtlarıyla yaz.\n"
+            )
+        else:
+            task_brief += (
+                "\n\n===== WEB UAT KABUL DENETİMİ (ZORUNLU TALİMAT) =====\n"
+                "Bu görev bir WEB UYGULAMASI geliştirmesini doğrulamaktadır.\n"
+                "- Canlı web sistemine (port 3000/3001) bağlanarak kabul kriterlerini test et.\n"
+            )
 
     # Kalite kapıları için görev öncesi çalışma ağacı anlığı
     pre_task_git = _kalite_snapshot()

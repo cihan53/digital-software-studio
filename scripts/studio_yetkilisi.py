@@ -707,8 +707,8 @@ def otomatik_musteri_talepleri_senkronize_et() -> int:
             "id": uat_task_id,
             "title": f"[{tid}] Müşteri Kabulü & UAT Doğrulama Denetimi",
             "description": (
-                f"{tid} için yapılan düzeltmenin sistemde çalıştığını ve "
-                f"kabul kriterlerini karşıladığını doğrula."
+                f"{tid} ({t.get('baslik', '')}) için yapılan düzeltmenin sistemde çalıştığını ve "
+                f"kabul kriterlerini karşıladığını doğrula. Kapsam: {rol}."
             ),
             "role": "uat_auditor",
             "phase": "test",
