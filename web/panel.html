@@ -400,11 +400,11 @@ async function panoYukle(){
 }
 // Pano durum grupları — görevler duruma göre ayrı görüntülenebilir.
 const GOREV_GRUP = {
-  ACIK:      t => !['DONE'].includes(t.status) && (t.status !== 'SKIPPED' || /telafi\s+TALEP-\d+/.test(t.note||'')),
+  ACIK:      t => t.status !== 'DONE' && t._sprint_status !== 'DONE' && (t.status !== 'SKIPPED' || t.telafi_durum === 'BEKLIYOR'),
   CALISIYOR: t => t.status==='RUNNING',
-  SIRADA:    t => ['TODO','READY'].includes(t.status),
-  SORUNLU:   t => ['FAILED','BLOCKED'].includes(t.status) || (t.status === 'SKIPPED' && /telafi\s+TALEP-\d+/.test(t.note||'')),
-  TAMAMLANAN:t => t.status==='DONE',
+  SIRADA:    t => ['TODO','READY'].includes(t.status) && t._sprint_status !== 'DONE',
+  SORUNLU:   t => ['FAILED','BLOCKED'].includes(t.status) || (t.status === 'SKIPPED' && t.telafi_durum === 'BEKLIYOR'),
+  TAMAMLANAN:t => t.status==='DONE' || t._sprint_status === 'DONE' || (t.status === 'SKIPPED' && t.telafi_durum === 'COZULDU'),
   ATLANAN:   t => t.status==='SKIPPED',
   TUMU:      t => true,
 };
@@ -417,23 +417,29 @@ function panoCiz(){
   kok.innerHTML='';
   const sprintler=[...(panoVeri.sprints||[])].sort((a,b)=>(b.order??0)-(a.order??0));
   const tum=[];
-  for(const s of sprintler) for(const t of s.tasks||[]) tum.push(t);
+  for(const s of sprintler) {
+    for(const t of s.tasks||[]) {
+      t._sprint_status = s.status;
+      tum.push(t);
+    }
+  }
   document.getElementById('pano-filtre').innerHTML=Object.keys(GOREV_GRUP).map(k=>
     `<button class="kucuk${panoFiltre===k?' secili':''}" onclick="panoFiltreSec('${k}')">`+
     `${GRUP_AD[k]} <span class="soluk">${tum.filter(GOREV_GRUP[k]).length}</span></button>`
   ).join(' ');
   const fn=GOREV_GRUP[panoFiltre]||GOREV_GRUP.ACIK;
   for(const s of sprintler){
+    if(panoFiltre==='ACIK' && s.status==='DONE') continue;   // DONE sprintleri açıklarda gösterme
     const gorevler=(s.tasks||[]).filter(fn);
     if(!gorevler.length) continue;   // bu görünümde görevi olmayan sprinti gösterme
     const ov=motorOverrides[s.id];
     const ovrz=ov?` <span class="motor-rozet" title="override — kaldırmak için tıkla" onclick="motorKaldir('${s.id}')">⚙ ${esc(ov.backend||'')}${ov.model?'/'+esc(ov.model):''} ✕</span>`:'';
     let blokajNedeni = s.blocked_reason || '';
     if (!blokajNedeni && s.status === 'BLOCKED') {
-      const telafiT = (s.tasks||[]).find(t => /telafi\s+(TALEP-\d+)/.test(t.note||''));
+      const telafiT = (s.tasks||[]).find(t => t.telafi_durum === 'BEKLIYOR' || (!t.telafi_durum && /telafi\s+(TALEP-\d+)/.test(t.note||'')));
       if (telafiT) {
         const m = /telafi\s+(TALEP-\d+)/.exec(telafiT.note);
-        blokajNedeni = `${telafiT.id} telafiye devredildi (${m[1]} bekleniyor)`;
+        blokajNedeni = `${telafiT.id} telafiye devredildi (${telafiT.telafi_talep_id || (m ? m[1] : 'telafi talebi')} bekleniyor)`;
       } else {
         const blokeT = (s.tasks||[]).find(t => t.status === 'BLOCKED' || t.status === 'FAILED');
         if (blokeT) {
@@ -466,8 +472,17 @@ function gorevSatir(t){
   const onc=t.priority?`<span class="rozet" title="öncelik">▲${t.priority}</span>`:'';
   const ov=motorOverrides[t.id];
   const ovrz=ov?`<span class="motor-rozet" title="override — kaldırmak için tıkla" onclick="motorKaldir('${t.id}')">⚙ ${esc(ov.backend||'')}${ov.model?'/'+esc(ov.model):''} ✕</span>`:'';
+  let telafiBadge = '';
   const telafiM = /telafi\s+(TALEP-\d+)/i.exec(t.note || '');
-  const telafiBadge = telafiM ?
+  const telafiId = t.telafi_talep_id || (telafiM ? telafiM[1] : null);
+  const telafiDurum = t.telafi_durum || (t._sprint_status === 'DONE' ? 'COZULDU' : (telafiId ? 'BEKLIYOR' : null));
+  if (telafiId) {
+    if (telafiDurum === 'BEKLIYOR') {
+      telafiBadge = `<span class="rozet r-BLOCKED" style="cursor:pointer;background:#ef444422;color:#f87171;border:1px solid #ef444466;font-weight:600" onclick="talepGoster('${esc(telafiId)}')" title="İlgili telafi talebine gitmek için tıklayın">⚠️ ${esc(telafiId)} Bekleniyor ⇢</span>`;
+    } else if (telafiDurum === 'COZULDU') {
+      telafiBadge = `<span class="rozet r-DONE" style="cursor:pointer;background:#22c55e22;color:#4ade80;border:1px solid #22c55e66" onclick="talepGoster('${esc(telafiId)}')" title="Telafi talebi çözüldü">✔ ${esc(telafiId)} Çözüldü</span>`;
+    }
+  }
     `<span class="rozet r-BLOCKED" style="cursor:pointer;background:#ef444422;color:#f87171;border:1px solid #ef444466;font-weight:600" onclick="talepGoster('${telafiM[1]}')" title="İlgili telafi talebine gitmek için tıklayın">⚠️ ${telafiM[1]} Bekleniyor ⇢</span>` : '';
   r.innerHTML=`<span class="gid">${esc(t.id)}</span><span class="rozet r-${t.status}">${t.status}</span>
     <span class="gfaz">${esc(t.phase||'')}</span>${telafiBadge}<span class="gad" title="${esc(t.description||'')}">${esc(t.title||'')}</span>
