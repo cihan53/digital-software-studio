@@ -1,5 +1,5 @@
 {
-  "version": "1.10.136",
+  "version": "1.10.137",
   "released": "2026-11-16",
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
@@ -67,6 +67,13 @@
   ],
   "protected_files": [],
   "changelog": [
+    {
+      "version": "1.10.137",
+      "date": "2026-11-16",
+      "changes": [
+        "fix: panel.html gorevSatir soz dizimi hatasinin giderilmesi (#362) (#363)"
+      ]
+    },
     {
       "version": "1.10.136",
       "date": "2026-11-16",
