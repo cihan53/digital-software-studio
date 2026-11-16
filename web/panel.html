@@ -400,10 +400,10 @@ async function panoYukle(){
 }
 // Pano durum grupları — görevler duruma göre ayrı görüntülenebilir.
 const GOREV_GRUP = {
-  ACIK:      t => !['DONE','SKIPPED'].includes(t.status),
+  ACIK:      t => !['DONE'].includes(t.status) && (t.status !== 'SKIPPED' || /telafi\s+TALEP-\d+/.test(t.note||'')),
   CALISIYOR: t => t.status==='RUNNING',
   SIRADA:    t => ['TODO','READY'].includes(t.status),
-  SORUNLU:   t => ['FAILED','BLOCKED'].includes(t.status),
+  SORUNLU:   t => ['FAILED','BLOCKED'].includes(t.status) || (t.status === 'SKIPPED' && /telafi\s+TALEP-\d+/.test(t.note||'')),
   TAMAMLANAN:t => t.status==='DONE',
   ATLANAN:   t => t.status==='SKIPPED',
   TUMU:      t => true,
@@ -428,12 +428,31 @@ function panoCiz(){
     if(!gorevler.length) continue;   // bu görünümde görevi olmayan sprinti gösterme
     const ov=motorOverrides[s.id];
     const ovrz=ov?` <span class="motor-rozet" title="override — kaldırmak için tıkla" onclick="motorKaldir('${s.id}')">⚙ ${esc(ov.backend||'')}${ov.model?'/'+esc(ov.model):''} ✕</span>`:'';
+    let blokajNedeni = s.blocked_reason || '';
+    if (!blokajNedeni && s.status === 'BLOCKED') {
+      const telafiT = (s.tasks||[]).find(t => /telafi\s+(TALEP-\d+)/.test(t.note||''));
+      if (telafiT) {
+        const m = /telafi\s+(TALEP-\d+)/.exec(telafiT.note);
+        blokajNedeni = `${telafiT.id} telafiye devredildi (${m[1]} bekleniyor)`;
+      } else {
+        const blokeT = (s.tasks||[]).find(t => t.status === 'BLOCKED' || t.status === 'FAILED');
+        if (blokeT) {
+          blokajNedeni = `${blokeT.id} ${blokeT.status.toLowerCase()}: ${blokeT.note || 'bağımlılık bekliyor'}`;
+        }
+      }
+    }
+    const blokajHtml = (s.status === 'BLOCKED' && blokajNedeni) ?
+      `<div class="sprint-blokaj-karti" style="margin-top:6px;padding:6px 10px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);border-left:4px solid #ef4444;font-size:12px;color:#fca5a5;border-radius:4px;display:flex;align-items:center;justify-content:space-between;gap:8px">
+         <div>⚠️ <b>Blokaj Nedeni:</b> ${esc(blokajNedeni)}</div>
+         ${/TALEP-\d+/.test(blokajNedeni) ? `<button class="kucuk" style="background:#ef444433;border-color:#ef4444;color:#fca5a5" onclick="talepGoster('${/TALEP-\d+/.exec(blokajNedeni)[0]}')">Talebi İncele ⇢</button>` : ''}
+       </div>` : '';
     const div=document.createElement('div'); div.className='sprint';
     div.innerHTML=`<div class="sprint-bas"><b>${esc(s.id)}</b> ${esc(s.name||'')}
       <span class="soluk">${esc(s.planned_start||'?')} → ${esc(s.planned_end||'?')}</span>
       <span class="rozet r-${s.status}">${s.status}</span>${ovrz}
       ${s.status!=='DONE'?`<button class="kucuk" title="Sprintteki tüm açık görevleri atla" onclick="kontrol('atla','${s.id}')">⤼</button>`:''}
-      <button class="kucuk" title="Sprint motorunu değiştir" onclick="motorSec('${s.id}')">⚙</button></div>`;
+      <button class="kucuk" title="Sprint motorunu değiştir" onclick="motorSec('${s.id}')">⚙</button>
+      ${blokajHtml}</div>`;
     const g=document.createElement('div'); g.className='gorevler'; g.dataset.sprint=s.id;
     for(const t of gorevler) g.appendChild(gorevSatir(t));
     div.appendChild(g); kok.appendChild(div);
@@ -447,8 +466,11 @@ function gorevSatir(t){
   const onc=t.priority?`<span class="rozet" title="öncelik">▲${t.priority}</span>`:'';
   const ov=motorOverrides[t.id];
   const ovrz=ov?`<span class="motor-rozet" title="override — kaldırmak için tıkla" onclick="motorKaldir('${t.id}')">⚙ ${esc(ov.backend||'')}${ov.model?'/'+esc(ov.model):''} ✕</span>`:'';
+  const telafiM = /telafi\s+(TALEP-\d+)/i.exec(t.note || '');
+  const telafiBadge = telafiM ?
+    `<span class="rozet r-BLOCKED" style="cursor:pointer;background:#ef444422;color:#f87171;border:1px solid #ef444466;font-weight:600" onclick="talepGoster('${telafiM[1]}')" title="İlgili telafi talebine gitmek için tıklayın">⚠️ ${telafiM[1]} Bekleniyor ⇢</span>` : '';
   r.innerHTML=`<span class="gid">${esc(t.id)}</span><span class="rozet r-${t.status}">${t.status}</span>
-    <span class="gfaz">${esc(t.phase||'')}</span><span class="gad" title="${esc(t.description||'')}">${esc(t.title||'')}</span>
+    <span class="gfaz">${esc(t.phase||'')}</span>${telafiBadge}<span class="gad" title="${esc(t.description||'')}">${esc(t.title||'')}</span>
     ${onc}${ovrz}${t.duration_s?`<span class="soluk">${insan(t.duration_s)}</span>`:''}
     <span class="gnot">${esc(t.note||'')}</span>
     <span class="gaks">
@@ -643,6 +665,18 @@ async function cagriDetay(seq){
 function mdlGoster(seq,alan){ const c=window._mdl; if(c) document.getElementById('mdl-pre').textContent=c[alan]||''; }
 
 // ---------- talepler ----------
+function talepGoster(talepId){
+  sekmeAc('talep');
+  setTimeout(()=>{
+    const tr = [...document.querySelectorAll('#talep tr')].find(r => r.textContent.includes(talepId));
+    if(tr){
+      tr.scrollIntoView({behavior:'smooth', block:'center'});
+      tr.style.outline = '2px solid #ef4444';
+      tr.style.background = 'rgba(239,68,68,0.18)';
+      setTimeout(()=>{ tr.style.outline=''; tr.style.background=''; }, 4000);
+    }
+  }, 250);
+}
 async function talepYukle(){
   const d=await(await fetch('/api/talepler')).json();
   let fazlar=[];

@@ -898,14 +898,29 @@ def refresh(board: dict) -> dict:
             if s["status"] != DONE:
                 s["status"] = DONE
                 s["actual_end"] = s.get("actual_end") or datetime.now().isoformat(timespec="seconds")
+            s["blocked_reason"] = None
         elif RUNNING in statuses:
             s["status"] = RUNNING
+            s["blocked_reason"] = None
         elif FAILED in statuses or BLOCKED in statuses:
             s["status"] = BLOCKED
+            reasons = []
+            for t in s["tasks"]:
+                if t["id"] in acik_telafi:
+                    m = TELAFI_NOT_RX.search(t.get("note") or "")
+                    telafi_id = m.group(1) if m else "telafi talebi"
+                    reasons.append(f"{t['id']} telafiye devredildi ({telafi_id} bekleniyor)")
+                elif t["status"] == BLOCKED:
+                    reasons.append(f"{t['id']} bloke ({t.get('note') or 'bağımlılık bekliyor'})")
+                elif t["status"] == FAILED:
+                    reasons.append(f"{t['id']} başarısız ({t.get('note') or ''})")
+            s["blocked_reason"] = "; ".join(reasons) if reasons else "Bağımlı görev veya telafi bekleniyor"
         elif READY in statuses:
             s["status"] = READY
+            s["blocked_reason"] = None
         else:
             s["status"] = TODO
+            s["blocked_reason"] = None
 
         # Sonraki sprint ancak bu sprint tamamen kapandıysa açılır.
         prev_closed = prev_closed and (statuses <= TERMINAL)

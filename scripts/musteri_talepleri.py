@@ -451,20 +451,20 @@ def yeni_talep(tur: str, baslik: str, aciklama: str, oncelik: str = "NORMAL", sa
         yeni["faz_id"] = analiz["onerilen_faz"]
         yeni["efor"] = analiz["efor"]
 
-        if analiz["gercek_tur"] == "HATA":
+        if analiz["gercek_tur"] == "HATA" or analiz.get("acil_mi") or analiz["onerilen_faz"] == KVT.aktif_faz_getir().get("id"):
             yeni["durum"] = "BEKLEMEDE"
-            print(f"  ⚡ [BUG/HOTFIX HATTI] Hata tespit edildi, çözüm planı hazırlanıyor ({talep_id})...")
+            print(f"  ⚡ [BUG/HOTFIX HATTI] Talep aktif faza ({yeni['faz_id']}) alındı, çözüm planı hazırlanıyor ({talep_id})...")
             SY.cozum_plani_olustur(talep_id)
             SY.otomatik_musteri_talepleri_senkronize_et()
             B.ledger_approve(gorev=2)
-            print(f"  ✓ {talep_id} (Hata) aktif sprint panosuna stabilizasyon görevi olarak eklendi!")
+            print(f"  ✓ {talep_id} aktif sprint panosuna stabilizasyon görevi olarak eklendi!")
         else:
             yeni["durum"] = "DEGERLENDIRMEDE"
-            yeni["triage_notu"] = f"Yeni Özellik (Feature) olarak sınıflandırıldı. Önerilen Faz: {analiz['onerilen_faz']} (Efor: {analiz['efor']})."
+            yeni["triage_notu"] = f"Yeni Özellik (Feature) olarak sınıflandırıldı. Önerilen Müsait Faz: {analiz['onerilen_faz']} (Efor: {analiz['efor']})."
             print(f"  ⚖️  [KARAR VERİCİ TRİAGE] Yeni Özellik (Feature) algılandı: {talep_id}")
             print(f"      • Doğrudan aktif sprinte eklenmedi (kapsam genişlemesi önlendi).")
             print(f"      • Atanan Havuz: {analiz['onerilen_faz']} Backlog (Efor: {analiz['efor']}, Süre: {analiz['tahmini_sure']})")
-            print(f"      • Faz 1 hataları kapandıktan sonra karar verici onayı ile devreye girecektir.")
+            print(f"      • Aktif faz tamamlandıktan sonra karar verici onayı ile devreye girecektir.")
             SY.cozum_plani_olustur(talep_id)
 
         # Güncel alanları kaydet

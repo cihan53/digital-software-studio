@@ -431,6 +431,21 @@ if p and p.get("sprints"):
         if fail_t:
             print(f"  {RED}  ⚠  {fail_t} görev hatalı!{NC}")
 
+        bloke_sprintler = [s for s in sprints if s.get("status") == "BLOCKED"]
+        if bloke_sprintler:
+            print(f"\n  {RED}{BOLD}⚠ Bloke Sprintler:{NC}")
+            for bs in bloke_sprintler:
+                sebep = bs.get("blocked_reason")
+                if not sebep:
+                    for t in bs.get("tasks", []):
+                        if "telafi TALEP-" in (t.get("note") or ""):
+                            sebep = f"{t['id']} telafiye devredildi"
+                            break
+                        elif t.get("status") in ("BLOCKED", "FAILED"):
+                            sebep = f"{t['id']} ({t.get('status')})"
+                            break
+                print(f"  {RED}  • {bs['id']}{NC} — {bs.get('name','')[:40]} {YELLOW}[{sebep or 'Bağımlılık bekliyor'}]{NC}")
+
         # Aktif sprint detayı
         aktif = next((s for s in sprints if s.get("status") in ("READY","RUNNING")), None)
         if aktif:

@@ -147,29 +147,64 @@ def save_fazlar(data: dict):
 
 def aktif_faz_getir() -> dict:
     data = load_fazlar()
-    for f in data.get("fazlar", []):
+    fazlar = data.get("fazlar", [])
+    for f in fazlar:
         if f.get("durum") == "AKTIF":
             return f
-    return data["fazlar"][0] if data.get("fazlar") else {"id": "FAZ-1", "ad": "Faz 1"}
+    # Aktif faz yoksa tamamlanmamış ilk açık fazı bul
+    for f in fazlar:
+        if f.get("durum") not in ("TAMAMLANDI", "IPTAL"):
+            return f
+    return fazlar[0] if fazlar else {"id": "FAZ-1", "ad": "Faz 1"}
 
 
 def talep_analiz_et(talep: dict) -> dict:
-    """Product Owner & CTO gözüyle talebi inceler ve öneri üretir."""
+    """Product Owner & CTO gözüyle talebi inceler ve öneri üretir.
+    - Aciliyet arz edenler (veya hata/bug olanlar) doğrudan AKTİF FAZA alınır.
+    - Yeni özellikler ise kapalı olmayan MÜSAİT/SIRADAKİ faza yönlendirilir (asla kapalı faza atılmaz).
+    """
     tur = talep.get("tur", "HATA").upper()
+    oncelik = talep.get("oncelik", "NORMAL").upper()
     baslik = talep.get("baslik", "")
     aciklama = talep.get("aciklama", "")
     metin = f"{baslik} {aciklama}".lower()
 
-    # 1. Tür analizi: Hata mı, Yeni Özellik mi?
+    # 1. Tür ve aciliyet analizi
     is_bug = tur in ("HATA", "VERI") or any(k in metin for k in ["hata", "bozuk", "çalışmıyor", "yanlış", "mükerrer", "çift"])
-    
-    # 2. Faz eşleme
-    if any(k in metin for k in ["sürüm", "deploy", "yenile", "changelog", "güncelleme", "notlar"]):
-        onerilen_faz = "FAZ-2"
-    elif any(k in metin for k in ["rezervasyon", "rota", "doluluk", "ödeme", "cpo"]):
-        onerilen_faz = "FAZ-3"
+    is_urgent = is_bug or oncelik in ("ACIL", "YUKSEK", "KRITIK") or any(k in metin for k in ["acil", "kritik", "çöktü", "down", "patladı", "bloke", "durdur"])
+
+    # 2. Faz eşleme: aktif ve açık/müsait fazların tespiti
+    data = load_fazlar()
+    fazlar = data.get("fazlar", [])
+    aktif_faz = aktif_faz_getir()
+    aktif_faz_id = aktif_faz.get("id", "FAZ-1")
+    acik_fazlar = [f for f in fazlar if f.get("durum") not in ("TAMAMLANDI", "IPTAL")]
+    acik_faz_idler = [f["id"] for f in acik_fazlar]
+
+    if is_urgent:
+        # Aciliyet arz eden veya hata niteliğindeki işler doğrudan AKTİF FAZA atanır
+        onerilen_faz = aktif_faz_id
+        oneri = "HOTFIX_MEVCUT_FAZ"
+        oneri_aciklama = f"Bu talep acil veya hata niteliğindedir. Aktif olan {aktif_faz_id} ({aktif_faz.get('ad', '')}) kapsamında derhal çözülmelidir."
     else:
-        onerilen_faz = "FAZ-1"
+        # Yeni özellikler: Kapsam genişlemesini önlemek için müsait olan sıradaki açık faza aktarılır
+        siradaki_musait = next((f["id"] for f in acik_fazlar if f["id"] != aktif_faz_id), aktif_faz_id)
+
+        if any(k in metin for k in ["sürüm", "deploy", "yenile", "changelog", "güncelleme", "notlar"]):
+            hedef = "FAZ-2"
+        elif any(k in metin for k in ["rezervasyon", "rota", "doluluk", "ödeme", "cpo"]):
+            hedef = "FAZ-3"
+        else:
+            hedef = siradaki_musait
+
+        # Hedef faz kapalıysa (TAMAMLANDI) açık ilk müsait faza yönlendir
+        if hedef not in acik_faz_idler:
+            onerilen_faz = siradaki_musait
+        else:
+            onerilen_faz = hedef
+
+        oneri = f"AKTAR_{onerilen_faz}"
+        oneri_aciklama = f"Bu yeni bir özelliktir. Aktif fazı bölmemek için müsait olan {onerilen_faz} kapsamına alınmalıdır."
 
     # 3. Efor & Karmaşıklık
     if len(aciklama) > 200 or any(k in metin for k in ["ekran", "sayfa", "veritabanı", "tüm sayfalar"]):
@@ -179,17 +214,10 @@ def talep_analiz_et(talep: dict) -> dict:
         efor = "DUSUK"
         tahmini_sure = "2-4 Saat"
 
-    # 4. Karar verici önerisi
-    if is_bug:
-        oneri = "HOTFIX_MEVCUT_FAZ"
-        oneri_aciklama = "Bu bir hatadır. Mevcut Faz 1 stabilizasyonu için derhal çözülmelidir."
-    else:
-        oneri = f"AKTAR_{onerilen_faz}"
-        oneri_aciklama = f"Bu yeni bir özelliktir (Feature). Faz 1 stabilizasyonunu bölmemek için {onerilen_faz} kapsamına alınmalıdır."
-
     return {
         "talep_id": talep.get("id"),
         "gercek_tur": "HATA" if is_bug else "ISTEK",
+        "acil_mi": is_urgent,
         "onerilen_faz": onerilen_faz,
         "efor": efor,
         "tahmini_sure": tahmini_sure,
@@ -208,15 +236,17 @@ def triage_uygula(talep_id: str, hedef_faz: str = None, karar: str = None, karar
         return False
 
     analiz = talep_analiz_et(talep)
+    aktif_faz = aktif_faz_getir()
+    aktif_faz_id = aktif_faz.get("id", "FAZ-1")
     hedef_faz = hedef_faz or analiz["onerilen_faz"]
 
-    # Durum güncellemesi
-    if analiz["gercek_tur"] == "HATA" and hedef_faz == "FAZ-1":
+    # Durum güncellemesi: Aktif faza alınanlar veya acil/hata olanlar doğrudan PLANLANDI olur
+    if hedef_faz == aktif_faz_id or analiz.get("acil_mi") or analiz["gercek_tur"] == "HATA":
         yeni_durum = "PLANLANDI"
-        not_ek = f"Karar Verici Onayı: Faz 1 Hata Düzeltme hattına alındı."
+        not_ek = f"Karar Verici Onayı: Aktif {hedef_faz} ({aktif_faz.get('ad', '')}) çözüm hattına alındı."
     else:
         yeni_durum = "FAZ_BEKLIYOR"
-        not_ek = f"Karar Verici Onayı: {hedef_faz} kapsamına aktarıldı. Faz 1 tamamlandıktan sonra geliştirilecek."
+        not_ek = f"Karar Verici Onayı: {hedef_faz} kapsamına aktarıldı. Aktif faz tamamlandıktan sonra devreye alınacak."
 
     if karar_notu:
         not_ek += f" Not: {karar_notu}"
