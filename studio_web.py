@@ -558,7 +558,7 @@ def kontrol(body: dict) -> dict:
             except Exception:
                 faz = "FAZ-1"
             MT.guncelle(
-                tid, durum="PLANLANDI",
+                tid, durum="PLANLANDI", faz_id=faz,
                 studio_notu=("Panelden yeniden devreye alındı" if eski == "IPTAL"
                              else "Panelden sprint onayı verildi")
                 + f" ({faz}).")
@@ -786,7 +786,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(durum_ozeti())
         if path == "/api/pano":
             try:
-                return self._json({"ok": True, "pano": B.load()})
+                board = B.load()
+                B.refresh(board)
+                return self._json({"ok": True, "pano": board})
             except FileNotFoundError:
                 return self._json({"ok": False, "mesaj": "Pano henüz yok."})
         if path == "/api/brief-gorusme":

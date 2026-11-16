@@ -44,7 +44,9 @@ class TelafiSemantigi(unittest.TestCase):
         B.refresh(b)
         self.assertEqual(self._durum(b, "C"), B.TODO)                      # temel yok: bağımlı başlamaz
         self.assertEqual(self._durum(b, "Q"), B.TODO)                      # parite testi boşuna DONE olmaz
-        self.assertEqual(B.find_sprint(b, "S1")["status"] if hasattr(B, "find_sprint") else b["sprints"][0]["status"], B.BLOCKED)
+        s1 = B.find_sprint(b, "S1") if hasattr(B, "find_sprint") else b["sprints"][0]
+        self.assertEqual(s1["status"], B.BLOCKED)
+        self.assertIn("TALEP-1 bekleniyor", s1.get("blocked_reason", ""))
         self.assertEqual(self._durum(b, "R"), B.READY)                     # telafi görevi sprint sırasını atlar
         s, t = B.next_ready(b)
         self.assertEqual((s["id"], t["id"]), ("S2", "R"))                  # ve koşucu onu seçer (kilitlenme yok)
