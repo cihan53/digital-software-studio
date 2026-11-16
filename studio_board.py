@@ -863,10 +863,18 @@ def refresh(board: dict) -> dict:
     # Kullanıcının bilerek atladığı ('kullanıcı atladı') ve iptal edilen talep görevleri etkilenmez.
     acik_telafi = set()
     for _, t in all_tasks(board):
-        if t["status"] == SKIPPED:
-            m = TELAFI_NOT_RX.search(t.get("note") or "")
-            if m and m.group(1) not in cozulmus_talepler and m.group(1) not in iptal_talepler:
-                acik_telafi.add(t["id"])
+        m = TELAFI_NOT_RX.search(t.get("note") or "")
+        if m:
+            talep_no = m.group(1)
+            t["telafi_talep_id"] = talep_no
+            if talep_no in cozulmus_talepler:
+                t["telafi_durum"] = "COZULDU"
+            elif talep_no in iptal_talepler:
+                t["telafi_durum"] = "IPTAL"
+            else:
+                t["telafi_durum"] = "BEKLIYOR"
+                if t["status"] == SKIPPED:
+                    acik_telafi.add(t["id"])
     done_ids = {t["id"] for _, t in all_tasks(board) if t["status"] in TERMINAL and t["id"] not in acik_telafi}
     failed_ids = {t["id"] for _, t in all_tasks(board) if t["status"] == FAILED}
 
