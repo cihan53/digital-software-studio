@@ -483,7 +483,6 @@ function gorevSatir(t){
       telafiBadge = `<span class="rozet r-DONE" style="cursor:pointer;background:#22c55e22;color:#4ade80;border:1px solid #22c55e66" onclick="talepGoster('${esc(telafiId)}')" title="Telafi talebi çözüldü">✔ ${esc(telafiId)} Çözüldü</span>`;
     }
   }
-    `<span class="rozet r-BLOCKED" style="cursor:pointer;background:#ef444422;color:#f87171;border:1px solid #ef444466;font-weight:600" onclick="talepGoster('${telafiM[1]}')" title="İlgili telafi talebine gitmek için tıklayın">⚠️ ${telafiM[1]} Bekleniyor ⇢</span>` : '';
   r.innerHTML=`<span class="gid">${esc(t.id)}</span><span class="rozet r-${t.status}">${t.status}</span>
     <span class="gfaz">${esc(t.phase||'')}</span>${telafiBadge}<span class="gad" title="${esc(t.description||'')}">${esc(t.title||'')}</span>
     ${onc}${ovrz}${t.duration_s?`<span class="soluk">${insan(t.duration_s)}</span>`:''}
