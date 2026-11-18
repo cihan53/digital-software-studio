@@ -586,12 +586,28 @@ def kontrol(body: dict) -> dict:
                 return {"ok": False,
                         "mesaj": f"{tid} onay beklemiyor ({t.get('durum')})."}
             if sonuc == "onayla":
-                MT.guncelle(tid, durum="COZULDU",
-                            studio_notu="Müşteri onayı ile kapatıldı.")
+                # Otomatik olarak izole dalı ana dala birleştir ve canlıya al
+                dagitim_notu = ""
+                try:
+                    sys.path.insert(0, str(ROOT / "scripts"))
+                    import canli_dagitim as CD
+                    c_res = CD.gorev_dali_birlestir(tid, cwd=ROOT)
+                    if not c_res.get("ok"):
+                        c_res = CD.canliya_dagit_tekil(tid, cwd=ROOT)
+                    if c_res.get("ok"):
+                        dagitim_notu = " ve ana dala (canlıya) aktarıldı"
+                except Exception as e:
+                    print(f"  [UYARI] Canlıya aktarma uyarısı: {e}")
+
+                MT.guncelle(tid, durum="CANLIDA",
+                            studio_notu=f"Müşteri onayı ile onaylandı{dagitim_notu} ve kilitlendi.",
+                            zorla=True)
                 B.request("reload", kaynak="web")
-                B.audit("web", "talep_cozum_onay", talep_id=tid)
-                return {"ok": True, "mesaj": f"{tid} çözüldü olarak kapatıldı."}
+                B.audit("web", "talep_cozum_onay", talep_id=tid, detay={"durum": "CANLIDA"})
+                return {"ok": True, "mesaj": f"{tid} onaylandı, canlıya alındı ve kilitlendi."}
             if sonuc == "reddet":
+                if t.get("durum") == "CANLIDA":
+                    return {"ok": False, "mesaj": f"{tid} zaten canlıya alınmış ve kilitlenmiştir. Yeni değişiklik için lütfen yeni bir talep iletin."}
                 red_notu = (body.get("not") or "").strip()
                 not_metni = f"Müşteri: sorun devam ediyor — {red_notu}" if red_notu else "Müşteri: sorun devam ediyor — talep kuyruğa geri alındı."
                 MT.guncelle(tid, durum="BEKLEMEDE",

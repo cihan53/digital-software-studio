@@ -50,6 +50,7 @@ input, select {
 .r-FAILED, .r-BLOCKED { color: var(--kirmizi); border-color: var(--kirmizi); }
 .r-SKIPPED { color: var(--soluk); }
 .r-COZULDU { color: var(--yesil); border-color: var(--yesil); }
+.r-CANLIDA { color: #10b981; border-color: #10b981; background: rgba(16, 185, 129, 0.12); font-weight: 700; }
 .r-GELISTIRILIYOR, .r-TESTTE { color: var(--sari); border-color: var(--sari); }
 .r-BEKLEMEDE, .r-DEGERLENDIRMEDE, .r-PLANLANDI, .r-FAZ_BEKLIYOR { color: var(--vurgu); border-color: var(--vurgu); }
 .r-IPTAL { color: var(--soluk); }
