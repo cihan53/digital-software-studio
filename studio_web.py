@@ -1033,7 +1033,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": True,
                                        **MTC.mesaj_gonder(body.get("oturum"),
                                                           body.get("icerik", ""),
-                                                          gorsel_yolu=body.get("gorsel_yolu"))})
+                                                          gorsel_yolu=body.get("gorsel_yolu"),
+                                                          gorsel_yollari=body.get("gorsel_yollari"))})
                 if sub == "gorsel_yukle":
                     gorsel_raw = body.get("gorsel", "")
                     if not gorsel_raw:
