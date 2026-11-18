@@ -55,6 +55,32 @@ class TestCanliDagitim(unittest.TestCase):
         self.assertEqual(CD.gorev_dali_adi({"id": "TALEP-018", "tur": "HATA"}), "bug/18")
         # 5. Sprint görevi
         self.assertEqual(CD.gorev_dali_adi({"id": "S16-T2", "title": "BBox Harita API"}), "feature/s16-t2")
+        # 6. Talep ilişkili görev (talep_id ile)
+        with patch("musteri_talepleri.getir", return_value={"id": "TALEP-035", "tur": "HATA", "github_issue_number": 276}):
+            self.assertEqual(CD.gorev_dali_adi({"id": "S52-T1", "talep_id": "TALEP-035"}), "bug/276")
+            self.assertEqual(CD.gorev_dali_adi({"id": "S52-T2", "title": "[TALEP-035] UAT Kabul"}), "bug/276")
+
+    @patch("shutil.which", return_value="/usr/local/bin/gh")
+    @patch("canli_dagitim.ana_dal_bul", return_value="master")
+    @patch("subprocess.run")
+    def test_talep_pr_olustur_mevcut_pr(self, mock_run, mock_ana, mock_which):
+        def side_effect(cmd, **kwargs):
+            m = MagicMock()
+            if "show-ref" in cmd:
+                m.returncode = 0
+            elif "pr" in cmd and "list" in cmd:
+                m.returncode = 0
+                m.stdout = '[{"number": 278, "url": "https://github.com/cihan53/repo/pull/278", "state": "OPEN"}]'
+            else:
+                m.returncode = 0
+                m.stdout = ""
+            return m
+        mock_run.side_effect = side_effect
+
+        res = CD.talep_pr_olustur({"id": "TALEP-035", "tur": "HATA", "github_issue_number": 276}, ROOT)
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["pr_number"], 278)
+        self.assertIn("pull/278", res["pr_url"])
 
     @patch("canli_dagitim.ana_dal_bul", return_value="master")
     @patch("subprocess.run")

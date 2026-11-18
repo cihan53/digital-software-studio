@@ -475,9 +475,19 @@ def yeni_talep(tur: str, baslik: str, aciklama: str, oncelik: str = "NORMAL", sa
     return yeni
 
 
-def getir(talep_id: str) -> dict | None:
+def getir(talep_id: str, cwd: Path | str | None = None) -> dict | None:
     """Talebi studio.db'den getirir."""
-    conn = db_conn()
+    if cwd:
+        c_path = Path(cwd)
+        db_file = c_path / "workspace" / "studio.db"
+        if not db_file.exists():
+            db_file = c_path / "studio.db"
+        if db_file.exists():
+            conn = sqlite3.connect(str(db_file), timeout=10.0)
+        else:
+            conn = db_conn()
+    else:
+        conn = db_conn()
     try:
         cur = conn.cursor()
         cur.execute("SELECT * FROM talepler WHERE lower(id) = lower(?)", (talep_id,))
