@@ -3751,8 +3751,21 @@ def execute_task(org: dict, task: dict, sprint: dict, brief: str, board: dict,
                     elif _sistem_talebi_kabul_kapat(MT, task, karar):
                         pass                                                    # sistemin kendi açtığı talep UAT KABUL ile kapandı (#319)
                     else:
+                        pr_notu = ""
+                        try:
+                            sys.path.insert(0, str(ROOT / "scripts"))
+                            import canli_dagitim as CD
+                            pr_res = CD.talep_pr_olustur(task["talep_id"], cwd=ROOT)
+                            if pr_res.get("ok") and pr_res.get("pr_url"):
+                                pr_url = pr_res.get("pr_url")
+                                pr_notu = f" — PR: {pr_url}"
+                                print(f"   🐙 [GITHUB PR] {task['talep_id']} için PR hazır: {pr_url}")
+                                B.audit("engine", "talep_pr_hazir", talep_id=task["talep_id"], detay={"pr_url": pr_url})
+                        except Exception as e:
+                            print(f"   [uyarı] PR hazırlığı atlandı: {e}")
+
                         MT.guncelle(task["talep_id"], durum="ONAY_BEKLIYOR",
-                                    studio_notu=f"Görev {task['id']} tamamlandı — "
+                                    studio_notu=f"Görev {task['id']} tamamlandı{pr_notu} — "
                                                 "canlı sistemde doğrulama ve kapanış için müşteri onayı bekleniyor.")
         except Exception:
             pass

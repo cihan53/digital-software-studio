@@ -14,6 +14,8 @@ import argparse
 import json
 import os
 import re
+import shutil
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -127,17 +129,49 @@ def gorev_dali_adi(task_or_talep: dict | str, cwd: Path | None = None) -> str:
                 return gorev_dali_adi(t, cwd=work_dir)
         except Exception:
             pass
+
+        # Pano görevi ID'si ise (örn. S52-T1) studio.db'den ilişkili talep_id'sini bul
+        try:
+            db_f = work_dir / "workspace" / "studio.db"
+            if not db_f.exists():
+                db_f = work_dir / "studio.db"
+            if db_f.exists():
+                conn = sqlite3.connect(str(db_f), timeout=5.0)
+                cur = conn.cursor()
+                row = cur.execute("SELECT talep_id, baslik FROM pano_gorevleri WHERE lower(id) = lower(?)", (tid,)).fetchone()
+                conn.close()
+                if row:
+                    rel_talep_id = row[0]
+                    if not rel_talep_id and row[1]:
+                        m_t = re.search(r"\[(TALEP-\d+)\]", row[1], re.IGNORECASE)
+                        if m_t:
+                            rel_talep_id = m_t.group(1).upper()
+                    if rel_talep_id:
+                        import musteri_talepleri as MT
+                        t_db = MT.getir(rel_talep_id, cwd=work_dir)
+                        if t_db:
+                            return gorev_dali_adi(t_db, cwd=work_dir)
+        except Exception:
+            pass
+
         num_m = re.search(r"\d+", tid)
         num = num_m.group(0) if num_m else tid.lower()
         return f"feature/{num}"
 
     t = task_or_talep
-    # 1. Eğer task içinde talep_id varsa ilişkili talebi çek
-    if "talep_id" in t and t["talep_id"]:
+    # 1. Eğer task içinde talep_id varsa veya başlığında [TALEP-XXX] geçiyorsa ilişkili talebi çek
+    talep_id = t.get("talep_id")
+    if not talep_id:
+        text = f"{t.get('baslik', '')} {t.get('title', '')} {t.get('description', '')}"
+        m_t = re.search(r"\[(TALEP-\d+)\]", text, re.IGNORECASE)
+        if m_t:
+            talep_id = m_t.group(1).upper()
+
+    if talep_id:
         try:
             sys.path.insert(0, str(work_dir / "scripts"))
             import musteri_talepleri as MT
-            talep = MT.getir(t["talep_id"], cwd=work_dir)
+            talep = MT.getir(talep_id, cwd=work_dir)
             if talep:
                 return gorev_dali_adi(talep, cwd=work_dir)
         except Exception:
@@ -159,13 +193,105 @@ def gorev_dali_adi(task_or_talep: dict | str, cwd: Path | None = None) -> str:
     if issue_no:
         return f"{prefix}/{issue_no}"
 
-    talep_id = str(t.get("id") or t.get("talep_id") or "")
-    num_m = re.search(r"\d+", talep_id)
-    if num_m and talep_id.upper().startswith("TALEP"):
+    tid_raw = str(t.get("id") or t.get("talep_id") or "")
+    num_m = re.search(r"\d+", tid_raw)
+    if num_m and tid_raw.upper().startswith("TALEP"):
         return f"{prefix}/{int(num_m.group(0))}"
 
     clean_id = re.sub(r"[^a-zA-Z0-9_-]", "-", str(t.get("id") or "task")).lower()
     return f"{prefix}/{clean_id}"
+
+
+def talep_pr_olustur(task_or_talep: dict | str, cwd: Path | None = None) -> dict:
+    """Talebin veya görevin izole dalı için GitHub PR açar veya mevcut PR linkini döner."""
+    work_dir = cwd or ROOT
+    ana_dal = ana_dal_bul(work_dir)
+    dal_adi = gorev_dali_adi(task_or_talep, cwd=work_dir)
+
+    if not shutil.which("gh"):
+        return {"ok": False, "mesaj": "gh CLI kurulu değil."}
+
+    # Dal yerelde veya remote'da var mı?
+    dal_var = subprocess.run(
+        ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{dal_adi}"],
+        cwd=str(work_dir)
+    ).returncode == 0
+    if not dal_var:
+        r_var = subprocess.run(
+            ["git", "ls-remote", "--exit-code", "--heads", "origin", dal_adi],
+            cwd=str(work_dir)
+        ).returncode == 0
+        if not r_var:
+            return {"ok": False, "mesaj": f"'{dal_adi}' dalı bulunamadı."}
+
+    # 1. Dalı origin'e pushla
+    subprocess.run(["git", "push", "-u", "origin", dal_adi], capture_output=True, text=True, cwd=str(work_dir))
+
+    # 2. Mevcut açık PR var mı kontrol et
+    pr_chk = subprocess.run(
+        ["gh", "pr", "list", "--head", dal_adi, "--json", "number,url,state"],
+        capture_output=True, text=True, cwd=str(work_dir)
+    )
+    if pr_chk.returncode == 0 and pr_chk.stdout.strip():
+        try:
+            prs = json.loads(pr_chk.stdout.strip())
+            for p in prs:
+                if p.get("state") == "OPEN":
+                    return {"ok": True, "pr_url": p.get("url"), "pr_number": p.get("number"), "mesaj": "PR zaten mevcut."}
+        except Exception:
+            pass
+
+    # 3. PR başlığı ve açıklaması hazırla
+    issue_no = None
+    baslik = dal_adi
+    aciklama = ""
+
+    tid = ""
+    if isinstance(task_or_talep, dict):
+        tid = task_or_talep.get("talep_id") or task_or_talep.get("id") or ""
+        baslik = task_or_talep.get("baslik") or task_or_talep.get("title") or dal_adi
+    elif isinstance(task_or_talep, str):
+        tid = task_or_talep
+
+    try:
+        sys.path.insert(0, str(work_dir / "scripts"))
+        import musteri_talepleri as MT
+        t = MT.getir(tid, cwd=work_dir)
+        if t:
+            issue_no = t.get("github_issue_number")
+            baslik = t.get("baslik") or baslik
+            aciklama = t.get("aciklama") or ""
+    except Exception:
+        pass
+
+    if not issue_no:
+        m = re.search(r"\d+", dal_adi)
+        if m:
+            issue_no = int(m.group(0))
+
+    pr_title = baslik
+    if issue_no and f"#{issue_no}" not in pr_title:
+        pr_title = f"{pr_title} (#{issue_no})"
+
+    prefix = "fix" if dal_adi.startswith("bug/") else "feat"
+    if not pr_title.startswith(("fix", "feat", "chore", "refactor")):
+        pr_title = f"{prefix}: {pr_title}"
+
+    body = f"Closes #{issue_no}\n\n{aciklama}" if issue_no else aciklama or pr_title
+
+    # 4. GitHub PR oluştur
+    cmd = [
+        "gh", "pr", "create",
+        "--head", dal_adi,
+        "--base", ana_dal,
+        "--title", pr_title[:120],
+        "--body", body
+    ]
+    res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(work_dir))
+    if res.returncode == 0:
+        url = res.stdout.strip()
+        return {"ok": True, "pr_url": url, "mesaj": f"PR açıldı: {url}"}
+    return {"ok": False, "mesaj": f"PR oluşturulamadı: {res.stderr.strip()}"}
 
 
 def gorev_dali_hazirla(task_or_talep: dict | str, cwd: Path | None = None) -> dict:
