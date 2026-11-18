@@ -970,7 +970,7 @@ def _call_agy(system_prompt: str, user_prompt: str, effort: str, model: str,
     ).replace("\x00", "")
     cmd = [
         exe,
-        "--output-format", "json",
+        "--output-format", "stream-json",
         "--disable-slash-commands",
         "--dangerously-skip-permissions",
         "--model", model,
@@ -983,48 +983,164 @@ def _call_agy(system_prompt: str, user_prompt: str, effort: str, model: str,
 
     run_cwd = ROOT if tools else SCRATCH_DIR
     live = TRACE_DIR / "current.out"
-    izle_dur = threading.Event()
+    try:
+        live.write_text("", encoding="utf-8")
+    except OSError:
+        pass
+
+    canli_kilit = threading.Lock()
+    arac_sayac = [0]
     t_start = time.time()
+    son_aktivite = [time.time()]
+    izle_dur = threading.Event()
+
+    def _arac_olayi_kaydet(ad: str, ozet: str):
+        """Ajanın araç çağrısını kalıcı etkinliğe (audit_log) yazar (v2 gözlem, #259); çağrı başına en çok 400."""
+        if arac_sayac[0] >= 400:
+            return
+        arac_sayac[0] += 1
+        try:
+            sys.path.insert(0, str(ROOT / "scripts"))
+            import gozlem as GO
+            cur = json.loads((TRACE_DIR / "current.json").read_text(encoding="utf-8") or "{}")
+            GO.arac_olayi(ad, ozet, cur.get("task"), cur.get("role"))
+        except Exception:
+            pass
+
+    def _canli_yaz(satir: str):
+        try:
+            son_aktivite[0] = time.time()
+            with canli_kilit, live.open("a", encoding="utf-8") as f:
+                f.write(satir.rstrip() + "\n")
+        except OSError:
+            pass
+
+    try:
+        cwd_rel = str(run_cwd.relative_to(ROOT)) if run_cwd != ROOT else "."
+    except (ValueError, AttributeError):
+        cwd_rel = str(run_cwd)
+    _canli_yaz(
+        f"🤖 [AGY / GEMINI AKTİF]\n"
+        f"────────────────────────────────────────────────────────────\n"
+        f"  • Model        : {model} (effort: {effort})\n"
+        f"  • Çalışma Alanı: {cwd_rel}\n"
+        f"  • Başlangıç    : {datetime.now().strftime('%H:%M:%S')} (zaman aşımı: {AGY_TIMEOUT}s)\n"
+        f"────────────────────────────────────────────────────────────"
+    )
 
     def _agy_nabiz():
         while not izle_dur.is_set():
             gecen = int(time.time() - t_start)
+            sessizlik = int(time.time() - son_aktivite[0])
             dakika = gecen // 60
             saniye = gecen % 60
             sure_str = f"{dakika}dk {saniye}sn" if dakika else f"{saniye}sn"
-            bilgi = (
-                f"🤖 [AGY ÇAĞRISI AKTİF]\n"
-                f"────────────────────────────────────────────────────────────\n"
-                f"  • Model        : {model} (effort: {effort})\n"
-                f"  • Çalışma Alanı: {run_cwd.relative_to(ROOT) if run_cwd != ROOT else '.'}\n"
-                f"  • Geçen Süre   : {sure_str} (Zaman aşımı: {AGY_TIMEOUT}s)\n"
-                f"  • Durum        : Model görev üzerinde çalışıyor, araçları yürütüyor...\n"
-                f"  • Son Nabız    : {datetime.now().strftime('%H:%M:%S')}\n"
-                f"────────────────────────────────────────────────────────────\n"
-            )
             try:
-                live.write_text(bilgi, encoding="utf-8")
+                os.utime(live, None)
             except OSError:
                 pass
+            if sessizlik >= 20 and sessizlik % 20 < 4:
+                _canli_yaz(f"⏳ [bekleniyor] Model düşünüyor / araç sonucu bekleniyor... ({sure_str})")
             izle_dur.wait(3)
 
     t_nabiz = threading.Thread(target=_agy_nabiz, daemon=True)
     t_nabiz.start()
 
-    # agy yanıtı (status alanlı tam JSON) yazıp süreçten çıkmayabiliyor: geçerli çıktıyı tamponla yakalar, 15 sn tolerans sonra süreci keser,
-    # çıktıyı kullanır (31 dk zaman aşımında geçerli yanıtı çöpe atmayız, #313).
+    # agy yanıtı (status alanlı tam JSON veya stream-json result) yazıp süreçten çıkmayabiliyor:
+    # geçerli çıktıyı yakalar, 15 sn tolerans sonra süreci keser (#313).
     agy_bitti = threading.Event()
     agy_tampon: list = []
+    nihai_sonuc = {}
 
     def _agy_satir(satir):
         agy_tampon.append(satir)
-        if agy_bitti.is_set() or not satir.rstrip().endswith("}"):
+        satir_str = satir.strip()
+        if not satir_str:
             return
         try:
-            d = json.loads("".join(agy_tampon), strict=False)
+            ev = json.loads(satir_str, strict=False)
         except (ValueError, TypeError):
+            # Tek büyük bir JSON yanıtıysa veya parçalı geliyorsa geriye dönük uyumluluk
+            if not agy_bitti.is_set() and satir.rstrip().endswith("}"):
+                try:
+                    d = json.loads("".join(agy_tampon), strict=False)
+                    if isinstance(d, dict) and ("status" in d or "response" in d):
+                        nihai_sonuc["data"] = d
+                        threading.Timer(AGY_CIKIS_TOLERANSI, agy_bitti.set).start()
+                except (ValueError, TypeError):
+                    pass
             return
-        if isinstance(d, dict) and "status" in d:
+
+        if not isinstance(ev, dict):
+            return
+
+        # Tek satırda doğrudan eski formatta JSON döndüyse (stream-json olmayan durumlar)
+        if "status" in ev and ("response" in ev or "error" in ev):
+            nihai_sonuc["data"] = ev
+            threading.Timer(AGY_CIKIS_TOLERANSI, agy_bitti.set).start()
+            return
+
+        olay = ev.get("event")
+        if olay == "step_update":
+            su = ev.get("step_update") or {}
+            stype = su.get("step_type")
+            state = su.get("state")
+            tname = su.get("tool_name") or ""
+            tinfo = su.get("tool_info") or {}
+
+            if stype == "tool":
+                params = tinfo.get("parameters") or {}
+                if state == "ACTIVE":
+                    ozet = ""
+                    if tname == "run_command":
+                        cmd_val = params.get("CommandLine") or params.get("command") or ""
+                        ozet = f"⚡ {cmd_val}"
+                        _canli_yaz(f"⚙ [KOMUT] {cmd_val}")
+                    elif tname in ("read_file", "view_file"):
+                        p_val = params.get("Path") or params.get("file_path") or ""
+                        ozet = f"📖 {p_val}"
+                        _canli_yaz(f"📖 [OKU] {p_val}")
+                    elif tname in ("write_file", "write_to_file"):
+                        p_val = params.get("Path") or params.get("file_path") or ""
+                        ozet = f"✏️ {p_val}"
+                        _canli_yaz(f"✏️ [YAZ] {p_val}")
+                    elif tname in ("edit_file", "replace_file_content", "sed_file", "multi_replace_file_content"):
+                        p_val = params.get("Path") or params.get("file_path") or ""
+                        ozet = f"📝 {p_val}"
+                        _canli_yaz(f"📝 [DÜZENLE] {p_val}")
+                    elif tname in ("grep_search", "find_by_name"):
+                        pat = params.get("pattern") or params.get("query") or ""
+                        ozet = f"🔍 {tname}: {pat}"
+                        _canli_yaz(f"🔍 [{tname}] {pat}")
+                    else:
+                        param_json = json.dumps(params, ensure_ascii=False)
+                        ozet = f"{tname}: {param_json[:140]}"
+                        _canli_yaz(f"⚙ [{tname}] {param_json[:140]}")
+
+                    _arac_olayi_kaydet(tname, ozet)
+
+                elif state == "DONE":
+                    out_val = tinfo.get("output")
+                    if out_val:
+                        out_str = str(out_val).strip()
+                        ilk = out_str.splitlines()[0] if out_str else ""
+                        if len(ilk) > 160:
+                            ilk = ilk[:160] + "..."
+                        _canli_yaz(f"  ✓ {tname or 'araç'} bitti: {ilk}")
+                    else:
+                        _canli_yaz(f"  ✓ {tname or 'araç'} bitti")
+                elif state == "ERROR":
+                    err_val = tinfo.get("error") or "bilinmeyen hata"
+                    _canli_yaz(f"  ❌ {tname or 'araç'} hata: {str(err_val)[:200]}")
+
+            elif stype == "agent_response":
+                delta = su.get("text_delta")
+                if delta and delta.strip():
+                    _canli_yaz(delta.strip())
+
+        elif olay == "result":
+            res = ev.get("result") or {}
+            nihai_sonuc["data"] = res
             threading.Timer(AGY_CIKIS_TOLERANSI, agy_bitti.set).start()
 
     try:
@@ -1033,17 +1149,37 @@ def _call_agy(system_prompt: str, user_prompt: str, effort: str, model: str,
         izle_dur.set()
         t_nabiz.join(timeout=1)
 
-    if rc != 0 and agy_bitti.is_set() and (out or "").strip():
+    if rc != 0 and agy_bitti.is_set() and (nihai_sonuc.get("data") or (out or "").strip()):
         print(f"      [agy] yanıt tamamlandı ama süreç çıkmadı; {AGY_CIKIS_TOLERANSI}s sonra kesildi, çıktı kullanılıyor.", file=sys.stderr)
         rc = 0
     if rc != 0:
         detail = (err or out or "").strip()[:500]
         raise RuntimeError(f"agy hata koduyla çıktı ({rc}): {detail}")
 
-    try:
-        data = json.loads(out, strict=False)
-    except json.JSONDecodeError:
-        data = _json_kurtar(out)
+    data = nihai_sonuc.get("data")
+    if not data:
+        tum_cikti = (out or "".join(agy_tampon)).strip()
+        for satir in reversed(tum_cikti.splitlines()):
+            s = satir.strip()
+            if not s:
+                continue
+            try:
+                ev = json.loads(s, strict=False)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if isinstance(ev, dict):
+                if ev.get("event") == "result" and isinstance(ev.get("result"), dict):
+                    data = ev["result"]
+                    break
+                if "response" in ev or "status" in ev:
+                    data = ev
+                    break
+    if not data:
+        try:
+            data = json.loads((out or "").strip(), strict=False)
+        except json.JSONDecodeError:
+            data = _json_kurtar(out or "".join(agy_tampon))
+
     if not isinstance(data, dict):
         raise RuntimeError(f"agy JSON döndürmedi: {(out or '').strip()[:300]}"
                            f" ...son: {(out or '').strip()[-150:]}")
@@ -1053,7 +1189,7 @@ def _call_agy(system_prompt: str, user_prompt: str, effort: str, model: str,
     if not text:
         err = data.get("error") or f"durum {status or 'bilinmiyor'}"
         raise RuntimeError(f"agy hata bildirdi (metin üretilmedi): {str(err)[:300]}")
-    (TRACE_DIR / "current.out").write_text(text, encoding="utf-8")
+    _canli_yaz(f"\n────────────────────────────────────────────────────────────\n✓ [AGY TAMAMLANDI]\n{text}")
     return CliResult(
         text=text,
         stop_reason="end_turn",
