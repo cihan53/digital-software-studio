@@ -146,11 +146,33 @@ def _mesaj_ekle(oid: str, gonderen: str, icerik: str,
 
 # ---------------------------------------------------------------- ajan
 
+def _gorsel_listesi_coz(raw: str | None) -> list[str]:
+    """sohbet_mesajlari.gorsel_yolu içeriğini tekil veya çoklu liste olarak çözümler."""
+    if not raw:
+        return []
+    s = str(raw).strip()
+    if s.startswith("[") and s.endswith("]"):
+        try:
+            arr = json.loads(s)
+            if isinstance(arr, list):
+                return [str(x) for x in arr if x]
+        except Exception:
+            pass
+    if "," in s:
+        return [x.strip() for x in s.split(",") if x.strip()]
+    return [s]
+
+
 def _gecmis_promptu(oid: str, sinir: int = 24) -> str:
     satirlar = []
     for m in mesajlar(oid)[-sinir:]:
         kim = "Müşteri" if m["gonderen"] == "musteri" else "Temsilci"
-        ek = f" [Ekli Görsel: {m['gorsel_yolu']}]" if m.get("gorsel_yolu") else ""
+        gorseller = _gorsel_listesi_coz(m.get("gorsel_yolu"))
+        ek = ""
+        if len(gorseller) == 1:
+            ek = f" [Ekli Görsel: {gorseller[0]}]"
+        elif len(gorseller) > 1:
+            ek = f" [Ekli Görseller ({len(gorseller)} adet): {', '.join(gorseller)}]"
         satirlar.append(f"{kim}: {m['icerik']}{ek}")
         if m.get("taslak"):
             satirlar.append(f"[Taslak gösterildi: {json.dumps(m['taslak'], ensure_ascii=False)}]")
@@ -244,17 +266,32 @@ def _ajan_cagri(oid: str) -> dict:
             "taslak": taslak}
 
 
-def mesaj_gonder(oid: str, icerik: str, gorsel_yolu: str | None = None) -> dict:
-    """Müşteri mesajını işler, temsilci yanıtını üretir ve saklar."""
+def mesaj_gonder(oid: str, icerik: str, gorsel_yolu: str | None = None,
+                 gorsel_yollari: list[str] | None = None) -> dict:
+    """Müşteri mesajını işler, temsilci yanıtını üretir ve saklar (en fazla 5 görsel desteklenir)."""
     if not oid or not _oturum_var(oid):
         oid = oturum_ac()
     icerik = (icerik or "").strip()
-    if not icerik and not gorsel_yolu:
-        raise ValueError("Boş mesaj.")
-    if not icerik and gorsel_yolu:
-        icerik = "(Ekran görüntüsü eklendi)"
 
-    _mesaj_ekle(oid, "musteri", icerik, gorsel_yolu=gorsel_yolu)
+    yollar = []
+    if gorsel_yollari and isinstance(gorsel_yollari, list):
+        yollar.extend([str(y).strip() for y in gorsel_yollari if str(y).strip()])
+    elif gorsel_yolu:
+        yollar.extend(_gorsel_listesi_coz(gorsel_yolu))
+    yollar = yollar[:5]
+
+    gorsel_yolu_kayit = None
+    if len(yollar) == 1:
+        gorsel_yolu_kayit = yollar[0]
+    elif len(yollar) > 1:
+        gorsel_yolu_kayit = json.dumps(yollar, ensure_ascii=False)
+
+    if not icerik and not yollar:
+        raise ValueError("Boş mesaj.")
+    if not icerik and yollar:
+        icerik = f"({len(yollar)} görsel eklendi)" if len(yollar) > 1 else "(Ekran görüntüsü eklendi)"
+
+    _mesaj_ekle(oid, "musteri", icerik, gorsel_yolu=gorsel_yolu_kayit)
 
     if SOHBET_AGENT:
         try:
@@ -277,11 +314,16 @@ def mesaj_gonder(oid: str, icerik: str, gorsel_yolu: str | None = None) -> dict:
         }
 
     # Eğer kullanıcı görsel eklediyse ve taslak oluştuysa, açıklamaya referans iliştir
-    if gorsel_yolu and sonuc.get("taslak"):
+    if yollar and sonuc.get("taslak"):
         t = sonuc["taslak"]
         aciklama = t.get("aciklama", "")
-        if gorsel_yolu not in aciklama:
-            t["aciklama"] = f"{aciklama}\n\n![Ekran Görüntüsü](/api/gorsel?yol={gorsel_yolu})"
+        yeni_ekler = []
+        for i, y in enumerate(yollar, 1):
+            if y not in aciklama:
+                etiket = f"Ekran Görüntüsü {i}" if len(yollar) > 1 else "Ekran Görüntüsü"
+                yeni_ekler.append(f"![{etiket}](/api/gorsel?yol={y})")
+        if yeni_ekler:
+            t["aciklama"] = f"{aciklama}\n\n" + "\n\n".join(yeni_ekler)
 
     yanit_metni = sonuc["yanit"]
     if sonuc.get("taslak"):
@@ -293,7 +335,7 @@ def mesaj_gonder(oid: str, icerik: str, gorsel_yolu: str | None = None) -> dict:
             "\nOnaylıyor musunuz? (Onayla / düzeltme isteği yazın)"
         )
     mid = _mesaj_ekle(oid, "asistan", yanit_metni, taslak=sonuc.get("taslak"))
-    B.audit("sohbet", "mesaj", detay={"oturum": oid, "taslak": bool(sonuc.get("taslak")), "gorsel": bool(gorsel_yolu)})
+    B.audit("sohbet", "mesaj", detay={"oturum": oid, "taslak": bool(sonuc.get("taslak")), "gorsel_sayisi": len(yollar)})
     return {"oturum_id": oid, "mesaj_id": mid, **sonuc}
 
 

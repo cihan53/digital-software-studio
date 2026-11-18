@@ -66,10 +66,18 @@
   .durum-bekle { color: var(--soluk); }
   .gizli { display: none !important; }
   .girdi-kapsayici { border-top: 1px solid var(--sinir); display: flex; flex-direction: column; background: var(--panel); }
-  .gorsel-onizleme-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: rgba(88,166,255,0.06); border-bottom: 1px dashed var(--sinir); }
-  .gorsel-onizleme-img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; border: 1px solid var(--sinir); }
-  .gorsel-onizleme-bilgi { flex: 1; font-size: 12px; color: var(--metin); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .gorsel-onizleme-sil { background: transparent; border: none; color: var(--kirmizi, #f85149); font-size: 16px; cursor: pointer; padding: 2px 6px; }
+  .gorsel-onizleme-bar { display: flex; flex-direction: column; gap: 8px; padding: 8px 12px; background: rgba(88,166,255,0.06); border-bottom: 1px dashed var(--sinir); }
+  .gorsel-onizleme-ust { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--metin); }
+  .gorsel-onizleme-kartlar { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; align-items: center; }
+  .gorsel-onizleme-kart { position: relative; width: 56px; height: 56px; border-radius: 6px; border: 1px solid var(--sinir); background: var(--kart, #161b22); flex-shrink: 0; overflow: hidden; }
+  .gorsel-onizleme-kart img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .gorsel-kart-sil { position: absolute; top: 2px; right: 2px; background: rgba(0,0,0,0.75); color: #fff; border: none; border-radius: 50%; width: 18px; height: 18px; font-size: 11px; display: flex; align-items: center; justify-content: center; cursor: pointer; line-height: 1; padding: 0; }
+  .gorsel-kart-sil:hover { background: var(--kirmizi, #f85149); }
+  .gorsel-onizleme-sil { background: transparent; border: none; color: var(--kirmizi, #f85149); font-size: 12px; cursor: pointer; padding: 2px 6px; }
+  .gorsel-onizleme-sil:hover { text-decoration: underline; }
+  .mesaj-gorseller-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .mesaj-gorseller-grid .mesaj-gorsel { margin-top: 0; max-width: 160px; max-height: 130px; }
+  .mesaj-gorseller-grid .mesaj-gorsel img { max-height: 130px; }
   .mesaj-gorsel { margin-top: 8px; border-radius: 8px; overflow: hidden; max-width: 340px; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); }
   .mesaj-gorsel img { width: 100%; height: auto; max-height: 240px; object-fit: cover; display: block; transition: transform 0.15s ease; }
   .mesaj-gorsel img:hover { transform: scale(1.02); }
@@ -101,13 +109,15 @@
       <div class="yaziyor gizli" id="yaziyor">Temsilci yazıyor…</div>
       <div class="girdi-kapsayici">
         <div id="gorsel-onizleme" class="gorsel-onizleme-bar gizli">
-          <img id="gorsel-onizleme-thumb" class="gorsel-onizleme-img" src="" alt="Önizleme">
-          <div class="gorsel-onizleme-bilgi" id="gorsel-onizleme-yazi">Ekran görüntüsü eklendi</div>
-          <button class="gorsel-onizleme-sil" onclick="gorselTemizle()" title="Görseli kaldır">✕</button>
+          <div class="gorsel-onizleme-ust">
+            <span id="gorsel-onizleme-yazi" class="soluk">📎 0 / 5 görsel eklendi</span>
+            <button class="gorsel-onizleme-sil" onclick="gorselleriTemizle()" title="Tümünü kaldır">Tümünü Temizle</button>
+          </div>
+          <div class="gorsel-onizleme-kartlar" id="gorsel-kartlar"></div>
         </div>
         <div class="girdi" style="border-top: none;">
-          <input type="file" id="dosya-secici" accept="image/png,image/jpeg,image/webp,image/gif" class="gizli" onchange="dosyadanGorselSec(event)">
-          <button type="button" class="ek-buton" onclick="$('dosya-secici').click()" title="Görsel yükle (veya panodan Ctrl+V / Cmd+V ile yapıştır)">📎</button>
+          <input type="file" id="dosya-secici" accept="image/png,image/jpeg,image/webp,image/gif" multiple class="gizli" onchange="dosyadanGorselSec(event)">
+          <button type="button" class="ek-buton" onclick="$('dosya-secici').click()" title="Görsel yükle (maks 5 adet, veya panodan Ctrl+V / Cmd+V ile yapıştır)">📎</button>
           <textarea id="girdi" rows="1"
             placeholder="Mesajınızı yazın veya ekran görüntüsü yapıştırın… (Enter: gönder, Shift+Enter: yeni satır)"></textarea>
           <button class="birincil" id="gonder" onclick="gonder()">Gönder</button>
@@ -228,10 +238,29 @@ function mesajCiz(m){
   d.className='mesaj '+(m.gonderen==='musteri'?'m-musteri':'m-asistan');
   d.textContent=m.icerik;
   if(m.gorsel_yolu){
-    const g=document.createElement('div');
-    g.className='mesaj-gorsel';
-    g.innerHTML=`<img src="/api/gorsel?yol=${encodeURIComponent(m.gorsel_yolu)}" alt="Ekran Görüntüsü" onclick="gorselBuyut(this.src)" title="Büyütmek için tıklayın">`;
-    d.appendChild(g);
+    const yollar = [];
+    const raw = String(m.gorsel_yolu).trim();
+    if(raw.startsWith('[') && raw.endsWith(']')){
+      try {
+        const arr = JSON.parse(raw);
+        if(Array.isArray(arr)) yollar.push(...arr);
+      } catch(e){ yollar.push(raw); }
+    } else if(raw.includes(',')){
+      yollar.push(...raw.split(',').map(s=>s.trim()).filter(Boolean));
+    } else {
+      yollar.push(raw);
+    }
+    if(yollar.length === 1){
+      const g=document.createElement('div');
+      g.className='mesaj-gorsel';
+      g.innerHTML=`<img src="/api/gorsel?yol=${encodeURIComponent(yollar[0])}" alt="Ekran Görüntüsü" onclick="gorselBuyut(this.src)" title="Büyütmek için tıklayın">`;
+      d.appendChild(g);
+    } else if(yollar.length > 1){
+      const grid=document.createElement('div');
+      grid.className='mesaj-gorseller-grid';
+      grid.innerHTML=yollar.map(y => `<div class="mesaj-gorsel"><img src="/api/gorsel?yol=${encodeURIComponent(y)}" alt="Ekran Görüntüsü" onclick="gorselBuyut(this.src)" title="Büyütmek için tıklayın"></div>`).join('');
+      d.appendChild(grid);
+    }
   }
   if(m.taslak){
     const t=m.taslak;
@@ -336,15 +365,45 @@ function sekmeSec(s){
     .forEach(x=>x.classList.toggle('aktif',x.dataset.s===s));
   yukle(true);
 }
-let aktifGorsel = null;
+let aktifGorseller = []; // [{yol, url, adi}]
+const MAKS_GORSEL = 5;
 
-function gorselTemizle(){
-  aktifGorsel = null;
-  $('gorsel-onizleme').classList.add('gizli');
-  $('gorsel-onizleme-thumb').src = '';
-  $('gorsel-onizleme-yazi').textContent = 'Ekran görüntüsü eklendi';
-  $('dosya-secici').value = '';
+function gorselKartlariCiz(){
+  const bar = $('gorsel-onizleme');
+  const kartlar = $('gorsel-kartlar');
+  const yazi = $('gorsel-onizleme-yazi');
+  if(!aktifGorseller.length){
+    bar.classList.add('gizli');
+    kartlar.innerHTML = '';
+    $('dosya-secici').value = '';
+    return;
+  }
+  bar.classList.remove('gizli');
+  const hazir = aktifGorseller.filter(g=>g.yol).length;
+  const yuklenen = aktifGorseller.filter(g=>g.yukleniyor).length;
+  yazi.textContent = yuklenen > 0 ?
+    `⏳ Görseller yükleniyor (${hazir}/${aktifGorseller.length})…` :
+    `📎 ${aktifGorseller.length} / ${MAKS_GORSEL} görsel eklendi (Enter ile gönderebilirsiniz)`;
+  kartlar.innerHTML = aktifGorseller.map((g, idx) => `
+    <div class="gorsel-onizleme-kart" title="${esc(g.adi)}">
+      <img src="${g.url}" alt="Önizleme">
+      <button class="gorsel-kart-sil" onclick="tekGorselSil(${idx})" title="Bu görseli kaldır">✕</button>
+    </div>
+  `).join('');
 }
+
+function tekGorselSil(idx){
+  aktifGorseller.splice(idx, 1);
+  gorselKartlariCiz();
+}
+
+function gorselleriTemizle(){
+  aktifGorseller = [];
+  gorselKartlariCiz();
+}
+
+// Geriye dönük uyumluluk alias
+function gorselTemizle(){ gorselleriTemizle(); }
 
 function gorselBuyut(url){
   $('gorsel-modal-img').src = url;
@@ -357,9 +416,13 @@ function gorselModalKapat(){
 }
 
 async function gorselYukleDataUrl(dataUrl, dosyaAdi){
-  $('gorsel-onizleme-yazi').textContent = '⏳ Görsel yükleniyor…';
-  $('gorsel-onizleme-thumb').src = dataUrl;
-  $('gorsel-onizleme').classList.remove('gizli');
+  if(aktifGorseller.length >= MAKS_GORSEL){
+    toast(`En fazla ${MAKS_GORSEL} görsel yükleyebilirsiniz.`);
+    return;
+  }
+  const item = { yol: '', url: dataUrl, adi: dosyaAdi || 'Görsel', yukleniyor: true };
+  aktifGorseller.push(item);
+  gorselKartlariCiz();
   try{
     await oturumGerek();
     const res = await fetch('/api/sohbet/gorsel_yukle', {
@@ -373,31 +436,49 @@ async function gorselYukleDataUrl(dataUrl, dosyaAdi){
     });
     const d = await res.json();
     if(d.ok){
-      aktifGorsel = { yol: d.yol, url: d.url, adi: d.dosya_adi };
-      $('gorsel-onizleme-yazi').textContent = '📎 ' + (dosyaAdi || d.dosya_adi) + ' hazır';
-      toast('Görsel eklendi (Enter ile gönderebilirsiniz).');
+      item.yol = d.yol;
+      item.url = d.url;
+      item.adi = dosyaAdi || d.dosya_adi;
+      item.yukleniyor = false;
+      gorselKartlariCiz();
+      toast(`Görsel eklendi (${aktifGorseller.length}/${MAKS_GORSEL}).`);
     } else {
+      const idx = aktifGorseller.indexOf(item);
+      if(idx !== -1) aktifGorseller.splice(idx, 1);
+      gorselKartlariCiz();
       toast('Görsel yüklenemedi: ' + (d.mesaj || 'Hata'));
-      gorselTemizle();
     }
   }catch(e){
+    const idx = aktifGorseller.indexOf(item);
+    if(idx !== -1) aktifGorseller.splice(idx, 1);
+    gorselKartlariCiz();
     toast('Görsel yükleme hatası: ' + e);
-    gorselTemizle();
   }
 }
 
 function dosyadanGorselSec(e){
-  const file = e.target.files && e.target.files[0];
-  if(!file) return;
-  if(!file.type.startsWith('image/')){
-    toast('Lütfen geçerli bir resim dosyası seçin.');
+  const files = Array.from(e.target.files || []);
+  if(!files.length) return;
+  const kalanHak = MAKS_GORSEL - aktifGorseller.length;
+  if(kalanHak <= 0){
+    toast(`En fazla ${MAKS_GORSEL} görsel ekleyebilirsiniz.`);
     return;
   }
-  const reader = new FileReader();
-  reader.onload = (ev) => {
-    gorselYukleDataUrl(ev.target.result, file.name);
-  };
-  reader.readAsDataURL(file);
+  if(files.length > kalanHak){
+    toast(`En fazla ${MAKS_GORSEL} görsel eklenebilir. İlk ${kalanHak} adet seçildi.`);
+  }
+  const eklenecekler = files.slice(0, kalanHak);
+  for(const file of eklenecekler){
+    if(!file.type.startsWith('image/')){
+      toast(file.name + ' geçerli bir resim dosyası değil.');
+      continue;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      gorselYukleDataUrl(ev.target.result, file.name);
+    };
+    reader.readAsDataURL(file);
+  }
 }
 
 document.addEventListener('paste', (e) => {
@@ -405,42 +486,62 @@ document.addEventListener('paste', (e) => {
   if(!cd || !cd.items) return;
   for(let i = 0; i < cd.items.length; i++){
     if(cd.items[i].type && cd.items[i].type.indexOf('image') !== -1){
+      if(aktifGorseller.length >= MAKS_GORSEL){
+        toast(`En fazla ${MAKS_GORSEL} görsel ekleyebilirsiniz.`);
+        return;
+      }
       e.preventDefault();
       const file = cd.items[i].getAsFile();
       if(!file) continue;
       const reader = new FileReader();
       reader.onload = (ev) => {
-        gorselYukleDataUrl(ev.target.result, 'pano_goruntusu.png');
+        gorselYukleDataUrl(ev.target.result, `pano_${Date.now()}.png`);
       };
       reader.readAsDataURL(file);
-      break;
     }
   }
 });
 
 async function gonder(){
   const inp=$('girdi'); const metin=inp.value.trim();
-  if(!metin && !aktifGorsel) return;
-  const gorselData = aktifGorsel;
-  gorselTemizle();
+  const hazirGorseller = aktifGorseller.filter(g => g.yol);
+  if(!metin && !hazirGorseller.length) return;
+  if(aktifGorseller.some(g => g.yukleniyor)){
+    toast('Görseller yükleniyor, lütfen bekleyin…');
+    return;
+  }
+  const gorselDataListesi = [...hazirGorseller];
+  gorselleriTemizle();
   inp.value=''; inp.disabled=true; $('gonder').disabled=true;
   yaziyorBasla=Date.now();
   $('yaziyor').textContent='Temsilci yazıyor…';
   $('yaziyor').classList.remove('gizli');
+
   // Optimistik ekleme
   const kutu=$('mesajlar');
   const ge=document.createElement('div'); ge.className='mesaj m-musteri';
   if(metin) ge.textContent=metin;
-  if(gorselData){
+  if(gorselDataListesi.length === 1){
     const g=document.createElement('div'); g.className='mesaj-gorsel';
-    g.innerHTML=`<img src="${gorselData.url}" alt="Ekran Görüntüsü" onclick="gorselBuyut(this.src)">`;
+    g.innerHTML=`<img src="${gorselDataListesi[0].url}" alt="Ekran Görüntüsü" onclick="gorselBuyut(this.src)" title="Büyütmek için tıklayın">`;
     ge.appendChild(g);
+  } else if(gorselDataListesi.length > 1){
+    const grid=document.createElement('div'); grid.className='mesaj-gorseller-grid';
+    grid.innerHTML=gorselDataListesi.map(g =>
+      `<div class="mesaj-gorsel"><img src="${g.url}" alt="Ekran Görüntüsü" onclick="gorselBuyut(this.src)" title="Büyütmek için tıklayın"></div>`
+    ).join('');
+    ge.appendChild(grid);
   }
   kutu.appendChild(ge); kutu.scrollTop=kutu.scrollHeight;
   try{
     const d=await(await fetch('/api/sohbet/mesaj',{method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({oturum:oturum,icerik:metin,gorsel_yolu:gorselData?gorselData.yol:null})})).json();
+      body:JSON.stringify({
+        oturum:oturum,
+        icerik:metin,
+        gorsel_yolu: gorselDataListesi.length ? gorselDataListesi[0].yol : null,
+        gorsel_yollari: gorselDataListesi.map(g => g.yol)
+      })})).json();
     if(d.oturum_id&&!oturum){oturum=d.oturum_id;localStorage.setItem('sohbet_oturum',oturum);}
     if(!d.ok) toast(d.mesaj||'Gönderilemedi');
   }catch(e){ toast('Gönderilemedi: '+e); }
