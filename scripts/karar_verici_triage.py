@@ -335,7 +335,7 @@ def bekleyenleri_triage_et(otomatik: bool = True):
         durum = t.get("durum", "BEKLEMEDE")
         faz_id = t.get("faz_id")
 
-        if durum in ("COZULDU", "IPTAL"):
+        if durum in ("COZULDU", "CANLIDA", "IPTAL"):
             continue
 
         analiz = talep_analiz_et(t)

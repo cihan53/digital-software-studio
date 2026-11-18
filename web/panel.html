@@ -701,7 +701,7 @@ async function talepYukle(){
   // Kapalı olmayan taleplerde Faz sütunu açılır menü olur — seçim talebi
   // o faza taşır (aktif faz → PLANLANDI, gelecek faz → FAZ_BEKLIYOR).
   const fazSecim=(t)=>{
-    if(['COZULDU','IPTAL'].includes(t.durum))
+    if(['COZULDU','CANLIDA','IPTAL'].includes(t.durum))
       return `<span class="soluk">${esc(t.faz_id||'')}</span>`;
     return `<select onchange="talepFaz('${t.id}',this.value)">`+
       fazlar.map(f=>`<option value="${esc(f.id)}"${f.id===t.faz_id?' selected':''}>${esc(f.id)}</option>`).join('')+
@@ -715,6 +715,8 @@ async function talepYukle(){
      <td class="soluk">${esc(t.sayfa_url||'')}</td><td>${fazSecim(t)}</td>
      <td>${t.github_issue_url?`<a href="${esc(t.github_issue_url)}" target="_blank">#${t.github_issue_number}</a>`:'—'}</td>
      <td><button class="kucuk" title="Çözüm ve UAT Kanıtı" onclick="kanitModalAc('${t.id}')">🔍 Kanıt</button>
+       ${t.durum==='CANLIDA'?
+       `<span class="rozet r-CANLIDA" title="Canlıya alındı ve kilitlendi">🚀 Canlıda</span>`:''}
        ${t.durum==='COZULDU'?
        `<button class="kucuk" style="color:var(--yesil)" title="Yalnızca bu talebi ana dala aktar ve canlıya gönder" onclick="canliyaDagitTekil('${t.id}')">🚀 Canlıya Al</button>`:''}
        ${t.durum==='IPTAL'?
@@ -724,7 +726,7 @@ async function talepYukle(){
        ${t.durum==='ONAY_BEKLIYOR'?
        `<button class="kucuk" title="Çözüm onaylandı — talebi kapat" onclick="talepCozum('${t.id}',true)">✔ Çözüldü</button>
         <button class="kucuk" title="Sorun devam ediyor — kuyruğa geri al" onclick="talepCozum('${t.id}',false)">↩ Devam</button>`:''}
-       ${!['COZULDU','IPTAL'].includes(t.durum)?
+       ${!['COZULDU','CANLIDA','IPTAL'].includes(t.durum)?
        `<button class="kucuk" title="Talebi iptal et" onclick="talepIptal('${t.id}')">🗑</button>`:''}</td></tr>`
   ).join('')||'<tr><td colspan="9" class="soluk">Talep yok.</td></tr>';
 }

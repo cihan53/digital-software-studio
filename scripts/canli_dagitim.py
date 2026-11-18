@@ -390,6 +390,25 @@ def gorev_dali_birlestir(dal_adi_veya_talep: str, issue_number: int | None = Non
             except Exception:
                 pass
 
+        # 7. Talebi CANLIDA olarak işaretle ve kilitle
+        try:
+            sys.path.insert(0, str(work_dir / "scripts"))
+            import musteri_talepleri as MT
+            target_tid = None
+            if dal_adi_veya_talep.upper().startswith("TALEP-"):
+                target_tid = dal_adi_veya_talep.upper()
+            elif issue_number:
+                for item in (MT.db_tum_talepler() if hasattr(MT, 'db_tum_talepler') else []):
+                    if item.get("github_issue_number") == issue_number:
+                        target_tid = item.get("id")
+                        break
+            if target_tid:
+                MT.guncelle(target_tid, durum="CANLIDA",
+                            studio_notu=f"İzole dal '{dal_adi}' ana dala birleştirildi ve canlıya alındı (kilitlendi).",
+                            zorla=True)
+        except Exception:
+            pass
+
         return {
             "ok": True,
             "mesaj": f"'{dal_adi}' başarıyla '{ana_dal}' dalına birleştirildi ve dal temizlendi.",

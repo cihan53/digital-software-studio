@@ -61,6 +61,20 @@ class Dongu(unittest.TestCase):
         board, _ = self._sync("Dashboard filtresi çalışmıyor")
         self.assertEqual([t["role"] for t in board["sprints"][-1]["tasks"]][-1], "uat_auditor")
 
+    def test_canlida_talep_kilitlidir(self):
+        talep = {"id": "TALEP-036", "durum": "CANLIDA", "tur": "ISTEK", "baslik": "Rehber"}
+        with mock.patch.dict("os.environ", {"STUDIO_AUTO_DEPLOY": "0"}), \
+             mock.patch.object(SY.MT, "load_data", return_value={"talepler": [talep]}), \
+             mock.patch.object(SY.MT, "save_data"):
+            # CANLIDA talep zorla=False iken BEKLEMEDE yapılamaz
+            ok = SY.MT.guncelle("TALEP-036", durum="BEKLEMEDE")
+            self.assertFalse(ok)
+            self.assertEqual(talep["durum"], "CANLIDA")
+            # zorla=True iken güncellenebilir
+            ok2 = SY.MT.guncelle("TALEP-036", durum="COZULDU", zorla=True)
+            self.assertTrue(ok2)
+            self.assertEqual(talep["durum"], "COZULDU")
+
 
 if __name__ == "__main__":
     unittest.main()

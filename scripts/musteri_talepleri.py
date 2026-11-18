@@ -58,7 +58,9 @@ DURUMLAR = {
     "PLANLANDI": "📋 Planlandı",
     "GELISTIRILIYOR": "🔨 Geliştiriliyor",
     "TESTTE": "🧪 Testte",
+    "ONAY_BEKLIYOR": "👀 Müşteri Onayı Bekliyor",
     "COZULDU": "✅ Çözüldü",
+    "CANLIDA": "🚀 Canlıya Alındı (Kilitli)",
     "IPTAL": "❌ İptal Edildi"
 }
 
@@ -500,10 +502,16 @@ def getir(talep_id: str, cwd: Path | str | None = None) -> dict | None:
 
 
 def guncelle(talep_id: str, durum: str = None, gorevli_rol: str = None,
-             studio_notu: str = None, cozum_plani: str = None) -> bool:
+             studio_notu: str = None, cozum_plani: str = None, zorla: bool = False) -> bool:
     data = load_data()
     for t in data.get("talepler", []):
         if t["id"].lower() == talep_id.lower():
+            # İmmutability kontrolü: CANLIDA olan talep kilitlidir, üzerinde geriye dönük değişiklik yapılamaz
+            mevcut_d = (t.get("durum") or "").upper()
+            if mevcut_d == "CANLIDA" and durum and durum.upper() != "CANLIDA" and not zorla:
+                print(f"  🔒 [{talep_id}] Talep canlıya alınmış ve KİLİTLİDİR. Değişiklik yapılamaz; yeni bir talep açılmalıdır.")
+                return False
+
             if durum:
                 t["durum"] = durum.upper()
                 t.setdefault("gecmis", []).append({
@@ -511,8 +519,8 @@ def guncelle(talep_id: str, durum: str = None, gorevli_rol: str = None,
                     "eylem": f"Durum güncellendi: {durum}",
                     "durum": durum.upper()
                 })
-                # Eğer talep çözüldüyse panodaki görevleri senkronize kapat ve GitHub Issue'yu kapat
-                if durum.upper() == "COZULDU":
+                # Eğer talep çözüldüyse veya canlıya alındıysa panodaki görevleri senkronize kapat ve GitHub Issue'yu kapat
+                if durum.upper() in ("COZULDU", "CANLIDA"):
                     try:
                         B.sync_talep_cozuldu(talep_id)
                     except Exception as e:
