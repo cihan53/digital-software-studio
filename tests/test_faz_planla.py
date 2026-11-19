@@ -98,6 +98,48 @@ class FazPlan(unittest.TestCase):
         self.assertTrue(any("test" in e for e in FP.plan_dogrula(k)))
         self.assertTrue(FP.plan_dogrula({}))
 
+    def test_kapanis_engeli_acik_talep_varsa_engeller(self):
+        conn = B.db_conn()
+        try:
+            conn.execute("""
+                INSERT INTO talepler (id, baslik, durum, faz_id)
+                VALUES ('TALEP-999', 'Açık test talebi', 'BEKLEMEDE', 'FAZ-2')
+            """)
+            conn.commit()
+            engel = FP.kapanis_engeli("FAZ-2", kok=self.tmp)
+            self.assertIsNotNone(engel)
+            self.assertIn("TALEP-999", engel["neden"])
+
+            # Talep CANLIDA olunca engel kalkar
+            conn.execute("UPDATE talepler SET durum = 'CANLIDA' WHERE id = 'TALEP-999'")
+            conn.commit()
+            engel = FP.kapanis_engeli("FAZ-2", kok=self.tmp)
+            self.assertIsNone(engel)
+        finally:
+            conn.close()
+
+    def test_plani_geri_al_zorla_running_temizler(self):
+        self._ekle()
+        plan_t, onay_t = FP._planlama_gorevleri(self.board, "FAZ-2")
+        FP.plan_yolu("FAZ-2", self.tmp).write_text(json.dumps(PLAN()), encoding="utf-8")
+        B.mark(self.board, plan_t["id"], B.DONE)
+        B.mark(self.board, onay_t["id"], B.DONE)
+        FP.kontrol(self.board, ORG, None, kok=self.tmp)
+
+        # Plan sprintlerinden bir görevi RUNNING yap
+        plan_gorev = self.board["sprints"][-1]["tasks"][0]
+        plan_gorev["status"] = B.RUNNING
+
+        # zorla=False iken RUNNING nedeniyle reddedilmeli
+        ok, msg = FP.plani_geri_al(self.board, "FAZ-2", kok=self.tmp, zorla=False)
+        self.assertFalse(ok)
+        self.assertIn("RUNNING", msg)
+
+        # zorla=True iken temizlenmeli
+        ok, msg = FP.plani_geri_al(self.board, "FAZ-2", kok=self.tmp, zorla=True)
+        self.assertTrue(ok)
+        self.assertNotIn("Ekran düzeltmeleri", [s["name"] for s in self.board["sprints"]])
+
 
 if __name__ == "__main__":
     unittest.main()
