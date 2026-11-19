@@ -137,6 +137,7 @@ def gorev_dali_adi(task_or_talep: dict | str, cwd: Path | None = None) -> str:
                 db_f = work_dir / "studio.db"
             if db_f.exists():
                 conn = sqlite3.connect(str(db_f), timeout=5.0)
+                conn.row_factory = sqlite3.Row
                 cur = conn.cursor()
                 row = cur.execute("SELECT talep_id, baslik FROM pano_gorevleri WHERE lower(id) = lower(?)", (tid,)).fetchone()
                 conn.close()

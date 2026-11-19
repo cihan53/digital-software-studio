@@ -486,6 +486,7 @@ def getir(talep_id: str, cwd: Path | str | None = None) -> dict | None:
             db_file = c_path / "studio.db"
         if db_file.exists():
             conn = sqlite3.connect(str(db_file), timeout=10.0)
+            conn.row_factory = sqlite3.Row
         else:
             conn = db_conn()
     else:
