@@ -61,6 +61,20 @@ class TelafiSemantigi(unittest.TestCase):
         self.assertEqual(self._durum(b, "R"), B.DONE)                      # çözülen talebin görevi kapanır
         self.assertEqual(self._durum(b, "C"), B.READY)                     # bağımlı artık başlayabilir
 
+    def test_talep_canlida_olunca_bagimlilar_acilir_ve_telafi_beklemez(self):
+        b = B.normalize(pano("telafi TALEP-1 talebine devredildi"))
+        c = B.db_conn()
+        c.execute("UPDATE talepler SET durum='CANLIDA' WHERE id='TALEP-1'")
+        c.commit()
+        c.close()
+        B.refresh(b)
+        self.assertEqual(self._durum(b, "R"), B.DONE)                      # canlıdaki talebin görevi kapanır
+        self.assertEqual(self._durum(b, "C"), B.READY)                     # bağımlı artık başlayabilir
+        t_b = B.find_task(b, "B")[1]
+        self.assertEqual(t_b.get("telafi_durum"), "COZULDU")
+        s1 = b["sprints"][0]
+        self.assertNotIn("TALEP-1 bekleniyor", s1.get("blocked_reason") or "")
+
     def test_kullanici_atlamasi_ve_notsuz_skip_eskisi_gibi(self):
         for note in ("kullanıcı atladı", "", "talep iptal edildi"):
             b = B.normalize(pano(note))

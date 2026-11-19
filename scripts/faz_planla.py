@@ -375,7 +375,7 @@ def kapanis_engeli(faz_id: str, kok: Path = ROOT) -> dict | None:
     if talep:
         try:
             import musteri_talepleri as MT
-            if (MT.getir(talep) or {}).get("durum") in ("COZULDU", "IPTAL"):
+            if (MT.getir(talep) or {}).get("durum") in ("COZULDU", "CANLIDA", "IPTAL"):
                 return None
         except Exception:                                       # noqa: BLE001
             pass

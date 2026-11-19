@@ -138,7 +138,7 @@ class RecoverySentinelAgent:
             data = MT.load_data()
             for t in data.get("talepler", []):
                 if (t.get("baslik") or "").startswith("[DEPLOY]") \
-                        and t.get("durum") not in ("COZULDU", "IPTAL"):
+                        and t.get("durum") not in ("COZULDU", "CANLIDA", "IPTAL"):
                     return
             yeni = MT.yeni_talep(
                 "HATA",
@@ -202,7 +202,7 @@ class RecoverySentinelAgent:
         try:
             data = MT.load_data()
             for t in data.get("talepler", []):
-                if (t.get("baslik") or "").startswith(("[DEPLOY]", "[DEPLOY-CI/CD]")) and t.get("durum") not in ("COZULDU", "IPTAL"):
+                if (t.get("baslik") or "").startswith(("[DEPLOY]", "[DEPLOY-CI/CD]")) and t.get("durum") not in ("COZULDU", "CANLIDA", "IPTAL"):
                     MT.guncelle(t["id"], durum="COZULDU",
                                 studio_notu="CI/CD dağıtımı başarıyla tamamlandı, canlı sistem devrede.")
                     self.log("✓", f"Eski deploy hatası {t['id']} başarıyla kapatıldı.")
@@ -216,9 +216,9 @@ class RecoverySentinelAgent:
         try:
             data = MT.load_data()
             for t in data.get("talepler", []):
-                if f"Run #{run_id}" in (t.get("aciklama") or "") and t.get("durum") not in ("COZULDU", "IPTAL"):
+                if f"Run #{run_id}" in (t.get("aciklama") or "") and t.get("durum") not in ("COZULDU", "CANLIDA", "IPTAL"):
                     return
-                if (t.get("baslik") or "").startswith("[DEPLOY-CI/CD]") and t.get("durum") not in ("COZULDU", "IPTAL"):
+                if (t.get("baslik") or "").startswith("[DEPLOY-CI/CD]") and t.get("durum") not in ("COZULDU", "CANLIDA", "IPTAL"):
                     return
             yeni = MT.yeni_talep(
                 "HATA",

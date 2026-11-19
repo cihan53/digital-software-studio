@@ -164,7 +164,7 @@ def db_durumu(kok: Path = ROOT) -> dict:
             ozet["acik_talepler"] = [
                 {"id": r["id"], "tur": r["tur"], "baslik": r["baslik"], "durum": r["durum"], "oncelik": r["oncelik"]}
                 for r in cur.execute(
-                    "SELECT id, tur, baslik, durum, oncelik FROM talepler WHERE durum NOT IN ('TAMAMLANDI', 'IPTAL', 'COZULDU')"
+                    "SELECT id, tur, baslik, durum, oncelik FROM talepler WHERE durum NOT IN ('TAMAMLANDI', 'IPTAL', 'COZULDU', 'CANLIDA')"
                 ).fetchall()
             ]
     except sqlite3.Error as e:

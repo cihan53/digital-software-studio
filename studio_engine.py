@@ -2826,7 +2826,7 @@ def _auto_talep_uat(task: dict, uat_cikti: str, kaynak: str = "UAT",
             return kok_tid
 
         data = MT.load_data()
-        acik_talepler = [t for t in data.get("talepler", []) if t.get("durum") not in ("COZULDU", "IPTAL")]
+        acik_talepler = [t for t in data.get("talepler", []) if t.get("durum") not in ("COZULDU", "CANLIDA", "IPTAL")]
 
         # 2. Mükerrer kontrolü: Bu kök talep veya bu görev için açık telafi talebi var mı?
         anahtar_gorev = f"[{kaynak}] {task['id']}"
@@ -2910,7 +2910,7 @@ def _proje_import_taramasi(sprint_id: str) -> None:
         hatalar = K.import_cozumleme_hatalari(dosyalar) + K.sozdizimi_hatalari(dosyalar)
         if not hatalar:
             return
-        if any((t.get("baslik") or "").startswith("[BUILD] TARAMA") and t.get("durum") not in ("COZULDU", "IPTAL") for t in MT.load_data().get("talepler", [])):
+        if any((t.get("baslik") or "").startswith("[BUILD] TARAMA") and t.get("durum") not in ("COZULDU", "CANLIDA", "IPTAL") for t in MT.load_data().get("talepler", [])):
             return
         print(f"\n   ⚠️  [PROJE İMPORT TARAMASI] {len(hatalar)} çözülemeyen/olmayan import:")
         for h in hatalar[:6]:
@@ -3891,7 +3891,7 @@ def _ortam_hatasi_devopsa_devret(task: dict, sprint: dict, board: dict) -> None:
         sys.path.insert(0, str(ROOT / "scripts"))
         import musteri_talepleri as MT
         # Halihazırda açık bir ortam hatası talebi var mı?
-        mevcut = [t for t in MT.db_tum_talepler() if "[DEVOPS/ORTAM]" in (t.get("baslik") or "") and t.get("durum") not in ("COZULDU", "IPTAL")]
+        mevcut = [t for t in MT.db_tum_talepler() if "[DEVOPS/ORTAM]" in (t.get("baslik") or "") and t.get("durum") not in ("COZULDU", "CANLIDA", "IPTAL")]
         if mevcut:
             tid = mevcut[0]["id"]
         else:
@@ -3973,10 +3973,10 @@ def otomatik_kurtar_ve_temizle(board: dict) -> int:
     try:
         conn = B.db_conn()
         cur = conn.cursor()
-        cur.execute("SELECT id, durum FROM talepler WHERE durum IN ('COZULDU', 'KAPATILDI', 'IPTAL')")
+        cur.execute("SELECT id, durum FROM talepler WHERE durum IN ('COZULDU', 'CANLIDA', 'KAPATILDI', 'IPTAL')")
         for r in cur.fetchall():
             d = (r["durum"] or "").upper()
-            if d in ("COZULDU", "KAPATILDI"):
+            if d in ("COZULDU", "CANLIDA", "KAPATILDI"):
                 cozulmus_tids.add(r["id"])
             elif d == "IPTAL":
                 iptal_tids.add(r["id"])

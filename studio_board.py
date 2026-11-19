@@ -835,10 +835,10 @@ def refresh(board: dict) -> dict:
     try:
         conn = db_conn()
         cur = conn.cursor()
-        cur.execute("SELECT id, durum FROM talepler WHERE durum IN ('COZULDU', 'KAPATILDI', 'IPTAL')")
+        cur.execute("SELECT id, durum FROM talepler WHERE durum IN ('COZULDU', 'CANLIDA', 'KAPATILDI', 'IPTAL')")
         for row in cur.fetchall():
             d = (row["durum"] or "").upper()
-            if d in ("COZULDU", "KAPATILDI"):
+            if d in ("COZULDU", "CANLIDA", "KAPATILDI"):
                 cozulmus_talepler.add(row["id"])
             elif d == "IPTAL":
                 iptal_talepler.add(row["id"])
@@ -1078,7 +1078,7 @@ def reconcile_talepler_and_board() -> dict:
         cur.execute(
             "SELECT p.id FROM pano_gorevleri p "
             "JOIN talepler t ON p.talep_id = t.id "
-            "WHERE t.durum IN ('COZULDU', 'KAPATILDI') AND p.durum NOT IN ('DONE', 'SKIPPED')"
+            "WHERE t.durum IN ('COZULDU', 'CANLIDA', 'KAPATILDI') AND p.durum NOT IN ('DONE', 'SKIPPED')"
         )
         for r in cur.fetchall():
             cur.execute(
