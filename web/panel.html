@@ -86,8 +86,10 @@
   <span id="ilerleme" class="soluk"></span>
   <span id="saat" class="soluk"></span>
   <span class="bosluk"></span>
+  <button id="bBaslat" class="yesil gizli" onclick="kontrol('baslat')" title="Koşucu sürecini başlat">▶ Koşucuyu Başlat</button>
   <button id="bDuraklat" onclick="kontrol('duraklat')">⏸ Duraklat</button>
   <button id="bSurdur" class="gizli" onclick="kontrol('surdur')">▶ Sürdür</button>
+  <button id="bYenidenBaslat" class="kucuk" onclick="kontrol('yeniden_baslat')" title="Koşucu sürecini sıfırdan yeniden başlat">🔄 Yeniden Başlat</button>
   <button onclick="onayla()">💰 Kota Onayla</button>
   <label class="soluk" title="Atla/Geç aksiyonlarında çalışan çağrıyı anında keser" style="cursor:pointer">
     <input type="checkbox" id="forceChk"> ⚡ anında kes</label>
@@ -311,11 +313,15 @@ async function ozetYukle(){
     let durum, cls;
     if(d.durduruluyor){durum='DURDURULUYOR';cls='r-FAILED';}
     else if(d.duraklatildi){durum='DURAKLATILDI';cls='r-RUNNING';}
-    else if(d.kosucu){durum='ÇALIŞIYOR';cls='r-DONE';}
-    else{durum='BOŞTA';cls='r-TODO';}
+    else if(d.kosucu){durum='ÇALIŞIYOR'+(d.kosucu_pid?' (PID '+d.kosucu_pid+')':'');cls='r-DONE';}
+    else{durum='🛑 KOŞUCU KAPALI';cls='r-FAILED';}
     el.textContent=durum; el.className='rozet '+cls;
-    document.getElementById('bDuraklat').classList.toggle('gizli', d.duraklatildi);
-    document.getElementById('bSurdur').classList.toggle('gizli', !d.duraklatildi);
+    const bBaslat = document.getElementById('bBaslat');
+    const bDuraklat = document.getElementById('bDuraklat');
+    const bSurdur = document.getElementById('bSurdur');
+    if(bBaslat) bBaslat.classList.toggle('gizli', !!d.kosucu);
+    if(bDuraklat) bDuraklat.classList.toggle('gizli', !d.kosucu || d.duraklatildi);
+    if(bSurdur) bSurdur.classList.toggle('gizli', !d.kosucu || !d.duraklatildi);
     let i='';
     if(d.asama==='tasarim'&&d.tasarim) i=`Tasarım ${d.tasarim.biten}/${d.tasarim.toplam} rol`;
     else if(d.pano) i=`Sprint ${d.pano.sprints_done}/${d.pano.sprints_total} · Görev ${d.pano.done}/${d.pano.total}` +
