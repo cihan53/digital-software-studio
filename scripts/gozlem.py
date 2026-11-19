@@ -80,7 +80,7 @@ def bekleme_nedeni(board: dict | None, ctrl: dict, kosucu: bool, onay_bekliyor: 
         return {"kod": "kimlik", "mesaj": f"Kimlik/hesap hatası: '{m}'. Bu kota değil; yeniden denemek işe yaramaz.",
                 "eylem": "AI CLI'ya yeniden giriş yap (ör. claude /login), sonra koşucuyu yeniden başlat"}
     if not kosucu:
-        return {"kod": "kosucu_yok", "mesaj": "Koşucu çalışmıyor.", "eylem": "./basla.sh (ya da workspace/yeniden_baslat.sh)"}
+        return {"kod": "kosucu_yok", "mesaj": "Koşucu çalışmıyor.", "eylem": "Üst bardan '▶ Koşucuyu Başlat' tıklayın veya terminalden ./basla.sh"}
     if not board:
         return {"kod": "pano_yok", "mesaj": "Pano henüz yok: tasarım/planlama aşamasında.", "eylem": ""}
     _, nxt = B.next_ready(board)

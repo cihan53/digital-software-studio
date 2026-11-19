@@ -70,7 +70,8 @@ def runner_alive() -> bool:
 
 def durum_ozeti() -> dict:
     ctrl = B.control_state()
-    kosucu = runner_alive()
+    k_pid = B.runner_pid()
+    kosucu = bool(k_pid)
     cur = read_json(TRACE / "current.json", {})
     # current.json ölen/yarım kalan bir çağrıdan kalma bayat meta taşıyabilir;
     # koşucu yoksa 'şu an yapılan' gibi gösterilmesin.
@@ -87,6 +88,7 @@ def durum_ozeti() -> dict:
     out = {
         "zaman": time.strftime("%H:%M:%S"),
         "kosucu": kosucu,
+        "kosucu_pid": k_pid,
         "duraklatildi": ctrl["paused"],
         "durduruluyor": ctrl["stopping"],
         "aktif": cur,
@@ -437,6 +439,10 @@ def kontrol(body: dict) -> dict:
         B.clear("pause")
         B.audit("web", "kontrol_surdur")
         return {"ok": True, "mesaj": "Sürdürüldü."}
+    if aks in ("baslat", "yeniden_baslat"):
+        restart = (aks == "yeniden_baslat") or bool(body.get("restart"))
+        ok, msg = B.start_runner(restart=restart)
+        return {"ok": ok, "mesaj": msg}
     if aks == "durdur":
         B.request("stop", kaynak="web")
         return {"ok": True, "mesaj": "Durdurma istendi — mevcut çağrı bitince koşucu çıkar."}

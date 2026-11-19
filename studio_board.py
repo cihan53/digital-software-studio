@@ -806,6 +806,62 @@ def hard_stop() -> tuple[bool, str]:
                   "durduruldu. Koşucu 'devre_disi' — tekrar açmak için ./basla.sh")
 
 
+def start_runner(restart: bool = False, mod: str | None = None) -> tuple[bool, str]:
+    """Koşucuyu (studio_engine.py) arka planda detached olarak başlatır."""
+    pid = runner_pid()
+    if pid and not restart:
+        return False, f"Koşucu zaten çalışıyor (PID: {pid})."
+
+    if pid and restart:
+        hard_stop()
+        time.sleep(1)
+
+    # Bilinçli başlatma: 'duraklat', 'stop', 'devre_disi' bayraklarını temizle
+    clear("pause")
+    clear("stop")
+    clear("devre_disi")
+
+    log_dir = WORKSPACE / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "pipeline.log"
+
+    if not mod:
+        mod = os.environ.get("STUDIO_MOD", "1")
+
+    cmd = [
+        sys.executable,
+        str(ROOT / "studio_engine.py"),
+        "--full",
+        "--mod", str(mod),
+        "--yes",
+    ]
+    if os.environ.get("STUDIO_ONLY_GEMINI", "1") in ("1", "true", "yes"):
+        cmd.append("--gemini")
+
+    butce = os.environ.get("STUDIO_BUTCE")
+    if butce:
+        cmd.extend(["--max-cost", str(butce)])
+
+    try:
+        log_f = open(log_path, "a", encoding="utf-8")
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(ROOT),
+            stdout=log_f,
+            stderr=subprocess.STDOUT,
+            start_new_session=True
+        )
+        time.sleep(1.5)
+        if proc.poll() is not None:
+            return False, f"Koşucu hemen sonlandı (çıkış kodu: {proc.returncode}). Log: workspace/logs/pipeline.log"
+
+        audit("kontrol", "kosucu_baslatildi", detay={"pid": proc.pid, "restart": restart, "mod": mod})
+        eylem = "yeniden başlatıldı" if restart else "başlatıldı"
+        return True, f"Koşucu başarıyla {eylem} (PID: {proc.pid})."
+    except Exception as e:
+        return False, f"Koşucu başlatılamadı: {e}"
+
+
 def recover_orphans(board: dict) -> bool:
     """Kapanmış veya çökmüş koşulardan arta kalan RUNNING durumundaki görevleri kurtarır."""
     if is_runner_active():
