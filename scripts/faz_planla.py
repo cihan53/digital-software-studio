@@ -361,8 +361,32 @@ def kapanis_ozeti(rapor: Path, sinir: int = 3500) -> str:
 
 
 def kapanis_engeli(faz_id: str, kok: Path = ROOT) -> dict | None:
-    """Faz çıkış kapısı (#315): bu faz sırasında üretilen UAT raporu fazı REDDETMİŞSE faz ilerlemez. Reddi gideren (COZULDU/IPTAL) bir kapanış talebi kayıtlıysa engel kalkar.
-    {"neden", "rapor", "talep"} ya da None."""
+    """Faz çıkış kapısı (#315, #376):
+    1. Bu faza ait açık / tamamlanmamış / canlıya alınmamış müşteri talepleri varsa faz ilerlemez (#376).
+    2. Bu faz sırasında üretilen UAT raporu fazı REDDETMİŞSE faz ilerlemez (#315). Reddi gideren (COZULDU/CANLIDA/IPTAL) bir kapanış talebi kayıtlıysa engel kalkar.
+    {"neden", "rapor", "talep", "talepler"} ya da None."""
+    # 1. Açık müşteri talepleri kontrolü (#376)
+    conn = None
+    try:
+        conn = B.db_conn()
+        acik_talepler = [r["id"] for r in conn.execute(
+            "SELECT id FROM talepler WHERE faz_id = ? AND durum NOT IN ('TAMAMLANDI', 'CANLIDA', 'IPTAL')",
+            (faz_id,)
+        ).fetchall()]
+        if acik_talepler:
+            return {
+                "neden": f"{faz_id} kapsamında henüz tamamlanmamış {len(acik_talepler)} talep var: {', '.join(acik_talepler)}",
+                "rapor": None,
+                "talep": None,
+                "talepler": acik_talepler,
+            }
+    except Exception:
+        pass
+    finally:
+        if conn:
+            conn.close()
+
+    # 2. UAT ret raporu kontrolü (#315)
     rapor = kok / "workspace" / "docs" / "uat_kabul_raporu.md"
     u = uygulandi_yolu(faz_id, kok)
     if not rapor.is_file() or not u.exists() or rapor.stat().st_mtime < u.stat().st_mtime or not _uat_red_mi(rapor):
@@ -402,15 +426,15 @@ def otomatik_ilerlet(board: dict, kok: Path = ROOT) -> str | None:
 
 
 def plani_geri_al(board: dict, faz_id: str, kok: Path = ROOT, zorla: bool = False) -> tuple[bool, str]:
-    """Fazın planlama sprintini ve plandan eklenen sprintleri panodan çıkarır, plan dosyalarını siler (#303).
-    Plan sprintlerinde çalışan (RUNNING) görev varsa reddeder; bitmiş (DONE) görev varsa yalnız zorla=True ile (üretilen dosyalar diskte kalır). (başarılı, mesaj)"""
+    """Fazın planlama sprintini ve plandan eklenen sprintleri panodan çıkarır, plan dosyalarını siler (#303, #376).
+    Plan sprintlerinde çalışan (RUNNING) veya bitmiş (DONE) görev varsa zorla=False iken reddeder; zorla=True ile temizler (üretilen dosyalar diskte kalır). (başarılı, mesaj)"""
     plan_t, _ = _planlama_gorevleri(board, faz_id)
     plan, _ = plan_oku(faz_id, kok) if plan_yolu(faz_id, kok).exists() else (None, [])
     adlar = {s_["name"] for s_ in (plan or {}).get("sprints", [])}
     silinecek = [s_ for s_ in board.get("sprints", []) if s_["name"] in adlar or (plan_t is not None and any(t["id"] == plan_t["id"] for t in s_["tasks"]))]
     for s_ in silinecek:
         for t in s_["tasks"]:
-            if s_["name"] in adlar and not B.is_human(t) and (t["status"] == B.RUNNING or (t["status"] == B.DONE and not zorla)):
+            if s_["name"] in adlar and not B.is_human(t) and not zorla and (t["status"] in (B.RUNNING, B.DONE)):
                 return False, f"{t['id']} başlamış/bitmiş ({t['status']}); plan geri alınamaz"
     ids = {s_["id"] for s_ in silinecek}
     board["sprints"] = [s_ for s_ in board["sprints"] if s_["id"] not in ids]
