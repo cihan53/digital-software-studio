@@ -78,6 +78,13 @@ class Dongu(unittest.TestCase):
         self.assertEqual(guncel[0][0], "TALEP-010")
         self.assertEqual(guncel[0][1]["durum"], "GELISTIRILIYOR")
 
+    def test_mobil_talep_mobile_engineer_kategorisine_atanir(self):
+        talep = {"baslik": "Mobil Uygulamada İstasyon Detay Panelinin İlk Açılış Yüksekliği",
+                 "aciklama": "bottom sheet yüksekliği dar, artırılmalı"}
+        kat = SY.tespit_et_kategori(talep)
+        self.assertEqual(kat["id"], "mobile_engineer")
+        self.assertTrue(any("mobile" in d for d in kat["dosyalar"]))
+
     def test_canlida_talep_kilitlidir(self):
         talep = {"id": "TALEP-036", "durum": "CANLIDA", "tur": "ISTEK", "baslik": "Rehber"}
         with mock.patch.dict("os.environ", {"STUDIO_AUTO_DEPLOY": "0"}), \
