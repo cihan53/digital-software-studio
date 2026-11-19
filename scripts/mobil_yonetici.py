@@ -329,6 +329,20 @@ def apk_guncel_mi(cihaz_id: str = None) -> tuple[bool, str]:
     if dev_vc < pub_vc:
         return False, f"Cihazdaki sürüm kodu (v{dev_vn}+{dev_vc}), pubspec sürüm kodundan (v{pub_vn}+{pub_vc}) eski."
 
+    # Git commit kontrolü: son yüklenen APK'nın commit'i ile aktif HEAD'i karşılaştır
+    root = _proje_koku()
+    commit_f = root / "workspace" / ".last_apk_commit"
+    if commit_f.is_file():
+        try:
+            last_commit = commit_f.read_text(encoding="utf-8").strip()
+            c_git = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=root)
+            if c_git.returncode == 0:
+                current_commit = c_git.stdout.strip()
+                if last_commit and current_commit and last_commit != current_commit:
+                    return False, f"Git commit değişti (cihazdaki: {last_commit[:7]}, güncel: {current_commit[:7]})."
+        except Exception:
+            pass
+
     kaynak_ts = mobil_kaynak_son_degisiklik_zamani()
     dev_ts = info.get("lastUpdateTs", 0.0)
     # Kaynak kod cihazdaki güncelleme tarihinden 5 saniyeden daha yeniyse bayattır
@@ -418,6 +432,15 @@ def mobil_uygulama_derle_ve_yukle(cihaz_id: str = None, zorla: bool = False) -> 
 
         if install_proc.returncode == 0 or "Success" in output_txt:
             info = cihazdaki_paket_bilgisi(hedef_id)
+            root = _proje_koku()
+            try:
+                c_git = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=root)
+                if c_git.returncode == 0 and c_git.stdout.strip():
+                    commit_f = root / "workspace" / ".last_apk_commit"
+                    commit_f.parent.mkdir(parents=True, exist_ok=True)
+                    commit_f.write_text(c_git.stdout.strip(), encoding="utf-8")
+            except Exception:
+                pass
             return True, f"APK başarıyla yüklendi: v{info.get('versionName', '?')}+{info.get('versionCode', '?')}"
         else:
             return False, f"ADB yükleme hatası: {output_txt.strip()}"
