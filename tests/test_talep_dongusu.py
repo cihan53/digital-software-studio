@@ -61,6 +61,23 @@ class Dongu(unittest.TestCase):
         board, _ = self._sync("Dashboard filtresi çalışmıyor")
         self.assertEqual([t["role"] for t in board["sprints"][-1]["tasks"]][-1], "uat_auditor")
 
+    def test_beklemede_talep_eski_gorev_tamamlanmis_olsa_da_sprinte_alinir(self):
+        # TALEP-010 eski sprintte bitmiş ama UAT reddiyle BEKLEMEDE kalmış
+        sprintler = [{"id": "S1", "name": "n", "order": 0, "tasks": [T("S1-T1", B.DONE, "[TALEP-010] eski", talep="TALEP-010")]}]
+        board = {"sprints": sprintler}
+        talep = {"id": "TALEP-010", "durum": "BEKLEMEDE", "tur": "HATA", "baslik": "Açık hata", "aciklama": "a",
+                 "cozum_plani": "workspace/docs/cozum_planlari/TALEP-010.md"}
+        guncel = []
+        with mock.patch.object(B, "load", return_value=board), mock.patch.object(B, "reconcile_talepler_and_board", return_value=None), \
+                mock.patch.object(B, "save"), mock.patch.object(B, "audit"), mock.patch.object(SY.MT, "load_data", return_value={"talepler": [talep]}), \
+                mock.patch.object(SY.MT, "getir", return_value=talep), \
+                mock.patch.object(SY.MT, "guncelle", side_effect=lambda tid, **kw: guncel.append((tid, kw))):
+            n = SY.otomatik_musteri_talepleri_senkronize_et()
+        self.assertEqual(n, 1)
+        self.assertEqual(len(board["sprints"]), 2)
+        self.assertEqual(guncel[0][0], "TALEP-010")
+        self.assertEqual(guncel[0][1]["durum"], "GELISTIRILIYOR")
+
     def test_canlida_talep_kilitlidir(self):
         talep = {"id": "TALEP-036", "durum": "CANLIDA", "tur": "ISTEK", "baslik": "Rehber"}
         with mock.patch.dict("os.environ", {"STUDIO_AUTO_DEPLOY": "0"}), \

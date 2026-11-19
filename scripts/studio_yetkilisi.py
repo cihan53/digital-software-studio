@@ -622,8 +622,9 @@ def otomatik_musteri_talepleri_senkronize_et() -> int:
         if tid in acik_talep_idler:
             continue
 
-        # Talep panoda zaten mevcutsa ve tamamlanmış görevleri varsa mükerrer sprint açma
-        if tid in mevcut_talep_idler:
+        # Talep panoda zaten mevcutsa ve açık görevi yoksa; BEKLEMEDE/PLANLANDI (UAT reddi veya yeniden açılmış)
+        # olmayan talepler için mükerrer sprint açma (#355, #378)
+        if tid in mevcut_talep_idler and durum not in ("BEKLEMEDE", "PLANLANDI"):
             tamamlananlar = [tk for _, tk in B.all_tasks(board)
                              if (tk.get("talep_id") == tid or re.search(rf"\[{re.escape(tid)}\]", tk.get("title", "")))
                              and tk.get("status") == B.DONE]
