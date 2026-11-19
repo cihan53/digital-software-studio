@@ -143,12 +143,45 @@ KATEGORILER = [
         ],
     },
     {
+        "id": "mobile_engineer",
+        "unvan": "Mobil Uygulama Geliştiricisi",
+        "bilesen": "Mobil Uygulama (Flutter / Android / iOS)",
+        "anahtar_kelimeler": [
+            "mobil", "flutter", "android", "ios", "apk", "bottom sheet",
+            "çekmece", "dart", "widget", "mobil uygulama", "mobil ekran",
+            "mobil harita", "mobil sürüm", "mobil bildirim",
+        ],
+        "dosyalar": [
+            "workspace/src/mobile/lib/",
+            "workspace/src/mobile/lib/widgets/",
+            "workspace/src/mobile/lib/views/",
+        ],
+        "plan_asamalari": """\
+### Aşama A: İnceleme ve Hazırlık (`mobile_engineer`)
+- İlgili Flutter widget/view bileşenindeki state, BLoC ve UI hiyerarşisini kontrol et.
+- Sorunu yerel mobil ortamda ve testlerde incele.
+
+### Aşama B: Kodlama ve Çözüm
+- İlgili Dart/Flutter dosyasında gerekli UI/mantık düzeltmesini yap.
+- Tasarım token'ları ve responsive ölçüleri koru.
+
+### Aşama C: Test ve Doğrulama (`uat_auditor` / `qa_lead`)
+- flutter test ile birim ve widget testlerinin geçtiğini doğrula.
+- Kullanıcı senaryosunu emülatör/ekran görüntüsü üzerinden doğrula.\
+""",
+        "kabul_kriterleri": [
+            "Müşterinin bildirdiği mobil hata veya eksiklik tamamen ortadan kalktı.",
+            "Flutter analizinde ve testlerinde sıfır hata.",
+            "Mevcut mobil özellikler ve ekranlar bozulmamış.",
+        ],
+    },
+    {
         "id": "ui_designer",
         "unvan": "Arayüz ve Tasarım Uzmanı (UI/UX)",
         "bilesen": "Arayüz Tasarım Sistemi",
         "anahtar_kelimeler": [
             "renk", "font", "tipografi", "padding", "margin", "logo",
-            "ikon", "tema", "tasarım", "görünüm", "mobil", "responsive",
+            "ikon", "tema", "tasarım", "görünüm", "responsive",
             "css", "tailwind", "animasyon",
         ],
         "dosyalar": [
