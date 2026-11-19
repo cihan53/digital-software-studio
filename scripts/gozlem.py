@@ -102,7 +102,7 @@ def bekleme_nedeni(board: dict | None, ctrl: dict, kosucu: bool, onay_bekliyor: 
     if bloke:
         t = bloke[0]
         return {"kod": "bloke", "mesaj": f"Bloke/başarısız görev var: {t['id']} ({t['status']}) {(t.get('note') or '')[:120]}", "eylem": "Pano → görevi aç / telafi talebini kontrol et"}
-    skip = [t for _, t in B.all_tasks(board) if t["status"] == B.SKIPPED and "telafi" in (t.get("note") or "") and "devredildi" in (t.get("note") or "")]
+    skip = [t for _, t in B.all_tasks(board) if t["status"] == B.SKIPPED and t.get("telafi_durum") == "BEKLIYOR"]
     if acik and skip:
         return {"kod": "telafi_bekliyor", "mesaj": f"{skip[0]['id']} telafi talebini bekliyor; çözülene kadar bağımlıları bekler.", "eylem": "Talepler sekmesinden talebi izle/onayla"}
     if acik:

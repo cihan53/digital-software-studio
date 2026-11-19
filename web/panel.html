@@ -404,7 +404,7 @@ const GOREV_GRUP = {
   CALISIYOR: t => t.status==='RUNNING',
   SIRADA:    t => ['TODO','READY'].includes(t.status) && t._sprint_status !== 'DONE',
   SORUNLU:   t => ['FAILED','BLOCKED'].includes(t.status) || (t.status === 'SKIPPED' && t.telafi_durum === 'BEKLIYOR'),
-  TAMAMLANAN:t => t.status==='DONE' || t._sprint_status === 'DONE' || (t.status === 'SKIPPED' && t.telafi_durum === 'COZULDU'),
+  TAMAMLANAN:t => t.status==='DONE' || t._sprint_status === 'DONE' || (t.status === 'SKIPPED' && (t.telafi_durum === 'COZULDU' || t.telafi_durum === 'CANLIDA')),
   ATLANAN:   t => t.status==='SKIPPED',
   TUMU:      t => true,
 };
@@ -479,7 +479,7 @@ function gorevSatir(t){
   if (telafiId) {
     if (telafiDurum === 'BEKLIYOR') {
       telafiBadge = `<span class="rozet r-BLOCKED" style="cursor:pointer;background:#ef444422;color:#f87171;border:1px solid #ef444466;font-weight:600" onclick="talepGoster('${esc(telafiId)}')" title="İlgili telafi talebine gitmek için tıklayın">⚠️ ${esc(telafiId)} Bekleniyor ⇢</span>`;
-    } else if (telafiDurum === 'COZULDU') {
+    } else if (telafiDurum === 'COZULDU' || telafiDurum === 'CANLIDA') {
       telafiBadge = `<span class="rozet r-DONE" style="cursor:pointer;background:#22c55e22;color:#4ade80;border:1px solid #22c55e66" onclick="talepGoster('${esc(telafiId)}')" title="Telafi talebi çözüldü">✔ ${esc(telafiId)} Çözüldü</span>`;
     }
   }
