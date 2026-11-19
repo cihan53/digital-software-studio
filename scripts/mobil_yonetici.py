@@ -68,16 +68,21 @@ def bul_emulator() -> str | None:
 
 def bul_flutter() -> str | None:
     """Sistemde veya bilinen dizinlerde flutter CLI yolunu bulur."""
-    fl_which = shutil.which("flutter")
-    if fl_which:
-        return fl_which
     ev = Path.home()
     olasi = [
         ev / "development" / "flutter" / "bin" / "flutter",
         ev / "flutter" / "bin" / "flutter",
         Path("/opt/homebrew/bin/flutter"),
+        Path("/usr/local/bin/flutter"),
         ev / ".local" / "bin" / "flutter",
     ]
+    # Kullanıcı ev dizinindeki flutter SDK binary'si doğrudan mevcutsa önceliklendir
+    for alt in (ev / "development" / "flutter" / "bin" / "flutter", ev / "flutter" / "bin" / "flutter"):
+        if alt.is_file() and os.access(alt, os.X_OK):
+            return str(alt)
+    fl_which = shutil.which("flutter")
+    if fl_which:
+        return fl_which
     for p in olasi:
         if p.is_file() and os.access(p, os.X_OK):
             return str(p)
@@ -382,13 +387,23 @@ def mobil_uygulama_derle_ve_yukle(cihaz_id: str = None, zorla: bool = False) -> 
     try:
         build_proc = subprocess.run([flutter_bin, "build", "apk", "--debug"],
                                     cwd=mdir, capture_output=True, text=True, timeout=240)
-        if build_proc.returncode != 0:
-            err = (build_proc.stderr or build_proc.stdout).strip().splitlines()[-5:]
-            return False, f"Flutter derleme hatası: {' '.join(err)}"
+    except OSError as e:
+        if getattr(e, "errno", None) == 8:
+            try:
+                build_proc = subprocess.run(["bash", flutter_bin, "build", "apk", "--debug"],
+                                            cwd=mdir, capture_output=True, text=True, timeout=240)
+            except Exception as e_bash:
+                return False, f"Flutter derleme bash fallback ile de çalıştırılamadı: {e_bash}"
+        else:
+            return False, f"Flutter derleme çalıştırılamadı: {e}"
     except subprocess.TimeoutExpired:
         return False, "Flutter derleme işlemi zaman aşımına uğradı (240s)."
     except Exception as e:
         return False, f"Flutter derleme çalıştırılamadı: {e}"
+
+    if build_proc.returncode != 0:
+        err = (build_proc.stderr or build_proc.stdout).strip().splitlines()[-5:]
+        return False, f"Flutter derleme hatası: {' '.join(err)}"
 
     # Üretilen APK'yı bul
     apk_yollari = [
