@@ -22,6 +22,15 @@ import { infer, merge, normPath } from './kesif_sema.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+if (typeof globalThis.WebSocket === 'undefined') {
+  const { spawnSync } = await import('node:child_process');
+  const res = spawnSync(process.execPath, ['--experimental-websocket', ...process.execArgv, ...process.argv.slice(1)], {
+    stdio: 'inherit',
+    env: process.env,
+  });
+  process.exit(res.status ?? 0);
+}
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const flag = (n) => args.includes(n);
@@ -71,7 +80,7 @@ async function chromeBaslat(profil, headless) {
   const chrome = process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
   const port = 9300 + Math.floor(Math.random() * 500);
   mkdirSync(profil, { recursive: true });
-  const a = [`--remote-debugging-port=${port}`, `--user-data-dir=${profil}`, '--no-first-run', '--no-default-browser-check',
+  const a = [`--remote-debugging-port=${port}`, '--remote-allow-origins=*', `--user-data-dir=${profil}`, '--no-first-run', '--no-default-browser-check',
     '--window-size=1440,900', ...(headless ? ['--headless=new'] : []), 'about:blank'];
   const proc = spawn(chrome, a, { stdio: 'ignore' });
   for (let i = 0; i < 60; i++) {
@@ -161,6 +170,7 @@ async function main() {
   const kapat = () => { try { proc.kill(); } catch { /* yok */ } };
   process.on('SIGINT', () => { kapat(); process.exit(130); });
   process.on('SIGTERM', () => { kapat(); process.exit(143); });
+  process.on('exit', () => { kapat(); });
   const pg = await sayfaAc(cdp);
   const cikarici = readFileSync(path.join(ROOT, 'scripts/kesif_cikarici.js'), 'utf8');
   const ev = async (expr) => {
