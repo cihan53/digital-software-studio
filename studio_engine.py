@@ -805,6 +805,7 @@ def _run_cli(cmd: list, cwd: Path, timeout: int, name: str,
     # write()'da bloke olup ana süreçle karşılıklı bekler (pipe deadlock).
     # Okuyucular hem veriyi toplar hem de (varsa) canlı geri çağrıyı besler.
     out_parca, err_parca = [], []
+    idle_bg_zamani = [None]
 
     def _oku_out():
         try:
@@ -831,6 +832,8 @@ def _run_cli(cmd: list, cwd: Path, timeout: int, name: str,
                 if not veri:
                     break
                 err_parca.append(veri)
+                if "root agent idle; waiting up to" in veri:
+                    idle_bg_zamani[0] = time.time()
                 son_canli[0] = time.time()
         except (OSError, ValueError):
             pass
@@ -864,6 +867,17 @@ def _run_cli(cmd: list, cwd: Path, timeout: int, name: str,
                     except OSError:
                         pass
                 break
+            if idle_bg_zamani[0] is not None and time.time() - idle_bg_zamani[0] > 60:
+                print(f"      [{name}] Kök ajan boşta (idle) ve arka plan süreci 60s içinde sonlanmadı; asılı kalmayı önlemek için kesiliyor.", file=sys.stderr)
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                    proc.wait(timeout=5)
+                except (OSError, subprocess.TimeoutExpired):
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    except OSError:
+                        pass
+                break
             if stall_after and time.time() - son_canli[0] > stall_after:
                 # 15s'de bir ölç: CPU ilerliyor mu / açık soket var mı.
                 # İkisi de yoksa süreç ölü bir beklemede (asılı HTTP isteği)
@@ -877,8 +891,8 @@ def _run_cli(cmd: list, cwd: Path, timeout: int, name: str,
                     if cpu is not None and son_olcum["cpu"] is not None \
                             and cpu > son_olcum["cpu"] + 0.5:
                         son_canli[0] = time.time()   # CPU ilerliyor → canlı
-                    elif soket > 0:
-                        son_canli[0] = time.time()   # açık bağlantı var → canlı
+                    elif soket > 0 and name != "agy":
+                        son_canli[0] = time.time()   # açık bağlantı var → canlı (agy harici: agy API havuzu kalıcı soket tutar)
                     if cpu is not None:
                         son_olcum["cpu"] = cpu
                 if time.time() - son_canli[0] > stall_after:
@@ -1149,8 +1163,8 @@ def _call_agy(system_prompt: str, user_prompt: str, effort: str, model: str,
         izle_dur.set()
         t_nabiz.join(timeout=1)
 
-    if rc != 0 and agy_bitti.is_set() and (nihai_sonuc.get("data") or (out or "").strip()):
-        print(f"      [agy] yanıt tamamlandı ama süreç çıkmadı; {AGY_CIKIS_TOLERANSI}s sonra kesildi, çıktı kullanılıyor.", file=sys.stderr)
+    if rc != 0 and (agy_bitti.is_set() or "root agent idle" in (err or "")) and (nihai_sonuc.get("data") or (out or "").strip()):
+        print(f"      [agy] yanıt tamamlandı veya idle kesildi; çıktı kurtarılıyor.", file=sys.stderr)
         rc = 0
     if rc != 0:
         detail = (err or out or "").strip()[:500]
