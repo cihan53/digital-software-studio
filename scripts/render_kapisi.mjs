@@ -21,6 +21,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+if (typeof globalThis.WebSocket === 'undefined') {
+  const { spawnSync } = await import('node:child_process');
+  const res = spawnSync(process.execPath, ['--experimental-websocket', ...process.execArgv, ...process.argv.slice(1)], {
+    stdio: 'inherit',
+    env: process.env,
+  });
+  process.exit(res.status ?? 0);
+}
+
 const ROOT = process.env.STUDIO_KOK ? path.resolve(process.env.STUDIO_KOK) : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const oku = (rel, v) => { try { return JSON.parse(fs.readFileSync(path.join(ROOT, rel), 'utf8')); } catch { return v; } };
@@ -145,7 +154,7 @@ if (!CHROME) atla('Chrome bulunamadı (CHROME_PATH verin)');
 
 const profil = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-render-'));
 const cdpPort = 9800 + Math.floor(Math.random() * 150);
-const chrome = spawn(CHROME, [`--remote-debugging-port=${cdpPort}`, `--user-data-dir=${profil}`, '--headless=new', '--no-first-run',
+const chrome = spawn(CHROME, [`--remote-debugging-port=${cdpPort}`, '--remote-allow-origins=*', `--user-data-dir=${profil}`, '--headless=new', '--no-first-run',
   '--no-default-browser-check', '--window-size=1440,900', 'about:blank'], { stdio: 'ignore' });
 let cdp = null;
 for (let i = 0; i < 60 && !cdp; i++) {
@@ -159,6 +168,9 @@ for (let i = 0; i < 60 && !cdp; i++) {
 if (!cdp) { chrome.kill(); atla('Chrome başlatılamadı'); }
 
 const kapat = async () => { try { await cdp.send('Browser.close'); } catch { /* */ } chrome.kill(); try { fs.rmSync(profil, { recursive: true, force: true }); } catch { /* */ } };
+process.on('SIGINT', async () => { await kapat(); process.exit(130); });
+process.on('SIGTERM', async () => { await kapat(); process.exit(143); });
+process.on('exit', () => { try { chrome.kill(); } catch { /* */ } try { fs.rmSync(profil, { recursive: true, force: true }); } catch { /* */ } });
 
 const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
 const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
