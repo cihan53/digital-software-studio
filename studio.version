@@ -1,6 +1,6 @@
 {
-  "version": "1.10.148",
-  "released": "2026-11-19",
+  "version": "1.10.149",
+  "released": "2026-11-20",
   "description": "Digital Software Studio — Framework güncelleme",
   "tracked_files": [
     "scripts/cozum_kaniti.py",
@@ -67,6 +67,13 @@
   ],
   "protected_files": [],
   "changelog": [
+    {
+      "version": "1.10.149",
+      "date": "2026-11-20",
+      "changes": [
+        "Merge pull request #387 from cihan53/bug/386"
+      ]
+    },
     {
       "version": "1.10.148",
       "date": "2026-11-19",
