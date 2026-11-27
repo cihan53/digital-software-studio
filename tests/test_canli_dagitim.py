@@ -199,6 +199,66 @@ class TestCanliDagitim(unittest.TestCase):
             self.assertTrue(res["ok"])
             self.assertEqual(res["kapatilanlar"], [201])
 
+    @patch("subprocess.run")
+    def test_ana_dala_gec_dogrudan_basarili(self, mock_run):
+        m = MagicMock()
+        m.returncode = 0
+        mock_run.return_value = m
+        ok, err = CD.ana_dala_gec(ROOT, "master")
+        self.assertTrue(ok)
+        self.assertEqual(err, "")
+
+    @patch("subprocess.run")
+    @patch("pathlib.Path.exists", return_value=True)
+    def test_ana_dala_gec_worktree_kurtarma(self, mock_exists, mock_run):
+        call_count = 0
+        def side_effect(cmd, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            m = MagicMock()
+            if call_count == 1:
+                # İlk checkout master hatası
+                m.returncode = 1
+                m.stderr = "fatal: 'master' is already used by worktree at '/Volumes/KIOXIA/test-wt'"
+            elif "status" in cmd:
+                # Worktree temiz
+                m.returncode = 0
+                m.stdout = ""
+            elif "--detach" in cmd:
+                # Detach başarılı
+                m.returncode = 0
+            elif call_count == 4 and "checkout" in cmd and "master" in cmd:
+                # İkinci deneme başarılı
+                m.returncode = 0
+            else:
+                m.returncode = 0
+            return m
+
+        mock_run.side_effect = side_effect
+        ok, err = CD.ana_dala_gec(ROOT, "master")
+        self.assertTrue(ok)
+        self.assertEqual(err, "")
+
+    @patch("subprocess.run")
+    @patch("pathlib.Path.exists", return_value=True)
+    def test_ana_dala_gec_worktree_kirli_hata(self, mock_exists, mock_run):
+        def side_effect(cmd, **kwargs):
+            m = MagicMock()
+            if "status" in cmd:
+                m.returncode = 0
+                m.stdout = " M modified_file.py\n"
+            elif "--detach" in cmd:
+                m.returncode = 0
+            else:
+                m.returncode = 1
+                m.stderr = "fatal: 'master' is already used by worktree at '/Volumes/KIOXIA/test-wt'"
+            return m
+
+        mock_run.side_effect = side_effect
+        ok, err = CD.ana_dala_gec(ROOT, "master")
+        self.assertFalse(ok)
+        self.assertIn("kaydedilmemiş değişiklikler var", err)
+
 
 if __name__ == "__main__":
     unittest.main()
