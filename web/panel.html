@@ -28,9 +28,12 @@
   .mdl-sekme { display: flex; gap: 6px; margin: 10px 0; }
   .ipucu { font-size: 12px; color: var(--soluk); margin: 6px 0 14px; }
   .gunc-banner { padding: 8px 14px; background: #3a2f0b; border-bottom: 1px solid var(--sinir);
-    font-size: 13px; color: #f0c948; }
-  .gunc-banner code { background: rgba(0,0,0,.35); padding: 1px 6px; border-radius: 4px;
-    font-size: 12px; }
+    font-size: 13px; color: #f0c948; line-height: 1.5; }
+  .gunc-banner code { background: rgba(0,0,0,.35); padding: 2px 7px; border-radius: 4px;
+    font-size: 12px; user-select: all; cursor: pointer; border: 1px solid rgba(240,201,72,.25); }
+  .gunc-banner button { margin-left: 6px; vertical-align: middle; }
+  .gunc-btn { background: #238636; color: #fff; font-weight: bold; border: 1px solid #2ea043; cursor: pointer; }
+  .gunc-btn:hover { background: #2ea043; }
   .hata-mtn { color: var(--kirmizi); font-size: 12px; }
   .hata-band { margin: 8px 0; padding: 8px 10px; border-left: 3px solid var(--kirmizi);
     background: rgba(255,80,80,.08); color: var(--kirmizi); font-size: 12px;
@@ -267,6 +270,61 @@ function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.
   clearTimeout(t._h); t._h=setTimeout(()=>t.classList.add('gizli'), 5000); }
 function modalKapat(){ document.getElementById('modal').classList.add('gizli'); }
 
+async function guncelleUygula(ver){
+  if(!confirm(`Studio ${ver ? 'v' + ver : 'yeni'} sürümüne güncellensin mi?\n\nBu işlem framework güncellemelerini uygulayacak, gerekiyorsa koşucuyu ve web panelini yeniden başlatacaktır.`)) return;
+  const gb = document.getElementById('gunc-banner');
+  if(gb) gb.dataset.updating = '1';
+  const btn = document.getElementById('b-gunc-uygula');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Güncelleniyor…'; }
+  toast('Framework güncellemesi uygulanıyor…');
+  try{
+    const res = await (await fetch('/api/guncelleme-uygula', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({restart: true})
+    })).json();
+    if(res.ok){
+      if(gb) gb.innerHTML = `✅ <b>${esc(res.mesaj)}</b> <span class="soluk">Sayfa birkaç saniye içinde yenilenecek…</span>`;
+      toast(res.mesaj);
+      let deneme = 0;
+      const yenileKontrol = setInterval(async ()=>{
+        deneme++;
+        try{
+          const r = await fetch('/api/ozet', {cache: 'no-store'});
+          if(r.ok && deneme >= 2){
+            clearInterval(yenileKontrol);
+            location.reload();
+          }
+        }catch(e){}
+        if(deneme > 15){
+          clearInterval(yenileKontrol);
+          location.reload();
+        }
+      }, 1500);
+    }else{
+      toast('Güncelleme uygulanamadı: ' + (res.mesaj || 'Bilinmeyen hata'));
+      if(gb) delete gb.dataset.updating;
+      if(btn){ btn.disabled = false; btn.textContent = '🚀 Güncellemeyi Uygula'; }
+    }
+  }catch(e){
+    toast('İstek hatası: ' + e);
+    if(gb) delete gb.dataset.updating;
+    if(btn){ btn.disabled = false; btn.textContent = '🚀 Güncellemeyi Uygula'; }
+  }
+}
+
+function komutKopyala(kod){
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(kod).then(()=>{
+      toast('✓ Komut kopyalandı: ' + kod);
+    }).catch(()=>{
+      prompt('Komutu kopyalayın:', kod);
+    });
+  }else{
+    prompt('Komutu kopyalayın:', kod);
+  }
+}
+
 function sekmeAc(t){
   document.querySelectorAll('.sekme').forEach(x=>x.classList.toggle('aktif', x.dataset.t===t));
   for (const s of ['pano','canli','akis','audit','cagri','talep','faz','brief','onay','dok','ortam','onz','kul'])
@@ -332,13 +390,24 @@ async function ozetYukle(){
     const gb=document.getElementById('gunc-banner');
     const g=d.studio_guncelleme;
     if(g&&g.update){
-      gb.innerHTML=`⚠ Studio <b>v${esc(g.remote)}</b> güncellemesi mevcut `+
-        `<span class="soluk">(kurulu v${esc(g.local)})</span> — `+
-        `<code>python3 scripts/studio_updater.py --kontrol</code>`+
-        (g.changes&&g.changes.length?
-          ` <span class="soluk">· ${esc(g.changes[0])}${g.changes.length>1?' +'+(g.changes.length-1)+' değişiklik daha':''}</span>`:'');
+      const guncKey = `${g.local}->${g.remote}:${(g.changes||[]).join('|')}`;
+      if(gb.dataset.key !== guncKey && !gb.dataset.updating){
+        gb.dataset.key = guncKey;
+        const cmd = 'python3 scripts/studio_updater.py --uygula --restart';
+        gb.innerHTML=`⚠ Studio <b>v${esc(g.remote)}</b> güncellemesi mevcut `+
+          `<span class="soluk">(kurulu v${esc(g.local)})</span> — `+
+          `<button id="b-gunc-uygula" class="gunc-btn" onclick="guncelleUygula('${esc(g.remote)}')">🚀 Güncellemeyi Uygula</button> `+
+          `<span class="soluk">veya terminal:</span> `+
+          `<code title="Tıkla ve kopyala" onclick="komutKopyala('${cmd}')">${cmd}</code> `+
+          `<button class="kucuk" onclick="komutKopyala('${cmd}')" title="Komutu panoya kopyala">📋 Kopyala</button>`+
+          (g.changes&&g.changes.length?
+            `<div class="soluk" style="margin-top:4px;font-size:11px">Yenilikler: ${esc(g.changes.slice(0,3).join(' · '))}${g.changes.length>3?' +'+(g.changes.length-3)+' değişiklik daha':''}</div>`:'');
+      }
       gb.classList.remove('gizli');
-    }else gb.classList.add('gizli');
+    }else if(!gb.dataset.updating){
+      gb.dataset.key = '';
+      gb.classList.add('gizli');
+    }
     const mb=document.getElementById('motor-banner');
     const mo=d.motor_oneri;
     if(mo){

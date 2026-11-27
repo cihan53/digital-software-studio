@@ -430,8 +430,79 @@ def onay_ver(body: dict) -> dict:
     return {"ok": ok, "mesaj": msg}
 
 
+def guncelleme_uygula(body: dict | None = None) -> dict:
+    """Framework güncellemesini uygular (scripts/studio_updater.py --uygula),
+    varsa koşucuyu güncel kodla yeniden başlatır ve web panelini arka planda
+    güvenle yeniden başlatır."""
+    import subprocess
+    import threading
+
+    updater_script = ROOT / "scripts" / "studio_updater.py"
+    if not updater_script.exists():
+        return {"ok": False, "mesaj": "scripts/studio_updater.py bulunamadı."}
+
+    # 1. studio_updater.py --uygula çalıştır
+    res = subprocess.run(
+        [sys.executable, str(updater_script), "--uygula"],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+        timeout=120
+    )
+    if res.returncode != 0:
+        hata = (res.stderr or res.stdout or "Bilinmeyen hata").strip()
+        return {"ok": False, "mesaj": f"Güncelleme uygulanamadı: {hata}"}
+
+    # 2. Varsa koşan koşucuyu yeniden başlat (güncel kodla devam etsin)
+    kosucu_yenilendi = False
+    restart_istendi = True if not body else body.get("restart", True)
+    if restart_istendi and B.runner_pid():
+        B.start_runner(restart=True)
+        kosucu_yenilendi = True
+
+    # 3. Güncelleme önbelleğini temizle
+    try:
+        (ROOT / "workspace" / ".studio_update_check.json").unlink(missing_ok=True)
+    except OSError:
+        pass
+
+    B.audit("web", "framework_guncelleme_uygulandi", detay={
+        "kosucu_yenilendi": kosucu_yenilendi,
+        "stdout": (res.stdout or "")[-500:]
+    })
+
+    # 4. Web panelini istemciye 200 yanıtı döndükten sonra harici süreçle yeniden başlat
+    if restart_istendi:
+        def _harici_web_restart():
+            time.sleep(1.0)
+            cur_pid = os.getpid()
+            log = ROOT / "workspace" / "logs" / "web.log"
+            log.parent.mkdir(parents=True, exist_ok=True)
+            cmd = (
+                f"sleep 0.5; kill -9 {cur_pid} 2>/dev/null; "
+                f"nohup {sys.executable} {ROOT / 'studio_web.py'} >> {log} 2>&1 &"
+            )
+            try:
+                subprocess.Popen(["bash", "-c", cmd], cwd=str(ROOT), start_new_session=True)
+            except Exception:
+                pass
+
+        t = threading.Thread(target=_harici_web_restart, daemon=True)
+        t.start()
+
+    mesaj = "Framework güncellemesi başarıyla uygulandı."
+    if kosucu_yenilendi:
+        mesaj += " Koşucu güncel kodla yeniden başlatıldı."
+    if restart_istendi:
+        mesaj += " Web paneli yeniden başlatılıyor..."
+
+    return {"ok": True, "mesaj": mesaj, "detay": res.stdout}
+
+
 def kontrol(body: dict) -> dict:
     aks = body.get("aksiyon", "")
+    if aks == "guncelleme_uygula":
+        return guncelleme_uygula(body)
     if aks == "duraklat":
         B.request("pause", kaynak="web")
         return {"ok": True, "mesaj": "Duraklatıldı — çalışan çağrı bitince yeni görev alınmaz."}
@@ -965,6 +1036,12 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         path = u.path
         body = self._body()
+
+        if path in ("/api/guncelleme-uygula", "/api/guncelle"):
+            try:
+                return self._json(guncelleme_uygula(body))
+            except Exception as e:
+                return self._json({"ok": False, "mesaj": str(e)}, 500)
 
         if path == "/api/kontrol":
             try:

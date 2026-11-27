@@ -295,6 +295,32 @@ def talep_pr_olustur(task_or_talep: dict | str, cwd: Path | None = None) -> dict
     return {"ok": False, "mesaj": f"PR oluşturulamadı: {res.stderr.strip()}"}
 
 
+def ana_dala_gec(work_dir: Path, ana_dal: str) -> tuple[bool, str]:
+    """Ana dala geçer. Eğer ana dal başka bir git worktree tarafından tutuluyorsa
+    ve o worktree temizse, worktree'yi detach edip ana dalı serbest bırakır."""
+    c = subprocess.run(["git", "checkout", ana_dal], capture_output=True, text=True, cwd=str(work_dir))
+    if c.returncode == 0:
+        return True, ""
+
+    err = c.stderr.strip()
+    wt_match = re.search(r"is already used by worktree at '([^']+)'", err)
+    if wt_match:
+        wt_path = Path(wt_match.group(1))
+        if wt_path.exists():
+            st = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True, cwd=str(wt_path))
+            if not st.stdout.strip():
+                det = subprocess.run(["git", "checkout", "--detach"], capture_output=True, text=True, cwd=str(wt_path))
+                if det.returncode == 0:
+                    c2 = subprocess.run(["git", "checkout", ana_dal], capture_output=True, text=True, cwd=str(work_dir))
+                    if c2.returncode == 0:
+                        return True, ""
+                    err = c2.stderr.strip()
+            else:
+                return False, f"'{ana_dal}' dalı '{wt_path}' worktree'sinde kullanımda ve üzerinde kaydedilmemiş değişiklikler var. Lütfen worktree'yi temizleyin."
+
+    return False, f"'{ana_dal}' dalına geçilemedi: {err}"
+
+
 def gorev_dali_hazirla(task_or_talep: dict | str, cwd: Path | None = None) -> dict:
     """Görev veya talep için master/main tabanlı izole dal açar veya mevcut dala geçer."""
     work_dir = cwd or ROOT
@@ -314,8 +340,8 @@ def gorev_dali_hazirla(task_or_talep: dict | str, cwd: Path | None = None) -> di
             if c.returncode != 0:
                 return {"ok": False, "mesaj": f"'{dal_adi}' dalına geçilemedi: {c.stderr.strip()}", "dal": dal_adi}
         else:
-            c_main = subprocess.run(["git", "checkout", ana_dal], capture_output=True, text=True, cwd=str(work_dir))
-            if c_main.returncode == 0:
+            ok_main, err_main = ana_dala_gec(work_dir, ana_dal)
+            if ok_main:
                 subprocess.run(["git", "pull", "--ff-only", "origin", ana_dal], capture_output=True, text=True, cwd=str(work_dir))
             
             c_new = subprocess.run(["git", "checkout", "-b", dal_adi, ana_dal], capture_output=True, text=True, cwd=str(work_dir))
@@ -351,9 +377,9 @@ def gorev_dali_birlestir(dal_adi_veya_talep: str, issue_number: int | None = Non
             return {"ok": False, "mesaj": f"'{dal_adi}' dalı yerelde bulunamadı."}
 
         # 1. Ana dala geç
-        c1 = subprocess.run(["git", "checkout", ana_dal], capture_output=True, text=True, cwd=str(work_dir))
-        if c1.returncode != 0:
-            return {"ok": False, "mesaj": f"'{ana_dal}' dalına geçilemedi: {c1.stderr.strip()}"}
+        ok1, err1 = ana_dala_gec(work_dir, ana_dal)
+        if not ok1:
+            return {"ok": False, "mesaj": err1}
 
         # 2. Remote'dan en son halini al
         subprocess.run(["git", "pull", "--ff-only", "origin", ana_dal], capture_output=True, text=True, cwd=str(work_dir))
@@ -492,9 +518,9 @@ def canliya_dagit_tekil(talep_id: str, cwd: Path | None = None) -> dict:
     stashed = _calisma_dizinini_guvenceye_al(work_dir)
 
     try:
-        c1 = subprocess.run(["git", "checkout", ana_dal], capture_output=True, text=True, cwd=str(work_dir))
-        if c1.returncode != 0:
-            return {"ok": False, "mesaj": f"'{ana_dal}' dalına geçilemedi: {c1.stderr.strip()}"}
+        ok1, err1 = ana_dala_gec(work_dir, ana_dal)
+        if not ok1:
+            return {"ok": False, "mesaj": err1}
 
         subprocess.run(["git", "pull", "--ff-only", "origin", ana_dal], capture_output=True, text=True, cwd=str(work_dir))
 
@@ -549,9 +575,9 @@ def canliya_dagit_hepsi(cwd: Path | None = None) -> dict:
 
     try:
         # 1. Ana dala geç ve güncelle
-        c1 = subprocess.run(["git", "checkout", ana_dal], capture_output=True, text=True, cwd=str(work_dir))
-        if c1.returncode != 0:
-            return {"ok": False, "mesaj": f"'{ana_dal}' dalına geçilemedi: {c1.stderr.strip()}"}
+        ok1, err1 = ana_dala_gec(work_dir, ana_dal)
+        if not ok1:
+            return {"ok": False, "mesaj": err1}
 
         subprocess.run(["git", "pull", "--ff-only", "origin", ana_dal], capture_output=True, text=True, cwd=str(work_dir))
         subprocess.run(["git", "clean", "-fd"], capture_output=True, text=True, cwd=str(work_dir))
